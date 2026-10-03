@@ -1,0 +1,5 @@
+# App state (config, caches) — see docs/design/2026-10-02-project-init.md
+.deeplabeling/
+__pycache__/
+.pytest_cache/
+*.egg-info/

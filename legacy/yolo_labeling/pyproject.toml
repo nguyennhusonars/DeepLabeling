@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yolo-labeling"
+version = "0.1.0"
+description = "Tkinter annotation tool for YOLO datasets: editing, filtering and model-assisted review"
+requires-python = ">=3.10"
+# tkinter is also required but is not on PyPI: it comes with Python, or on
+# Debian/Ubuntu from the `python3-tk` system package.
+dependencies = [
+    "numpy",
+    # pip cannot tell that opencv-contrib-python / -headless provide the same
+    # `cv2`; if one of those is what you have, install with --no-deps.
+    "opencv-python",
+    "Pillow",
+    "PyYAML",
+    "matplotlib",
+    "seaborn",
+]
+
+[project.optional-dependencies]
+# Only needed to load a model for predictions. Install the ultralytics checkout
+# your models were trained with: a model using a fork's custom modules will not
+# load under stock ultralytics.
+model = ["ultralytics"]
+test = ["pytest"]
+
+[project.scripts]
+yolo-labeling = "yolo_labeling.__main__:main"
+
+[tool.setuptools]
+# This directory IS the package -- app.py, core/ and ui/ sit at the top level --
+# so the import name is mapped onto it instead of onto a src/ subfolder.
+# tests/ is deliberately not listed, so it is not shipped.
+package-dir = { "yolo_labeling" = "." }
+packages = ["yolo_labeling", "yolo_labeling.core", "yolo_labeling.ui"]

@@ -1,0 +1,125 @@
+# Caches
+
+Owns: the prediction cache (what is stored, how it is keyed and read), label-cache
+freshness, how image sizes are read, and where app state lives.
+
+The evidence is `legacy/yolo_labeling/core/predcache.py` and the read paths in
+`legacy/yolo_labeling/app.py` and `legacy/yolo_labeling/ui/filters.py`.
+
+## Store at a floor and filter on read
+
+- Inference always runs at `legacy/yolo_labeling/core/predcache.py::CONF_FLOOR` (0.10),
+  and that is what is cached, capped at the strongest
+  `legacy/yolo_labeling/core/predcache.py::MAX_BOXES` (100) per image.
+- Each consumer narrows the cached boxes to its own threshold on read
+  (`legacy/yolo_labeling/core/predcache.py::filter_conf`). A scan at 0.40 and the canvas
+  at 0.25 share one row; moving a slider re-filters instead of re-inferring.
+- Below the floor nothing exists: no threshold under 0.10 can be answered from the cache.
+  The legacy scan dialog (`legacy/yolo_labeling/ui/dialogs.py::DialogsMixin.show_find_bad_dialog`)
+  and IoU filter (`legacy/yolo_labeling/ui/filters.py::FiltersMixin._filter_range_error`)
+  refuse such a value, and restored settings are clamped up to the floor. (SPEC §5 still
+  says such a threshold re-runs the model; SPEC §9 and the code say it never did.)
+
+**Rule:** infer once at the floor; every threshold is a read-side filter; nothing below the
+floor is offered.
+
+## Store raw model ids
+
+- Rows hold the model's own class ids. Translation through the prediction map
+  ([datasets.md](datasets.md#prediction-maps-and-class-groups)) happens on read, like the
+  threshold. Editing the map then re-derives from the cache instead of re-inferring, and an
+  unmapped prediction stays distinguishable from no prediction at all
+  ([matching.md](matching.md#unmapped-classes-are-inconclusive)).
+- `legacy/yolo_labeling/core/classmap.py::PredictionClassMap.apply` **drops** unmapped
+  boxes. The legacy display path uses it
+  (`legacy/yolo_labeling/app.py::YOLOLabelingTool._display_predictions`); the scan and the
+  IoU filter call `translate` themselves and keep unmapped boxes as `None`.
+
+**Rule:** translate on read, in every consumer. Display and accept may drop unmapped boxes;
+matching must keep them.
+
+## The durable store
+
+`legacy/yolo_labeling/core/predcache.py::PredictionCache` — SQLite in WAL mode, committed
+incrementally so a cancel or a crash keeps the work already done.
+
+```
+preds(model TEXT, img TEXT, size INTEGER, mtime INTEGER, floor REAL, boxes TEXT)
+PRIMARY KEY (model, img)
+```
+
+| Column | Holds |
+|---|---|
+| `model` | the weights file's `name:size:mtime` (`legacy/yolo_labeling/core/predcache.py::model_key`). Retraining in place keeps the name, so the name alone would serve the old checkpoint's predictions. |
+| `img` | the image's absolute path |
+| `size`, `mtime` | the image's byte size and integer mtime when inferred; a row is valid only while both still match |
+| `floor` | the confidence the row was inferred at |
+| `boxes` | JSON `[[cls, x1, y1, x2, y2, conf], …]` in pixels and raw model ids; coordinates rounded to 0.1 px, confidence to 3 decimals |
+
+- A miss (`get` returns `None`) covers all of: never inferred, another model, the image
+  changed on disk, or a threshold below the row's floor.
+- Measured on pvn-vehicle frames: a lookup costs about 0.018 ms per image.
+- The legacy store is
+  `/home/sonnn/Documents/PGit/yolo_labeling/.yolo_labeling_cache/predictions.sqlite`
+  (measured 2026-10-02: 209 MB, 201,301 rows). Read it in place and read-only — open it as
+  `sqlite3.connect("file:<path>?mode=ro", uri=True)` — and never copy it
+  ([environment.md](environment.md#disk)). Which models it holds:
+  [datasets.md](datasets.md#models-in-the-legacy-prediction-cache).
+
+## Reading during a dataset pass
+
+- A pass over the dataset reads the durable store without promoting each row into the
+  in-memory cache: `legacy/yolo_labeling/app.py::YOLOLabelingTool._peek_cached_predictions`
+  with `promote=False`. Promoting holds about 250 B/box × 20–100 boxes × 46k images ≈
+  0.2–1.1 GB.
+- "Never inferred" (`None`) and "inferred, nothing found" (`[]`) are different answers. The
+  legacy IoU filter counts never-inferred images as "not inferred" in its result line
+  rather than passing them as clean, and evaluates inferred-but-empty ones.
+
+**Rule:** a dataset pass streams from the durable store; memory holds only what is on
+screen. An unknown answer is reported as unknown.
+
+## Label-cache freshness
+
+- A cached parse of a label file is trusted only while the file's `(mtime_ns, size)`
+  matches the stamp taken when it was cached; an entry with no stamp is stale:
+  `legacy/yolo_labeling/ui/filters.py::FiltersMixin._labels_cache_fresh`,
+  `legacy/yolo_labeling/ui/filters.py::FiltersMixin._label_stamp`.
+- Size alone is not enough: reassigning a class rewrites one byte and keeps the length.
+- Every writer of the cache stamps its entry
+  (`legacy/yolo_labeling/ui/filters.py::FiltersMixin._stamp_labels_cache`). A forgotten
+  stamp is merely slow, never wrong.
+- This is what notices an import or an external edit underneath the running app.
+
+**Rule:** every read of a cached parse checks the stamp.
+
+## Image sizes
+
+- Read the size from the file header, honouring EXIF orientation: tag 274 values 5–8 are
+  quarter turns, so for dimensions a width/height swap is the whole transform
+  (`legacy/yolo_labeling/ui/filters.py::FiltersMixin._image_size`). `cv2.imread` applies
+  EXIF rotation and PIL's raw `.size` does not, so without the swap the two disagree by a
+  transpose on rotated phone photos.
+- Measured on pvn-vehicle frames: a header read is about 0.03 ms; `cv2.imread` 3.42 ms;
+  `ImageOps.exif_transpose()` decodes and rotates the whole frame, 4.51 ms — slower than
+  decoding. Decoding 46k frames only to learn their sizes cost about 6 minutes per scan,
+  indistinguishable from re-running the model.
+
+**Rule:** never decode an image to learn its size; one size function, header-only and
+EXIF-aware, for every caller.
+
+## Where app state lives
+
+- In one fixed directory, never relative to the launch directory:
+  `legacy/yolo_labeling/app.py::STATE_DIR` (the legacy package directory). With relative
+  paths, launching from another folder silently started with no classes, hotkeys,
+  prediction maps or cache, and wrote a fresh default config there.
+- DeepLabeling's directory is provisional:
+  [design spec](../design/2026-10-02-project-init.md#package-skeleton).
+- The legacy tests redirect it to a temporary directory for every test and fail the
+  session if the real files changed:
+  `legacy/yolo_labeling/tests/conftest.py::state_dir`,
+  `legacy/yolo_labeling/tests/conftest.py::_real_state_untouched`.
+
+**Rule:** state lives at one fixed path; tests point it at a temporary directory and assert
+the real one is untouched.

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deeplabeling"
+version = "0.1.0"
+description = "Labeling and dataset-cleaning tool for YOLO datasets"
+requires-python = ">=3.10"
+dependencies = ["PySide6", "numpy", "opencv-python", "Pillow", "PyYAML"]
+
+[project.optional-dependencies]
+# Install the ultralytics checkout your models were trained with: a model using
+# a fork's custom modules does not load under stock ultralytics.
+model = ["ultralytics"]
+test = ["pytest", "pytest-qt"]
+
+[project.scripts]
+deeplabeling = "deeplabeling.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+norecursedirs = ["legacy", ".remember", ".git", ".deeplabeling"]
+qt_api = "pyside6"
+addopts = "-q"

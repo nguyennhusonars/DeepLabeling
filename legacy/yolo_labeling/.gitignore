@@ -1,0 +1,5 @@
+# Prediction cache: regenerable, and ~200 MB on a real dataset.
+.yolo_labeling_cache/
+__pycache__/
+.pytest_cache/
+*.egg-info/
