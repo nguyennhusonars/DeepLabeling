@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 import pytest
 
@@ -258,6 +259,23 @@ def test_the_cache_stays_within_its_budget(ds):
         store.get(entry.path)
     assert store.cached_bytes <= 5000
     assert store.cached_count < len(store.dataset.images)
+
+
+def test_reading_many_images_stays_fast(tmp_path):
+    """Caching an image must not cost more as the cache grows. When every insert
+    walked the whole cache, a pass over pvn-vehicle took 92 s instead of 2 s."""
+    images, labels = tmp_path / "big/images", tmp_path / "big/labels"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    for i in range(20000):
+        (images / f"{i:05d}.jpg").write_bytes(b"")
+        (labels / f"{i:05d}.txt").write_bytes(b"0 0.5 0.5 0.1 0.1\n")
+    store = LabelStore(Dataset.open(images))
+    start = time.perf_counter()
+    for entry in store.dataset.images:
+        store.get(entry.path)
+    assert time.perf_counter() - start < 3.0
+    assert store.cached_count == 20000
 
 
 def test_the_pinned_image_is_never_evicted(ds):

@@ -168,11 +168,12 @@ class LabelStore:
             self._cache[snap.image] = snap
             self._costs[snap.image] = cost
             self._total += cost
-            for victim in list(self._cache):
-                if self._total <= self._limit:
+            # Evict oldest first, and only while over budget: walking the whole
+            # cache on every insert made a full dataset pass quadratic.
+            while self._total > self._limit:
+                victim = next((k for k in self._cache if k not in (self._pinned, snap.image)), None)
+                if victim is None:
                     break
-                if victim in (self._pinned, snap.image):
-                    continue
                 del self._cache[victim]
                 self._total -= self._costs.pop(victim)
 
