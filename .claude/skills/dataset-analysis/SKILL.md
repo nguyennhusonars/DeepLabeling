@@ -10,9 +10,10 @@ the training fork's size filter — are documented in
 [datasets.md](../../../docs/knowledge/datasets.md); this skill does not repeat any of it.
 
 All three scripts are read-only: `unmatched.py` opens the prediction cache with
-`mode=ro`; none of the three ever writes a label file, a dataset or the cache. They are
-self-contained (no project imports) until `deeplabeling.core` exists — port them to
-import its label parsing and geometry instead of reimplementing it, once it does.
+`mode=ro`; none of the three ever writes a label file, a dataset or the cache.
+`overlaps.py` imports its label parsing and overlap predicate from `deeplabeling.core`,
+so it agrees with the app. `unmatched.py` and `size_cut_sim.py` still parse labels
+themselves; they move onto the core with slice 4's port of the matching code.
 
 - **`scripts/overlaps.py`** — images whose labels overlap each other, from the label
   files alone (IoU on normalised coordinates is exact, so no image sizes are needed).

@@ -86,6 +86,9 @@ screen. An unknown answer is reported as unknown.
   `legacy/yolo_labeling/ui/filters.py::FiltersMixin._labels_cache_fresh`,
   `legacy/yolo_labeling/ui/filters.py::FiltersMixin._label_stamp`.
 - Size alone is not enough: reassigning a class rewrites one byte and keeps the length.
+- DeepLabeling stamps `(inode, mtime_ns, size)`
+  (`src/deeplabeling/core/store.py::LabelStore.get`): an atomic replace makes a new
+  inode, so a same-size rewrite within one mtime tick is still noticed.
 - Every writer of the cache stamps its entry
   (`legacy/yolo_labeling/ui/filters.py::FiltersMixin._stamp_labels_cache`). A forgotten
   stamp is merely slow, never wrong.
@@ -114,8 +117,10 @@ EXIF-aware, for every caller.
   `legacy/yolo_labeling/app.py::STATE_DIR` (the legacy package directory). With relative
   paths, launching from another folder silently started with no classes, hotkeys,
   prediction maps or cache, and wrote a fresh default config there.
-- DeepLabeling's directory is provisional:
-  [design spec](../design/2026-10-02-project-init.md#package-skeleton).
+- DeepLabeling's is `<repository>/.deeplabeling/`, or `DEEPLABELING_STATE_DIR` when set:
+  `src/deeplabeling/core/state.py::state_dir`. Its layout is in the
+  [app design](../design/2026-10-04-app-foundation.md#state-and-settings); the tests
+  guard it with `tests/conftest.py::_real_state_untouched`.
 - The legacy tests redirect it to a temporary directory for every test and fail the
   session if the real files changed:
   `legacy/yolo_labeling/tests/conftest.py::state_dir`,

@@ -1,6 +1,6 @@
 # DeepLabeling — app foundation and slice 1 (the editor)
 
-**Status:** draft 2026-10-04 · awaiting review
+**Status:** approved 2026-10-04 · slice 1a (the core) implemented; the amendments found while planning it are folded in
 **Scope:** the architecture every feature sits on, and **slice 1**: open a dataset, work
 through a queue of images, and fix their boxes. Later slices get their own spec, plan and
 build; [Later slices](#later-slices) records what each starts from.
@@ -59,20 +59,22 @@ slice 3's IoU filter and slice 4 both read slice 2's prediction cache.
 ```
 src/deeplabeling/
   core/                 imports no PySide6, enforced by a test; scripts import it too
-    labelio.py          port: LabelLine, parse, render, the atomic writer, locate_line
-    paths.py            the label-path rule (see Dataset); is_within
+    atomic.py           the one atomic writer; keeps permission bits
+    labelio.py          port: LabelLine, parse, render, locate_line
+    paths.py            the label-path rule (see Dataset)
     geometry.py         port: iou, normalised <-> pixel, clamp
-    imagetype.py        port: sniff
-    imagesize.py        the one header-only, EXIF-aware size function
     dataset.py          Dataset: from a yaml or a folder pair
+    edits.py            LineRef, intents, Edit (bytes before/after per file), materialize
     store.py            LabelStore: the one owner of every image's labels
-    edits.py            LineRef, edit intents, Edit (bytes before/after per file)
     history.py          global undo/redo of Edits
+    editor.py           apply / undo / redo: write, record, mark reviewed, notify
     overlap.py          stack counts (the predicate slice 3's overlap filter reuses)
-    queue.py            QueueSource, Condition, QueueItem, Queue (cursor, statuses)
+    queue.py            Condition, ImageFilter, QueueItem, Queue (cursor, statuses)
     review.py           review marks
     settings.py         the settings registry
-    state.py            where app state lives; the per-dataset lock
+    state.py            where app state lives; the per-root lock
+    taxonomy.py         the taxonomy guard's checks
+    workspace.py        Workspace.open: the one funnel every launch path goes through
   ui/
     main_window.py      the layout; wires the parts together
     store_bridge.py     a QObject around LabelStore + History that emits signals
@@ -82,8 +84,8 @@ src/deeplabeling/
 ```
 
 **One owner** ([landmine 2](../../CLAUDE.md#landmines)). Only `LabelStore` turns a label
-file into labels in memory, and only `LabelStore.apply` writes one, through `labelio`'s
-atomic writer. Views hold immutable snapshots, re-fetch them when `labelsChanged(image)`
+file into labels in memory, and only `LabelStore.apply` and `LabelStore.restore` write one,
+through `atomic.write_atomic`. Views hold immutable snapshots, re-fetch them when `labelsChanged(image)`
 fires, and have nothing to mutate.
 
 **Threads** ([landmine 3](../../CLAUDE.md#landmines)):
@@ -105,7 +107,7 @@ fires, and have nothing to mutate.
 ### Snapshots
 
 `LabelStore.get(image)` returns an immutable `ImageLabels`: the label path, the raw bytes,
-the parsed `LabelLine`s, the file's `(mtime_ns, size)` stamp, and a state:
+the parsed `LabelLine`s, the file's `(inode, mtime_ns, size)` stamp, and a state:
 
 | State | Means |
 |---|---|
@@ -143,8 +145,8 @@ The full rules are in [label-files.md](../knowledge/label-files.md#byte-preservi
 2. computes the after-bytes, and with them an **Edit**: `{label path: (before | absent,
    after)}`, the images touched and a description;
 3. writes each file atomically, creating the labels folder if it does not exist;
-4. updates the snapshot, pushes the Edit onto the history, marks the image reviewed, and
-   emits `labelsChanged`.
+4. updates the snapshot. `Editor.apply`, the GUI thread's one entry point, then pushes
+   the Edit onto the history, marks the image reviewed and emits `labelsChanged`.
 
 Locating at apply time, not at build time, means an intent built against a snapshot that
 changed in the meantime either applies to the right line or is refused. A drag is one
@@ -503,19 +505,25 @@ target is recorded with its measured value, not quietly dropped.
 The `legacy-reference` skill maps each module to the legacy tests that pin it. Each port
 brings the fix, not the defect ([legacy-defects.md](../knowledge/legacy-defects.md)).
 
-1. `labelio`, `geometry`, `imagetype`: ported with their tests.
+1. `labelio` and `geometry`: ported with their tests.
 2. `paths`: rewritten to training's rule.
-3. `imagesize`: from `legacy/yolo_labeling/ui/filters.py::FiltersMixin._image_size`.
-4. `overlap`: the stack count from
+3. `overlap`: the stack count from
    `legacy/yolo_labeling/app.py::YOLOLabelingTool.detect_current_overlaps`.
-5. New code: `dataset`, `store`, `edits`, `history`, `queue`, `review`, `settings`, `state`.
-6. The UI.
+4. New code: `atomic`, `dataset`, `edits`, `store`, `history`, `editor`, `queue`,
+   `review`, `settings`, `state`, `taxonomy`, `workspace`.
+5. The UI.
+
+`imagetype`, and `imagesize` (from
+`legacy/yolo_labeling/ui/filters.py::FiltersMixin._image_size`), wait for slice 3: nothing
+in slice 1 needs them, because the UI takes sizes from Qt's decode.
 
 `classmap` and `predcache` wait for slice 2, `ranges` for slice 3, and `badscan` and
 `crops` for slice 4. `draw` is not ported: Qt draws the captions, which also ends the
-ASCII-only caption limit of OpenCV's fonts. Once `labelio` and `overlap` exist, the
-`dataset-analysis` scripts switch to `deeplabeling.core`, so there is one implementation
-([init spec](2026-10-02-project-init.md#skills)).
+ASCII-only caption limit of OpenCV's fonts. The `dataset-analysis` scripts move onto
+`deeplabeling.core` so there is one implementation
+([init spec](2026-10-02-project-init.md#skills)): `overlaps.py` in slice 1, once
+`labelio` and `overlap` exist; `unmatched.py` and `size_cut_sim.py` with slice 4's port
+of the matching code.
 
 ## Docs to update in slice 1
 
@@ -528,6 +536,8 @@ ASCII-only caption limit of OpenCV's fonts. Once `labelio` and `overlap` exist, 
   are found the way training finds them; viewing never marks an image reviewed; a second
   instance is refused; per-dataset state is keyed on the canonical root.
 - [CLAUDE.md](../../CLAUDE.md): the status line.
+- [environment.md](../knowledge/environment.md#python): which interpreter to use when
+  another conda env is active.
 
 ## Later slices
 
