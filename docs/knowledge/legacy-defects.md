@@ -102,12 +102,20 @@ the code.
 | "Mark reviewed" in the crop review lasts one session, so re-running the scan resurfaces everything dismissed that way | SPEC §9 | a review decision is either persisted or visibly temporary |
 | Two instances on one dataset overwrite each other's review marks (and `class_config.json`); the last writer wins | SPEC §9 | shared state files are merged on save, or a second writer is detected |
 | Review marks belong to the yaml that defined the dataset root: two yamls at different depths give two mark files with incompatible keys | SPEC §9 | key per-dataset state on one canonical root |
-| Marking is immediate: paging through the grid marks every page passed, and re-applying a filter marks the image it lands on | SPEC §9 | decide in the app design what counts as reviewed |
+| Marking is immediate: paging through the grid marks every page passed, and re-applying a filter marks the image it lands on | SPEC §9 | only an edit, done & next or mark page marks an image ([app design](../design/2026-10-04-app-foundation.md#review-marks)) |
 | Crop-review prefetch memory is bounded by frame count, not bytes | SPEC §9 | bound caches in bytes |
 | Inference coverage counts the loaded model's rows, which may exceed the filtered set | SPEC §9 | a coverage readout states its denominator |
+| Every label file the legacy app edited became private (mode `0600`): `mkstemp` creates `0600`, and `os.replace` keeps it. Found by reading the code; counted 2026-10-04 with the command below — 1,987 pvn-vehicle label files are `0600`, the rest `0664` | `legacy/yolo_labeling/core/labelio.py::write_label_file` | an atomic write keeps the target's permission bits: `src/deeplabeling/core/atomic.py::write_atomic` |
 
-Scope limits SPEC §9 lists that are choices rather than defects — decide each in the app
-design: editing a polygon turns it into a box; EXIF-rotated images need labels in the
-rotation-applied geometry; image discovery is non-recursive; semantic segmentation is out
-of scope; Find Bad can only check distinctions the model can make
-([datasets.md](datasets.md#prediction-maps-and-class-groups)).
+```sh
+find /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle -name '*.txt' -path '*labels*' -perm 600 | wc -l
+```
+
+Scope limits SPEC §9 lists that are choices rather than defects, as the
+[app design](../design/2026-10-04-app-foundation.md) decided them: a polygon cannot be
+moved or resized, only reclassified or deleted; images are found the way training finds
+them, recursively; viewing an image never marks it reviewed; a second DeepLabeling on the
+same dataset root is refused; per-dataset state is keyed on the canonical root.
+EXIF-rotated images still need labels in the rotation-applied geometry, semantic
+segmentation stays out of scope, and Find Bad can only check distinctions the model can
+make ([datasets.md](datasets.md#prediction-maps-and-class-groups)).

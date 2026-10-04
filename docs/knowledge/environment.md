@@ -7,6 +7,9 @@ installs, and disk space.
 
 - conda base (`/home/sonnn/miniconda3`): Python 3.10.12, PySide6 6.6.0, pytest-qt
   (2026-10-02; check with `python3 --version` and `pip show PySide6 pytest-qt`).
+- A shell can have another conda env active: in the 2026-10-04 session bare `python3` was
+  the `insightface` env, which has no PySide6. Use base's interpreter,
+  `/home/sonnn/miniconda3/bin/python3`, or `conda activate base` first.
 - Nothing of this project is installed into it: `run.sh` sets `PYTHONPATH=src`, and pytest
   takes `pythonpath = ["src"]` from [pyproject.toml](../../pyproject.toml). Never
   `pip install -e .` here.

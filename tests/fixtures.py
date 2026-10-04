@@ -1,0 +1,214 @@
+"""A generated dataset holding every edge case, and the change-detection helpers.
+
+Rewritten from the legacy suite's fixtures (legacy/ is never imported). Nothing
+binary is committed: `build_dataset` writes the whole tree in well under a second.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import subprocess
+import sys
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+import yaml
+from PIL import Image
+
+CAMA_0001 = "0 0.500000 0.500000 0.200000 0.300000\n1 0.250000 0.250000 0.100000 0.100000\n"
+CAMB_0001 = "2 0.750000 0.750000 0.150000 0.150000\n"
+#: Two polygons: 4 points and 5 points.
+POLY1 = (
+    "0 0.10 0.10 0.20 0.10 0.20 0.20 0.10 0.20\n"
+    "1 0.30 0.30 0.45 0.30 0.45 0.50 0.38 0.55 0.30 0.50\n"
+)
+#: A box line, then a polygon line.
+MIXED = "0 0.50 0.50 0.20 0.20\n1 0.60 0.60 0.70 0.60 0.70 0.70 0.60 0.70\n"
+CRLF = "0 0.500000 0.500000 0.200000 0.200000\r\n1 0.300000 0.300000 0.100000 0.100000\r\n"
+#: Two valid boxes beside an image that cannot be decoded.
+BAD_CORRUPT = "0 0.400000 0.400000 0.200000 0.200000\n1 0.600000 0.600000 0.100000 0.100000\n"
+#: Every malformed shape the parser must survive. Lines 5, 6 and 10 (0-based) are
+#: three identical class-0 boxes; the last line has no newline.
+GAUNTLET = (
+    "1 0.5 0.5 0.2 0.2\n"           # 0 valid
+    "99 0.5 0.5 0.1 0.1\n"          # 1 class id past the names
+    "-1 0.5 0.5 0.1 0.1\n"          # 2 negative class id
+    "0 1.4 0.5 0.2 0.2\n"           # 3 cx > 1
+    "0 0.5 0.5\n"                   # 4 too few fields
+    "0 0.5 0.5 0.2 0.2 0.95\n"      # 5 an extra (confidence) column
+    "0 0.5 0.5 0.2 0.2\r\n"         # 6 CRLF
+    "abc 0.5 0.5 0.2 0.2\n"         # 7 non-numeric class
+    "\n"                            # 8 blank
+    "   \n"                         # 9 whitespace only
+    "0 0.5 0.5 0.2 0.2"             # 10 no final newline
+)
+CLASS_NAMES = ["person", "car", "bus_m", "bus_l"]
+GROUPS = {"person": ["person"], "car": ["car"], "bus": ["bus_m", "bus_l"]}
+
+
+def make_image(path: Path, w: int = 64, h: int = 48) -> None:
+    """A small image with two coloured rectangles; the format follows the suffix."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    a = np.full((h, w, 3), 40, np.uint8)
+    cv2.rectangle(a, (w // 8, h // 8), (w // 2, h // 2), (0, 180, 0), -1)
+    cv2.rectangle(a, (w // 2, h // 2), (w - w // 8, h - h // 8), (0, 0, 180), -1)
+    ok, buf = cv2.imencode(".png" if path.suffix.lower() == ".png" else ".jpg", a)
+    assert ok
+    path.write_bytes(buf.tobytes())   # imwrite cannot take a non-ASCII path
+
+
+def make_exif_rotated_image(path: Path, w: int = 64, h: int = 48) -> None:
+    """A JPEG stored w x h with EXIF orientation 6: displayed h x w."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    im = Image.new("RGB", (w, h), (90, 90, 90))
+    exif = im.getexif()
+    exif[274] = 6
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", exif=exif)
+    path.write_bytes(buf.getvalue())
+
+
+def _txt(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(text.encode("utf-8"))
+
+
+def read_exact(path: Path) -> str:
+    """The file's text with every line ending as it is on disk.
+
+    `Path.read_text()` turns CRLF into LF, which would let a byte-identity
+    assertion pass against a file that was in fact rewritten."""
+    return Path(path).read_bytes().decode("utf-8")
+
+
+@dataclass
+class DatasetFixture:
+    root: Path
+
+    @property
+    def yaml(self) -> Path:
+        return self.root / "data.yaml"
+
+    def img(self, rel: str) -> Path:
+        """`img("camA/0001.jpg")` -> `<root>/camA/images/0001.jpg`."""
+        folder, name = rel.split("/", 1)
+        return self.root / folder / "images" / name
+
+    def lbl(self, rel: str) -> Path:
+        """`lbl("camA/0001")` -> `<root>/camA/labels/0001.txt`."""
+        folder, name = rel.split("/", 1)
+        return self.root / folder / "labels" / f"{name}.txt"
+
+    def snapshot(self) -> dict[str, str]:
+        return snapshot(self.root)
+
+
+def build_dataset(root: Path) -> DatasetFixture:
+    """The edge-case dataset. Train: camA, camB, weird. Val: bad, crlf, seg."""
+    root.mkdir(parents=True, exist_ok=True)
+    # camA: ordinary, negative, unlabelled, uppercase, and a subfolder
+    make_image(root / "camA/images/0001.jpg")
+    _txt(root / "camA/labels/0001.txt", CAMA_0001)
+    make_image(root / "camA/images/0002.jpg")
+    _txt(root / "camA/labels/0002.txt", "")
+    make_image(root / "camA/images/0003.jpg")
+    make_image(root / "camA/images/0004.JPG")
+    make_image(root / "camA/images/sub/0005.jpg")
+    _txt(root / "camA/labels/sub/0005.txt", CAMB_0001)
+    # camB: a stem camA also has, EXIF rotation, and two images sharing one label
+    make_image(root / "camB/images/0001.jpg")
+    _txt(root / "camB/labels/0001.txt", CAMB_0001)
+    make_exif_rotated_image(root / "camB/images/rot.jpg")
+    _txt(root / "camB/labels/rot.txt", CAMB_0001)
+    make_image(root / "camB/images/twin.jpg")
+    make_image(root / "camB/images/twin.png")
+    _txt(root / "camB/labels/twin.txt", "0 0.500000 0.500000 0.100000 0.100000\n")
+    # weird: unicode and a space in the stem
+    make_image(root / "weird/images/имя пробел.jpg")
+    _txt(root / "weird/labels/имя пробел.txt", "0 0.500000 0.500000 0.100000 0.100000\n")
+    # val
+    (root / "bad/images").mkdir(parents=True, exist_ok=True)
+    (root / "bad/images/corrupt.jpg").write_bytes(b"this is not an image")
+    _txt(root / "bad/labels/corrupt.txt", BAD_CORRUPT)
+    make_image(root / "bad/images/ok.jpg")
+    _txt(root / "bad/labels/ok.txt", GAUNTLET)
+    make_image(root / "crlf/images/c.jpg")
+    _txt(root / "crlf/labels/c.txt", CRLF)
+    make_image(root / "seg/images/poly1.jpg")
+    _txt(root / "seg/labels/poly1.txt", POLY1)
+    make_image(root / "seg/images/mixed.jpg")
+    _txt(root / "seg/labels/mixed.txt", MIXED)
+    # not listed in the yaml
+    make_image(root / "frames/x0001.jpg")                   # no 'images' in its path
+    _txt(root / "labels_only/labels/ghost.txt", "0 0.5 0.5 0.1 0.1\n")
+    (root / "data.yaml").write_text(yaml.safe_dump({
+        "path": str(root),
+        "train": ["camA/images", "camB/images", "weird/images"],
+        "val": ["bad/images", "crlf/images", "seg/images"],
+        "names": CLASS_NAMES,
+        "groups": GROUPS,
+    }, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return DatasetFixture(root)
+
+
+SRC = Path(__file__).resolve().parents[1] / "src"
+
+_HOLD = """
+import sys, time
+sys.path.insert(0, {src!r})
+from deeplabeling.core.state import DatasetLock
+lock = DatasetLock({directory!r})
+lock.acquire()
+print("held", flush=True)
+time.sleep(60)
+"""
+
+
+@contextmanager
+def held_elsewhere(directory: Path):
+    """Another live process holds the dataset lock in `directory`; yields its pid."""
+    child = subprocess.Popen([sys.executable, "-c", _HOLD.format(src=str(SRC), directory=str(directory))],
+                             stdout=subprocess.PIPE, text=True)
+    try:
+        assert child.stdout.readline().strip() == "held"
+        yield child.pid
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
+
+
+def snapshot(root: Path) -> dict[str, str]:
+    """Every .txt under `root` -> the sha256 of its bytes. A missing file is absent."""
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(Path(root).rglob("*.txt"))}
+
+
+def diff_snapshots(before: dict[str, str], after: dict[str, str]) -> dict[str, str]:
+    """{relative path: 'added' | 'removed' | 'modified'} for everything that moved."""
+    changed = {}
+    for k in before.keys() | after.keys():
+        if k not in after:
+            changed[k] = "removed"
+        elif k not in before:
+            changed[k] = "added"
+        elif before[k] != after[k]:
+            changed[k] = "modified"
+    return changed
+
+
+def assert_only_changed(before: dict[str, str], after: dict[str, str], expected: set[str]) -> None:
+    """Exactly `expected` label files changed; pass set() to assert nothing was written."""
+    changed = diff_snapshots(before, after)
+    unexpected = {k: v for k, v in changed.items() if k not in expected}
+    missing = expected - changed.keys()
+    problems = []
+    if unexpected:
+        problems.append(f"unexpectedly changed: {unexpected}")
+    if missing:
+        problems.append(f"expected to change but did not: {sorted(missing)}")
+    assert not problems, "; ".join(problems)

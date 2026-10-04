@@ -28,8 +28,9 @@ One object per line, whitespace-separated, coordinates normalised to [0, 1].
   (`legacy/yolo_labeling/core/labelio.py::LabelLine.with_bbox`).
 
 **Rule:** polygons, extra columns and unparsable lines survive every round trip. Show a
-polygon by its extent; never write the extent in its place unless the user edited that
-polygon's geometry (whether DeepLabeling edits polygons is the app design's call).
+polygon by its extent and never write the extent in its place: DeepLabeling refuses to
+move or resize a polygon
+([app design](../design/2026-10-04-app-foundation.md#lines-the-editor-cannot-change)).
 
 ## Byte-preserving round trips
 
@@ -49,9 +50,12 @@ change, not in a bulk edit.
 
 ## Reading
 
-- Read bytes and decode (`utf-8`, `errors="replace"`), then split with
+- Read bytes and decode with `surrogateescape`, then split with
   `splitlines(keepends=True)` so each line keeps its own terminator:
-  `legacy/yolo_labeling/core/labelio.py::read_label_file`.
+  `src/deeplabeling/core/labelio.py::parse_label_bytes`. With `surrogateescape` the round
+  trip is exact for any bytes; the legacy reader's `errors="replace"`
+  (`legacy/yolo_labeling/core/labelio.py::read_label_file`) turned a byte that is not
+  UTF-8 into U+FFFD, which the next write then kept.
 - Never read a file you will write back with text-mode `readlines()` or `read_text()`:
   universal-newline translation destroys CRLF on **every** line of the file, not just the
   edited one.
@@ -67,6 +71,13 @@ empty one ([why](#empty-file-is-a-negative-sample)).
   original untouched. A crash leaves the old file or the new one, never a truncated one:
   `legacy/yolo_labeling/core/labelio.py::write_label_file`. It opens with `newline=""`, so
   terminators pass through untranslated.
+- **Permissions kept.** The replacement keeps the target's permission bits, and a new
+  file gets `0o666` less the umask: `src/deeplabeling/core/atomic.py::write_atomic`. A
+  bare `mkstemp` creates `0600`, as the legacy writer's did
+  ([legacy-defects.md](legacy-defects.md#not-fixed-in-the-legacy-app)).
+- **Line endings.** A re-serialised line keeps a CRLF ending, and an appended line uses
+  the file's last line ending (`src/deeplabeling/core/edits.py::materialize`), so a CRLF
+  file stays CRLF.
 - **Trailing newline.** Every line the writer emits ends with a newline, or the next line
   appended later runs into it. A dirty line always gets `\n`; a spliced class change adds
   one to a last line that had none. An untouched last line without a terminator stays
@@ -119,13 +130,20 @@ line is gone or ambiguous.
 
 ## One path resolver
 
-- One resolver maps an image to its label file, and reading and writing use the same one:
-  `legacy/yolo_labeling/core/paths.py::LabelPathResolver`. Order:
-  1. an explicit label folder;
-  2. the longest matching per-folder mapping from `data.yaml`;
-  3. convention: `…/images/x.jpg` pairs with `…/labels/x.txt`; otherwise a `labels`
-     directory beside or above the image, preferring one that exists.
-- Prefix matching respects path boundaries
+- One rule maps an image to its label file, and reading and writing use the same one.
+  DeepLabeling's is training's own (ultralytics' `img2label_paths`): the last `images`
+  folder in the path becomes `labels` and the extension `.txt`, which leaves the `.txt`
+  beside an image with no `images` folder in its path:
+  `src/deeplabeling/core/paths.py::training_label_path`.
+  A folder launch with an explicit label folder mirrors the image folder's subfolders
+  (`src/deeplabeling/core/paths.py::folder_label_path`); a folder launch with neither is
+  refused, never guessed
+  ([app design](../design/2026-10-04-app-foundation.md#dataset)).
+- The legacy resolver (`legacy/yolo_labeling/core/paths.py::LabelPathResolver`) tried an
+  explicit folder, then the longest yaml folder mapping, then convention with fallbacks.
+  On pvn-vehicle it agrees with training's rule for every image (measured 2026-10-04;
+  the command is in the [app design](../design/2026-10-04-app-foundation.md#dataset)).
+- In the legacy resolver, prefix matching respects path boundaries
   (`legacy/yolo_labeling/core/paths.py::is_within`), and the most specific (longest)
   mapping wins, not dict order.
 - Why one: when reading and writing resolve differently — with images in a folder not

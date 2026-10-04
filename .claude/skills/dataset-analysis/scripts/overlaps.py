@@ -3,7 +3,8 @@
 
 IoU is computed on normalised coordinates, which is exact: IoU does not change
 under independent x/y scaling, so no image sizes are needed. A pair counts when
-its IoU is inside [--min, --max] (inclusive) and above zero.
+its IoU is inside [--min, --max] (inclusive) and above zero. The parsing and the
+overlap predicate are deeplabeling.core's, so this script agrees with the app.
 
   python3 overlaps.py /path/to/dataset --min 0.99 --max 1 --scope same
 """
@@ -11,38 +12,20 @@ its IoU is inside [--min, --max] (inclusive) and above zero.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-SCOPES = ("same", "different", "any")
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-
-def iou(a, b):
-    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
-    inter = ix * iy
-    if inter <= 0.0:
-        return 0.0
-    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-    return inter / union if union > 0 else 0.0
+from deeplabeling.core.geometry import iou  # noqa: E402
+from deeplabeling.core.labelio import parse_label_bytes  # noqa: E402
+from deeplabeling.core.overlap import SCOPES, iou_in_range, pair_counts  # noqa: E402
 
 
 def boxes(label_file: Path):
-    out = []
-    for line in label_file.read_text(errors="replace").splitlines():
-        t = line.split()
-        if len(t) < 5:
-            continue
-        try:
-            cls = int(float(t[0]))
-            cx, cy, w, h = map(float, t[1:5])
-        except ValueError:
-            continue
-        out.append((cls, (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)))
-    return out
-
-
-def counts(scope, a, b):
-    return {"same": a == b, "different": a != b, "any": True}[scope]
+    """(class, normalised box) for every parsed line; a polygon by its extent."""
+    return [(line.cls_id, line.bbox)
+            for line in parse_label_bytes(label_file.read_bytes()) if line.parsed]
 
 
 def scan(root: Path, lo: float, hi: float, scope: str):
@@ -53,8 +36,8 @@ def scan(root: Path, lo: float, hi: float, scope: str):
             continue
         bs = boxes(lf)
         qualifying = [v for i, p in enumerate(bs) for q in bs[i + 1:]
-                      if counts(scope, p[0], q[0])
-                      for v in [iou(p[1], q[1])] if v > 0.0 and lo <= v <= hi]
+                      if pair_counts(scope, p[0], q[0])
+                      for v in [iou(p[1], q[1])] if iou_in_range(v, lo, hi)]
         if qualifying:
             hits.append((max(qualifying), lf))
     return sorted(hits, key=lambda h: (-h[0], str(h[1])))

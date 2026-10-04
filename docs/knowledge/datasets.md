@@ -28,10 +28,18 @@ The yamls are in `/home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/`.
 - **Group order defines the merged model's class ids**: model class *i* is the *i*-th group
   (BSD=0 … truck=6). In `data_UK_new.yaml`, `LPUK` is the third group, so a merged UK
   model's ids differ from the 7-class model's from `bus` on.
+- **`data_7class.yaml` and `data_13class.yaml` read the same label files**: they list the
+  same train and val folders, so whether the ids on disk are 7-class or 13-class depends on
+  which labels the [transfer tools](#label-transfer-tools) last put there, not on the yaml.
+  Under the wrong yaml, a 13-class file shows ids ≥ 7 that the 7 names do not cover, but a
+  7-class file under the 13-class yaml is all in range and simply shows the wrong names.
+  All three yamls resolve to the same dataset root. Checked 2026-10-04:
 
 ```sh
 python3 -c "import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); print(d['names']); print(list(d.get('groups') or {}))" \
     /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_13class.yaml
+python3 -c "import sys, yaml; a, b = (yaml.safe_load(open(p)) for p in sys.argv[1:]); print(a['train'] == b['train'], a['val'] == b['val'])" \
+    /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_{13,7}class.yaml
 ```
 
 ### data_UK

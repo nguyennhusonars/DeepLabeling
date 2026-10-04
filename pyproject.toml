@@ -23,7 +23,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 norecursedirs = ["legacy", ".remember", ".git", ".deeplabeling"]
 qt_api = "pyside6"
 addopts = "-q"

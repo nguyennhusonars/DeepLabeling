@@ -52,6 +52,14 @@ def test_non_overlapping_boxes_never_count_even_from_zero(labelled):
     assert "apart.txt" not in names(load("overlaps").scan(labelled, 0.0, 1.0, "any"))
 
 
+def test_polygons_are_compared_by_their_extent(tmp_path):
+    labels = tmp_path / "ds" / "labels"
+    labels.mkdir(parents=True)
+    # a square polygon 0.1..0.3 and the box with exactly that extent
+    (labels / "poly.txt").write_text("0 0.1 0.1 0.3 0.1 0.3 0.3 0.1 0.3\n0 0.2 0.2 0.2 0.2\n")
+    assert names(load("overlaps").scan(tmp_path / "ds", 0.99, 1.0, "same")) == ["poly.txt"]
+
+
 # -- unmatched.py ----------------------------------------------------------
 
 @pytest.fixture
