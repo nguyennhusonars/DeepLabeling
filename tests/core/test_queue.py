@@ -238,3 +238,9 @@ def test_duplicate_items_are_ignored(dataset):
     q.extend(all_items(dataset)[:2])
     q.extend(all_items(dataset)[:2])
     assert len(q) == 2
+
+
+def test_index_of_finds_a_row_by_key(dataset):
+    q = Queue(ImageFilter())
+    q.extend(all_items(dataset)[:3])
+    assert q.index_of(dataset.images[2].rel) == 2 and q.index_of("nope") is None

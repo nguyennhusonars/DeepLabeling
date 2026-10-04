@@ -266,6 +266,10 @@ class Queue:
     def position(self) -> int | None:
         return self._pos[self.cursor] if self.cursor is not None else None
 
+    def index_of(self, key: str) -> int | None:
+        """The row of the item with this key, or None when it is not in the queue."""
+        return self._pos.get(key)
+
     def move(self, delta: int) -> bool:
         """Step through the queue; False, and no move, at either end."""
         if self.cursor is None:
