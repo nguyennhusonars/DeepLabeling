@@ -1,6 +1,6 @@
 # DeepLabeling — app foundation and slice 1 (the editor)
 
-**Status:** approved 2026-10-04 · slice 1a (the core) implemented; the amendments found while planning it are folded in
+**Status:** approved 2026-10-04 · slices 1a (the core) and 1b (the viewer) implemented; the amendments found while building them are folded in; 1c (editing) next
 **Scope:** the architecture every feature sits on, and **slice 1**: open a dataset, work
 through a queue of images, and fix their boxes. Later slices get their own spec, plan and
 build; [Later slices](#later-slices) records what each starts from.
@@ -76,11 +76,16 @@ src/deeplabeling/
     taxonomy.py         the taxonomy guard's checks
     workspace.py        Workspace.open: the one funnel every launch path goes through
   ui/
-    main_window.py      the layout; wires the parts together
-    store_bridge.py     a QObject around LabelStore + History that emits signals
-    state_bar.py  queue_panel.py  canvas.py  inspector.py  notices.py
+    session.py          the GUI thread's hold on one dataset: workspace, queue, jobs, actions;
+                        the only object the widgets talk to (it is the "store bridge")
+    main_window.py      layout A; wires the parts together
+    state_bar.py  queue_panel.py  canvas.py  inspector.py  notices.py  queue_editor.py
+    boxes.py  classes.py  what the canvas draws, computed without Qt; class colours, hotkeys
+    images.py           decoding on workers into a byte-bounded cache
     keymap.py           the action registry: id, default key, description
-    workers.py          QThreadPool jobs; results by queued signal
+    workers.py          QThreadPool jobs; results by queued signal through a relay
+    settings_ui.py      global settings, the debounced saver, binding widgets to settings
+    prompter.py         the real dialogs (tests answer the same calls with FakePrompter)
 ```
 
 **One owner** ([landmine 2](../../CLAUDE.md#landmines)). Only `LabelStore` turns a label

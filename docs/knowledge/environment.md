@@ -25,6 +25,12 @@ installs, and disk space.
   against NumPy 1.x, and base has NumPy 2.2.6.
 - Verified 2026-10-02: exit codes are unaffected so far. NumPy↔Qt conversions are where a
   crash would show. Upgrading PySide6 is the app design's call.
+- PySide6 6.6.0 never releases a lambda, `functools.partial` or closure connected to a
+  signal, even after the sender is destroyed; a bound method of a `QObject` receiver goes
+  with its receiver (checked 2026-10-04). A slot connected per job or per event must be a
+  method, or whatever it captures leaks for good — before the fix, a whole workspace per
+  dataset switch. The pattern is `src/deeplabeling/ui/workers.py::_Relay`, pinned by
+  `tests/ui/test_workers.py::test_finished_jobs_and_what_they_captured_are_freed`.
 
 ## Which ultralytics gets imported
 
