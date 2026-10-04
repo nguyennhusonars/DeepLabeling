@@ -88,3 +88,5 @@ python3 -c "import cv2; print(cv2.__version__, cv2.__file__)"
   `df -h /home/sonnn/Documents/PGit`.
 - Hence the disk [landmine](../../CLAUDE.md#landmines): datasets and prediction caches are
   read in place, never copied.
+- `/tmp` is tmpfs (`df -hT /tmp`), where `fsync` costs nothing: time a file write on the
+  home filesystem instead. `tools/measure_ui.py` writes its timed edits under `~/.cache`.

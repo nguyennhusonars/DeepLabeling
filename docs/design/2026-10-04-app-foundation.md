@@ -461,17 +461,28 @@ launch directory. `DEEPLABELING_STATE_DIR` overrides it, and the tests always se
 
 ## Performance targets
 
-To be measured on `data_13class.yaml`, on this machine, during the slice 1 build. A missed
+Measured on `data_13class.yaml`, on this machine, during the slice 1 build. A missed
 target is recorded with its measured value, not quietly dropped.
 
-| Action | Target |
-|---|---|
-| launch to the first image shown | ≤ 3 s |
-| next image, prefetched 1920×1080 JPEG | ≤ 100 ms |
-| next image, not prefetched 4096×2336 | ≤ 300 ms |
-| one edit applied and written | ≤ 20 ms |
-| an *all images* queue: first items / complete | ≤ 1 s / ≤ 3 s |
-| a class condition over 45k label files, cold / warm cache | ≤ 30 s / ≤ 5 s, streaming |
+| Action | Target | Measured 2026-10-04 |
+|---|---|---|
+| launch to the first image shown | ≤ 3 s | 1.13 s |
+| next image, prefetched 1920×1080 JPEG | ≤ 100 ms | 2 ms, the worst of 10 |
+| next image, not prefetched 4096×2336 | ≤ 300 ms | 46 ms, a frame at least 4000 px wide |
+| one edit applied and written | ≤ 20 ms | 2 ms, the worst of 50 (ext4 on NVMe) |
+| an *all images* queue: first items / complete | ≤ 1 s / ≤ 3 s | 109 ms / 272 ms |
+| a class condition over 45k label files, cold / warm cache | ≤ 30 s / ≤ 5 s, streaming | 4.4 s / 0.69 s |
+
+- "Cold" is the first pass after opening, while the open-time count of unnamed class ids
+  reads every label file too; the OS page cache was warm.
+- Before two fixes in plan 1b, launch took 7.4 s and the all-images queue 3.9 s: the queue
+  list scrolled to the cursor on every batch of a building queue, re-laying out every row
+  so far, and the state bar recounted the whole queue per batch.
+- Reproduce, read-only (app state goes to a temporary folder):
+
+```sh
+/home/sonnn/miniconda3/bin/python3 tools/measure_ui.py /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_13class.yaml --class bus_l
+```
 
 ## Testing
 
