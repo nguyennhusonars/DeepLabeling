@@ -25,6 +25,12 @@ installs, and disk space.
   against NumPy 1.x, and base has NumPy 2.2.6.
 - Verified 2026-10-02: exit codes are unaffected so far. NumPy↔Qt conversions are where a
   crash would show. Upgrading PySide6 is the app design's call.
+- PySide6 6.6.0 never releases a lambda, `functools.partial` or closure connected to a
+  signal, even after the sender is destroyed; a bound method of a `QObject` receiver goes
+  with its receiver (checked 2026-10-04). A slot connected per job or per event must be a
+  method, or whatever it captures leaks for good — before the fix, a whole workspace per
+  dataset switch. The pattern is `src/deeplabeling/ui/workers.py::_Relay`, pinned by
+  `tests/ui/test_workers.py::test_finished_jobs_and_what_they_captured_are_freed`.
 
 ## Which ultralytics gets imported
 
@@ -88,3 +94,5 @@ python3 -c "import cv2; print(cv2.__version__, cv2.__file__)"
   `df -h /home/sonnn/Documents/PGit`.
 - Hence the disk [landmine](../../CLAUDE.md#landmines): datasets and prediction caches are
   read in place, never copied.
+- `/tmp` is tmpfs (`df -hT /tmp`), where `fsync` costs nothing: time a file write on the
+  home filesystem instead. `tools/measure_ui.py` writes its timed edits under `~/.cache`.

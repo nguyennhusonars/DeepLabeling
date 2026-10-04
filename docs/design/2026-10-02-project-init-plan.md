@@ -55,7 +55,7 @@
 - Create: `pyproject.toml`, `.gitignore`, `run.sh`, `src/deeplabeling/__init__.py`, `src/deeplabeling/__main__.py`, `tests/conftest.py`, `tests/test_smoke.py`
 
 **Interfaces:**
-- Produces: `src/deeplabeling/__main__.py::build_window` → `QMainWindow` titled "DeepLabeling"; `src/deeplabeling/__main__.py::main` → `int` exit code.
+- Produces: `build_window()` in `src/deeplabeling/__main__.py` → `QMainWindow` titled "DeepLabeling" (plan 1b replaced it with `src/deeplabeling/__main__.py::launch`); `src/deeplabeling/__main__.py::main` → `int` exit code.
 
 - [ ] **Step 1: Initialise git and install pytest-qt**
 

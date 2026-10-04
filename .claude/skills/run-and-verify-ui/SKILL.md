@@ -22,3 +22,21 @@ Read [CLAUDE.md](../../../CLAUDE.md) first — the landmines are there and are n
   around it.
 - **Evidence for a UI fix is a screenshot or a geometry assertion.** Reporting a UI
   change as working without one of these is not verification — it is a guess.
+
+Lessons from building the viewer (plan 1b):
+
+- **Window shortcuts need the active window.** `with qtbot.waitActive(window): window.show();
+  window.activateWindow()` before `qtbot.keyClick`. A synthetic `?` is `Qt.Key_Question`
+  with no modifier; a real keyboard reports both forms, a synthetic event only the one sent.
+- **`qtbot.waitUntil` wants a bool**: `lambda: bool(items)`, not `lambda: items`.
+- **Hold the parent.** A host widget only handed to `qtbot.addWidget` was collected with its
+  children mid-test; keep it alive in the fixture (`yield` inside it).
+- **A child added to a visible layout is shown on a later event.** Call its `show()`, or
+  wait for `isVisible()`, before asserting on it.
+- **Read pixels near a line, not on it.** A 2 px cosmetic line on a pixel boundary is
+  antialiased across two pixels: sample a small neighbourhood
+  (`tests/ui/test_canvas.py::near`).
+- **Never name a widget attribute after a QWidget method.** `self.size = QLabel()` broke
+  `widget.size()` for everything that measured the widget.
+- **A slow UI is profiled, not guessed.** `cProfile` around the action; work done per batch
+  in a slot on a growing queue was the culprit last time (see the spec's performance table).

@@ -1,6 +1,6 @@
 # DeepLabeling — app foundation and slice 1 (the editor)
 
-**Status:** approved 2026-10-04 · slice 1a (the core) implemented; the amendments found while planning it are folded in
+**Status:** approved 2026-10-04 · slices 1a (the core) and 1b (the viewer) implemented; the amendments found while building them are folded in; 1c (editing) next
 **Scope:** the architecture every feature sits on, and **slice 1**: open a dataset, work
 through a queue of images, and fix their boxes. Later slices get their own spec, plan and
 build; [Later slices](#later-slices) records what each starts from.
@@ -76,11 +76,16 @@ src/deeplabeling/
     taxonomy.py         the taxonomy guard's checks
     workspace.py        Workspace.open: the one funnel every launch path goes through
   ui/
-    main_window.py      the layout; wires the parts together
-    store_bridge.py     a QObject around LabelStore + History that emits signals
-    state_bar.py  queue_panel.py  canvas.py  inspector.py  notices.py
+    session.py          the GUI thread's hold on one dataset: workspace, queue, jobs, actions;
+                        the only object the widgets talk to (it is the "store bridge")
+    main_window.py      layout A; wires the parts together
+    state_bar.py  queue_panel.py  canvas.py  inspector.py  notices.py  queue_editor.py
+    boxes.py  classes.py  what the canvas draws, computed without Qt; class colours, hotkeys
+    images.py           decoding on workers into a byte-bounded cache
     keymap.py           the action registry: id, default key, description
-    workers.py          QThreadPool jobs; results by queued signal
+    workers.py          QThreadPool jobs; results by queued signal through a relay
+    settings_ui.py      global settings, the debounced saver, binding widgets to settings
+    prompter.py         the real dialogs (tests answer the same calls with FakePrompter)
 ```
 
 **One owner** ([landmine 2](../../CLAUDE.md#landmines)). Only `LabelStore` turns a label
@@ -461,17 +466,28 @@ launch directory. `DEEPLABELING_STATE_DIR` overrides it, and the tests always se
 
 ## Performance targets
 
-To be measured on `data_13class.yaml`, on this machine, during the slice 1 build. A missed
+Measured on `data_13class.yaml`, on this machine, during the slice 1 build. A missed
 target is recorded with its measured value, not quietly dropped.
 
-| Action | Target |
-|---|---|
-| launch to the first image shown | ≤ 3 s |
-| next image, prefetched 1920×1080 JPEG | ≤ 100 ms |
-| next image, not prefetched 4096×2336 | ≤ 300 ms |
-| one edit applied and written | ≤ 20 ms |
-| an *all images* queue: first items / complete | ≤ 1 s / ≤ 3 s |
-| a class condition over 45k label files, cold / warm cache | ≤ 30 s / ≤ 5 s, streaming |
+| Action | Target | Measured 2026-10-04 |
+|---|---|---|
+| launch to the first image shown | ≤ 3 s | 1.13 s |
+| next image, prefetched 1920×1080 JPEG | ≤ 100 ms | 2 ms, the worst of 10 |
+| next image, not prefetched 4096×2336 | ≤ 300 ms | 46 ms, a frame at least 4000 px wide |
+| one edit applied and written | ≤ 20 ms | 2 ms, the worst of 50 (ext4 on NVMe) |
+| an *all images* queue: first items / complete | ≤ 1 s / ≤ 3 s | 109 ms / 272 ms |
+| a class condition over 45k label files, cold / warm cache | ≤ 30 s / ≤ 5 s, streaming | 4.4 s / 0.69 s |
+
+- "Cold" is the first pass after opening, while the open-time count of unnamed class ids
+  reads every label file too; the OS page cache was warm.
+- Before two fixes in plan 1b, launch took 7.4 s and the all-images queue 3.9 s: the queue
+  list scrolled to the cursor on every batch of a building queue, re-laying out every row
+  so far, and the state bar recounted the whole queue per batch.
+- Reproduce, read-only (app state goes to a temporary folder):
+
+```sh
+/home/sonnn/miniconda3/bin/python3 tools/measure_ui.py /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_13class.yaml --class bus_l
+```
 
 ## Testing
 

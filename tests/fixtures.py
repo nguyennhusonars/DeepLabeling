@@ -212,3 +212,46 @@ def assert_only_changed(before: dict[str, str], after: dict[str, str], expected:
     if missing:
         problems.append(f"expected to change but did not: {sorted(missing)}")
     assert not problems, "; ".join(problems)
+
+
+class FakePrompter:
+    """Answers the UI's dialogs from preset values and records what was asked."""
+
+    def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None):
+        self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
+        self.folders = list(folders)
+        self.errors: list[tuple[str, str]] = []
+        self.asked: list[tuple] = []
+
+    def confirm_taxonomy(self, *args):
+        self.asked.append(("taxonomy",) + args)
+        return self.taxonomy
+
+    def error(self, title, text):
+        self.errors.append((title, text))
+
+    def choose_yaml(self):
+        self.asked.append(("yaml",))
+        return None if self.yaml is None else str(self.yaml)
+
+    def choose_folder(self, title):
+        self.asked.append(("folder", title))
+        return str(self.folders.pop(0)) if self.folders else None
+
+    def edit_queue(self, dataset, current):
+        self.asked.append(("queue", current))
+        return self.queue
+
+    def ask_text(self, title, label):
+        self.asked.append(("text", title))
+        return self.text
+
+
+def open_session(qtbot, source, prompter=None, **kw):
+    """A Session with `source` open and its first queue fully built."""
+    from deeplabeling.ui.session import Session
+
+    s = Session(prompter or FakePrompter())
+    with qtbot.waitSignal(s.queueDone, timeout=5000):
+        assert s.open(source, **kw)
+    return s

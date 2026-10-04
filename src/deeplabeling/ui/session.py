@@ -1,0 +1,429 @@
+"""The GUI thread's hold on one open dataset: the workspace, its queue, the jobs that
+feed them, and every action that changes labels or review marks
+(docs/design/2026-10-04-app-foundation.md).
+
+Widgets read from the session and call its methods; they never reach into the core's
+store, editor or files. Dialogs go through a Prompter, so tests answer them without a
+modal event loop. The session is created, and opens datasets, on the GUI thread, which
+therefore owns the LabelStore's write path (spec: Notes for plan 1b).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol
+
+from PySide6.QtCore import QObject, QTimer, Signal
+
+from ..core.dataset import DatasetError, ImageEntry
+from ..core.edits import CreateEmpty, Edit, Intent, Refused
+from ..core.queue import BuildContext, ImageFilter, Queue, QueueItem
+from ..core.state import Locked
+from ..core.store import ImageLabels, LabelState
+from ..core.taxonomy import count_out_of_range
+from ..core.workspace import QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
+from .images import ImageCache
+from .settings_ui import Saver, global_settings, remember_source
+from .workers import Jobs
+
+#: The key of the standing notice about ids the yaml does not name.
+OUT_OF_RANGE = "out-of-range"
+#: How often the image on screen has its label file re-checked for outside changes.
+WATCH_MS = 1500
+
+
+class Prompter(Protocol):
+    """The dialogs the session needs. The window's prompter adds the ones it needs."""
+
+    def confirm_taxonomy(self, last_source: str, last_names: list[str],
+                         source: str, names: tuple[str, ...]) -> bool: ...
+
+    def error(self, title: str, text: str) -> None: ...
+
+
+class Session(QObject):
+    opened = Signal()
+    closed = Signal()
+    labelsChanged = Signal(object)      # tuple[Path, ...]: images whose label file changed
+    historyChanged = Signal()
+    reviewChanged = Signal()
+    queueReset = Signal()               # a new queue replaced the old one
+    queueGrew = Signal()                # items were appended to the queue
+    queueDone = Signal()                # the queue finished building
+    itemsChanged = Signal(object)       # list[str]: keys whose badge or tick may differ
+    cursorChanged = Signal()
+    notice = Signal(str, str, object)   # level, text, image Path or None
+    standing = Signal(str, str)         # key, text: a notice that stays; "" removes it
+    status = Signal(str)                # a passing message for the status bar
+    _reloaded = Signal(object)          # emitted from any thread, delivered queued
+
+    def __init__(self, prompter: Prompter, parent=None):
+        super().__init__(parent)
+        self.prompter = prompter
+        self.settings_file, self.settings = global_settings()
+        self.workspace: Workspace | None = None
+        self.queue: Queue | None = None
+        self.io = Jobs(2)
+        self.images = ImageCache(Jobs(2), parent=self)
+        self.saver = Saver(self._save, parent=self)
+        self._build = None
+        self._by_rel: dict[str, ImageEntry] = {}
+        self._follow: ImageEntry | None = None      # where a rebuilding queue must land
+        self._seen: tuple | None = None             # (image, raw, state) last reported on screen
+        self._keys: frozenset[str] | None = None    # review marks, snapshotted until they change
+        self._reloaded.connect(lambda image: self.labelsChanged.emit((image,)))
+        self.labelsChanged.connect(self._recheck)
+        # The store notices an outside edit when its file is next read; reading the one on
+        # screen now and then (a stat, unless it changed) makes it appear without a click.
+        self._watch = QTimer(self)
+        self._watch.setInterval(WATCH_MS)
+        self._watch.timeout.connect(self.check_current)
+        self._watch.start()
+
+    # -- opening and closing -----------------------------------------------
+
+    def open(self, source, labels=None) -> bool:
+        """Open a dataset, closing the current one first (a root opens once). If the new
+        one cannot be opened, the previous one is reopened."""
+        previous = self.current_source()
+        self.close()
+        if self._open(source, labels, quiet=False):
+            return True
+        if previous is not None:
+            self._open(*previous, quiet=True)
+        return False
+
+    def current_source(self) -> tuple[str, str | None] | None:
+        if self.workspace is None:
+            return None
+        dataset = self.workspace.dataset
+        return str(dataset.source), str(dataset.labels) if dataset.labels else None
+
+    def _open(self, source, labels, *, quiet: bool) -> bool:
+        try:
+            ws = Workspace.open(source, labels, confirm_taxonomy=self.prompter.confirm_taxonomy,
+                                on_labels_changed=self.labelsChanged.emit,
+                                on_history_changed=self.historyChanged.emit,
+                                on_reload=self._reloaded.emit)
+        except OpenCancelled:
+            return False
+        except (DatasetError, Locked, OSError) as e:
+            if not quiet:
+                self.prompter.error("Cannot open the dataset", str(e))
+            return False
+        self.workspace = ws
+        self._by_rel = {e.rel: e for e in ws.dataset.images}
+        self._follow = self._seen = self._keys = None
+        remember_source(self.settings, *self.current_source())
+        self.saver.schedule()
+        self.opened.emit()
+        for warning in ws.warnings:
+            self.notice.emit("warning", warning, None)
+        if ws.dataset.missing:
+            listed = ", ".join(str(p) for p in ws.dataset.missing)
+            self.notice.emit("warning", f"listed in {ws.dataset.source.name} but missing: {listed}", None)
+        self._count_out_of_range()
+        self._restore_queue()
+        return True
+
+    def close(self) -> None:
+        ws = self.workspace
+        if ws is None:
+            return
+        self.io.cancel_all()
+        self.images.clear()
+        self.io.wait(2000)
+        self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
+        self._follow = self._seen = self._keys = None
+        try:
+            ws.close()
+        except OSError as e:
+            self.prompter.error("Could not save the review marks", str(e))
+        self._save()
+        self.closed.emit()
+        self.standing.emit(OUT_OF_RANGE, "")
+
+    def _save(self) -> None:
+        try:
+            if self.workspace is not None:
+                self.workspace.save()
+            self.settings_file.save()
+        except OSError as e:
+            self.notice.emit("error", f"could not save settings: {e}", None)
+
+    def _require(self) -> Workspace:
+        if self.workspace is None:
+            raise RuntimeError("no dataset is open")
+        return self.workspace
+
+    # -- the queue -----------------------------------------------------------
+
+    def _restore_queue(self) -> None:
+        opening = self._require().opening_settings
+        try:
+            stored = opening.get(QUEUE_SOURCE)
+            source = ImageFilter.from_json(stored) if stored else ImageFilter()
+        except ValueError:
+            source = ImageFilter()
+        cursor = opening.get(QUEUE_CURSOR)
+        self.set_queue(source, follow=self._by_rel.get(cursor) if cursor else None)
+
+    def set_queue(self, source: ImageFilter, follow: ImageEntry | None = None) -> None:
+        """Rebuild the queue from `source`, keeping the cursor on its image if it is still in."""
+        ws = self._require()
+        if self._build is not None:
+            self._build.cancel()
+        if follow is None:
+            # A rebuild that has not yet reached the user's place still owes it: follow
+            # that, not the item the unfinished queue happens to show.
+            follow = self._follow or (self.current().entry if self.current() is not None else None)
+        self._follow = follow
+        queue = self.queue = Queue(source, follow=follow)
+        ws.opening_settings.set(QUEUE_SOURCE, source.to_json())
+        self.saver.schedule()
+        self.queueReset.emit()
+        self.cursorChanged.emit()
+        ctx = self.context()
+        self._build = self.io.start(
+            lambda emit, cancelled: source.build(ctx, emit, cancelled),
+            batch=lambda items: self._grew(queue, items),
+            done=lambda finished: self._built(queue, finished),
+            failed=lambda why: self.notice.emit("error", f"building the queue failed: {why}", None))
+
+    def context(self) -> BuildContext:
+        """The inputs of a build or a recheck. The review marks are snapshotted once and
+        reused until they change: an import underneath the app reports thousands of
+        changed files, and a fresh snapshot each time froze the GUI for seconds."""
+        ws = self._require()
+        if self._keys is None:
+            self._keys = ws.review.keys()
+        return BuildContext(ws.dataset, ws.store, self._keys)
+
+    def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
+        if queue is not self.queue:
+            return                                  # a cancelled build's last batch
+        before = queue.cursor
+        queue.extend(items)
+        if self._follow is not None and queue.cursor == self._follow.rel:
+            self._follow = None                     # the user's place has arrived
+        self.queueGrew.emit()
+        if queue.cursor != before:
+            self._cursor_moved()
+
+    def _built(self, queue: Queue, finished: bool) -> None:
+        if queue is not self.queue or not finished:
+            return
+        before = queue.cursor
+        queue.finish()
+        self._follow = None                         # finish() settled the place
+        self.queueDone.emit()
+        if queue.cursor != before:
+            self._cursor_moved()
+
+    def current(self) -> QueueItem | None:
+        return self.queue.current() if self.queue is not None else None
+
+    def move(self, delta: int) -> bool:
+        if self.queue is not None and len(self.queue):
+            self._follow = None                     # the user chose a place
+        if self.queue is None or not self.queue.move(delta):
+            if self.queue is not None and len(self.queue):
+                self.status.emit("the end of the queue" if delta > 0 else "the start of the queue")
+            return False
+        self._cursor_moved()
+        return True
+
+    def go_to(self, key: str) -> bool:
+        if self.queue is None or not self.queue.go_to(key):
+            return False
+        self._follow = None                         # the user chose a place
+        self._cursor_moved()
+        return True
+
+    def go_to_text(self, text: str) -> bool:
+        """Go to an item by its 1-based number, or the first whose path contains the text."""
+        if self.queue is None or not text.strip():
+            return False
+        text = text.strip()
+        if text.isdigit() and 1 <= int(text) <= len(self.queue):
+            return self.go_to(self.queue.items[int(text) - 1].key)
+        match = next((it.key for it in self.queue.items if text.lower() in it.key.lower()), None)
+        if match is None:
+            self.status.emit(f"no item matches “{text}”")
+            return False
+        return self.go_to(match)
+
+    def _cursor_moved(self) -> None:
+        item = self.current()
+        if item is not None and self.workspace is not None:
+            if self._follow is None:                # never save a place the rebuild passes through
+                self.workspace.opening_settings.set(QUEUE_CURSOR, item.key)
+                self.saver.schedule()
+            self.workspace.store.pin(item.entry.path)
+            labels = self.workspace.store.get(item.entry.path)
+            self._seen = (item.entry.path, labels.raw, labels.state)
+            i, items = self.queue.position(), self.queue.items
+            self.images.keep([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
+                              if 0 <= j < len(items)])
+        self.cursorChanged.emit()
+
+    def check_current(self) -> None:
+        """Re-read the current image's label file, and report any change as labelsChanged.
+
+        The store reports a reload only when it replaces a cached copy; a file that was
+        missing (never cached) and now exists is caught here, against what was last shown.
+        """
+        item = self.current()
+        if item is None or self.workspace is None:
+            return
+        labels = self.workspace.store.get(item.entry.path)      # may report a reload itself
+        seen = (item.entry.path, labels.raw, labels.state)
+        if self._seen is not None and self._seen[0] == seen[0] and self._seen != seen:
+            self._seen = seen
+            self.labelsChanged.emit((item.entry.path,))
+        self._seen = seen
+
+    def left(self) -> int:
+        if self.queue is None or self.workspace is None:
+            return 0
+        return self.queue.left(self.workspace.review.is_marked)
+
+    # -- what the panels show ------------------------------------------------
+
+    def labels(self, entry: ImageEntry) -> ImageLabels:
+        return self._require().store.get(entry.path)
+
+    def badge(self, item: QueueItem) -> str:
+        labels = self.labels(item.entry)
+        if labels.state is LabelState.ERROR:
+            text = "unreadable"
+        elif labels.state is LabelState.SHARED:
+            text = "shared"
+        elif labels.raw is None:
+            text = "missing"
+        elif labels.negative:
+            text = "negative"
+        else:
+            n = len(labels.boxes)
+            text = f"{n} box" if n == 1 else f"{n} boxes"
+        if self.queue is not None and item.key in self.queue.stale:
+            text += " · no longer matches"
+        return text
+
+    def describe_item(self, item: QueueItem) -> str:
+        tick = "✓" if self._require().review.is_marked(item.key) else "·"
+        return f"{tick} {item.key}  —  {self.badge(item)}"
+
+    def reviewed_counts(self) -> tuple[int, int]:
+        """Marks among THIS dataset's images: yamls sharing a root list different folders."""
+        ws = self._require()
+        marks = ws.review.marks
+        return sum(1 for e in ws.dataset.images if e.rel in marks), len(ws.dataset.images)
+
+    # -- review marks --------------------------------------------------------
+
+    def done_and_next(self) -> None:
+        item = self.current()
+        if item is None:
+            return
+        if self._require().review.mark(item.key):
+            self._review_changed([item.key])
+        self.move(1)
+
+    def toggle_reviewed(self) -> None:
+        item = self.current()
+        if item is None:
+            return
+        self._require().review.toggle(item.key)
+        self._review_changed([item.key])
+
+    def _review_changed(self, keys: list[str]) -> None:
+        self._keys = None                           # the marks snapshot is out of date
+        self.saver.schedule()
+        self.reviewChanged.emit()
+        self.itemsChanged.emit(keys)
+
+    # -- edits -----------------------------------------------------------------
+
+    def apply(self, intent: Intent) -> Edit | None:
+        """Every label change goes through here; a refusal becomes a notice."""
+        ws = self._require()
+        rel = ws.dataset.entry(intent.image).rel
+        why = self.images.error(intent.image)
+        if why is not None:
+            self.notice.emit("error", f"{rel}: the image cannot be decoded ({why}), "
+                             "so its labels are not edited", intent.image)
+            return None
+        try:
+            edit = ws.editor.apply(intent)
+        except Refused as e:
+            self.notice.emit("error", f"{rel}: {e}", intent.image)
+            return None
+        if edit is not None:
+            self._review_changed([rel])
+        return edit
+
+    def mark_negative(self) -> None:
+        item = self.current()
+        if item is not None:
+            self.apply(Intent(item.entry.path, (CreateEmpty(),), "mark negative"))
+
+    def undo(self) -> None:
+        self._step(undo=True)
+
+    def redo(self) -> None:
+        self._step(undo=False)
+
+    def _step(self, *, undo: bool) -> None:
+        ws = self._require()
+        edit = ws.history.peek_undo() if undo else ws.history.peek_redo()
+        if edit is None:
+            self.status.emit("nothing to undo" if undo else "nothing to redo")
+            return
+        image = edit.images[0]
+        rel = ws.dataset.entry(image).rel
+        if self.queue is not None and rel in self.queue:
+            self.go_to(rel)                         # the change happens in view
+        try:
+            (ws.editor.undo if undo else ws.editor.redo)()
+        except Refused as e:
+            self.notice.emit("error", str(e), image)
+            return
+        self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {rel}")
+
+    def _recheck(self, images) -> None:
+        if self.workspace is None:
+            return
+        item = self.current()
+        if item is not None and item.entry.path in images:
+            labels = self.workspace.store.get(item.entry.path)
+            self._seen = (item.entry.path, labels.raw, labels.state)
+        if self.queue is None:
+            return
+        ctx, keys = None, []
+        for image in images:
+            try:
+                entry = self.workspace.dataset.entry(image)
+            except KeyError:
+                continue
+            if entry.rel not in self.queue:
+                continue
+            ctx = ctx or self.context()
+            self.queue.recheck(entry, ctx)
+            keys.append(entry.rel)
+        if keys:
+            self.itemsChanged.emit(keys)
+
+    # -- the taxonomy guard ----------------------------------------------------
+
+    def _count_out_of_range(self) -> None:
+        ws = self._require()
+        dataset, store = ws.dataset, ws.store
+
+        def found(result) -> None:
+            if self.workspace is ws and result is not None:
+                self.standing.emit(OUT_OF_RANGE, result.message(dataset))
+
+        self.io.start(lambda emit, cancelled: count_out_of_range(dataset, store, cancelled),
+                      done=found,
+                      failed=lambda why: self.notice.emit("error", f"checking class ids failed: {why}", None))
