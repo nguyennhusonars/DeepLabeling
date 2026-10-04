@@ -544,6 +544,22 @@ of the matching code.
 - [environment.md](../knowledge/environment.md#python): which interpreter to use when
   another conda env is active.
 
+## Notes for plan 1b (the UI)
+
+From the slice 1a whole-branch review; the core is built, these are what the UI must do.
+
+- **Open on the GUI thread.** `LabelStore` writes only on the thread that created it,
+  and `Workspace.open` creates it.
+- **`on_reload` fires on whichever thread called `get`.** A worker building a queue may be
+  the first to see an outside change, so the bridge forwards it with a queued signal.
+- **`Workspace.open` can raise `OSError`** (a full disk while taking the lock or saving
+  `dataset.json`) as well as `DatasetError`, `Locked` and `OpenCancelled`. Catch it and
+  say why.
+- **"Reviewed X / N" counts marks among this dataset's images only.** `ReviewMarks.count`
+  counts every mark under the root, and yamls sharing a root list different folders.
+- **Switching yaml on one root means closing first**: a second open of an open root is
+  refused, even in the same process ([The lock](#state-and-settings)).
+
 ## Later slices
 
 What each later spec starts from. None of this is designed yet.
