@@ -15,12 +15,15 @@ from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QVBoxLayout, QWi
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views
 from .canvas import Canvas
+from .classes import DEFAULT_HOTKEYS
+from .editing import Editing
 from .inspector import Inspector
 from .keymap import HelpDialog, build_actions
 from .notices import NoticeStrip
 from .queue_panel import QueuePanel
 from .session import Session
-from .settings_ui import RECENT, SHOW_CAPTIONS, SHOW_LABELS, WINDOW_GEOMETRY, WINDOW_STATE, bind_toggle
+from .settings_ui import (RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_LABELS, WINDOW_GEOMETRY, WINDOW_STATE,
+                          bind_toggle)
 from .state_bar import StateBar
 
 MIN_SIZE = (1024, 640)
@@ -37,6 +40,7 @@ class MainWindow(QMainWindow):
         self.setMenuWidget(self.state_bar)          # spans the window, above the docks
         self.notices = NoticeStrip()
         self.canvas = Canvas()
+        self.editing = Editing(session, self.canvas, prompter, self)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -67,9 +71,19 @@ class MainWindow(QMainWindow):
             "zoom_out": lambda: self.canvas.zoom_by(0.8),
             "go_to": self.go_to,
             "help": self.show_help,
+            **{f"class_{key}": (lambda k=key: self.editing.class_key(k)) for key in DEFAULT_HOTKEYS},
+            "pick_class": self.editing.pick_class,
+            "delete": self.editing.delete,
+            "select_next": lambda: self.editing.select_step(1),
+            "select_previous": lambda: self.editing.select_step(-1),
+            "select_all": self.editing.select_all,
+            "escape": self.editing.escape,
+            "copy": self.editing.copy,
+            "paste": self.editing.paste,
         })
         layers = self.state_bar.layers.menu()
-        for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS)):
+        for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS),
+                             ("toggle_crosshair", SHOW_CROSSHAIR)):
             bind_toggle(self.actions[key], session.settings, setting, self._layers_changed)
             layers.addAction(self.actions[key])
         self.panels_menu = layers.addMenu("Panels")     # a closed dock comes back from here
@@ -137,7 +151,8 @@ class MainWindow(QMainWindow):
         labels = session.labels(item.entry)
         highlight = session.queue.source.highlight(labels, ws.dataset)
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
-                                        ws.root_settings.get(CLASS_COLORS), highlight))
+                                        ws.root_settings.get(CLASS_COLORS), highlight),
+                              selected=self.editing.selection.indices(labels))
 
     def _image_event(self, path) -> None:
         item = self.session.current()
@@ -160,8 +175,11 @@ class MainWindow(QMainWindow):
         self.show_current()
 
     def _layers_changed(self, _=None) -> None:
-        self.canvas.set_layers(labels=self.actions["toggle_labels"].isChecked(),
-                               captions=self.actions["toggle_captions"].isChecked())
+        labels = self.actions["toggle_labels"].isChecked()
+        if not labels:
+            self.editing.selection.clear()          # hidden boxes are not acted on
+        self.canvas.set_layers(labels=labels, captions=self.actions["toggle_captions"].isChecked())
+        self.canvas.set_crosshair(self.actions["toggle_crosshair"].isChecked())
         self.session.saver.schedule()
         self.state_bar.refresh()
 

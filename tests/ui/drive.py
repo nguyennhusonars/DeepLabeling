@@ -32,3 +32,20 @@ def drag(canvas, a, b, modifiers=Qt.NoModifier, release=True):
 
 def click(canvas, at, modifiers=Qt.NoModifier):
     drag(canvas, at, at, modifiers)
+
+
+def start(qtbot, argv, prompter=None):
+    """The app launched on `argv`, shown and active, its queue built and image shown."""
+    from deeplabeling.__main__ import launch
+    from fixtures import FakePrompter
+
+    w = launch(argv, prompter or FakePrompter())
+    qtbot.addWidget(w)
+    w.resize(1440, 900)
+    with qtbot.waitActive(w):
+        w.show()
+        w.activateWindow()
+    if w.session.workspace is not None:
+        qtbot.waitUntil(lambda: w.session.queue is not None and w.session.queue.complete)
+        qtbot.waitUntil(lambda: w.canvas.image_size is not None)
+    return w

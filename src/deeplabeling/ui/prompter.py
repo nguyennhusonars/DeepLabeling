@@ -9,6 +9,8 @@ from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
 from ..core.dataset import Dataset
 from ..core.queue import ImageFilter
+from .class_picker import ClassPicker
+from .classes import ClassInfo
 from .queue_editor import QueueEditor
 
 
@@ -54,3 +56,7 @@ class QtPrompter:
     def ask_text(self, title: str, label: str) -> str | None:
         text, ok = QInputDialog.getText(self.parent, title, label)
         return text if ok else None
+
+    def pick_class(self, infos: list[ClassInfo]) -> ClassInfo | None:
+        dialog = ClassPicker(infos, self.parent)
+        return dialog.chosen() if dialog.exec() == QDialog.Accepted else None

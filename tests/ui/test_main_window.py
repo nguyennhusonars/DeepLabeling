@@ -11,20 +11,8 @@ from PySide6.QtWidgets import QLineEdit
 from deeplabeling.__main__ import launch
 from deeplabeling.core.queue import HasClass, ImageFilter
 from deeplabeling.ui.settings_ui import SHOW_LABELS
+from drive import start
 from fixtures import FakePrompter
-
-
-def start(qtbot, argv, prompter=None):
-    w = launch(argv, prompter or FakePrompter())
-    qtbot.addWidget(w)
-    w.resize(1440, 900)
-    with qtbot.waitActive(w):
-        w.show()
-        w.activateWindow()
-    if w.session.workspace is not None:
-        qtbot.waitUntil(lambda: w.session.queue is not None and w.session.queue.complete)
-        qtbot.waitUntil(lambda: w.canvas.image_size is not None)
-    return w
 
 
 @pytest.fixture

@@ -217,8 +217,9 @@ def assert_only_changed(before: dict[str, str], after: dict[str, str], expected:
 class FakePrompter:
     """Answers the UI's dialogs from preset values and records what was asked."""
 
-    def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None):
+    def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None):
         self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
+        self.class_name = class_name
         self.folders = list(folders)
         self.errors: list[tuple[str, str]] = []
         self.asked: list[tuple] = []
@@ -245,6 +246,10 @@ class FakePrompter:
     def ask_text(self, title, label):
         self.asked.append(("text", title))
         return self.text
+
+    def pick_class(self, infos):
+        self.asked.append(("class", tuple(info.name for info in infos)))
+        return next((info for info in infos if info.name == self.class_name), None)
 
 
 def open_session(qtbot, source, prompter=None, **kw):

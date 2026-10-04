@@ -1,8 +1,7 @@
 """The one registry of actions and their keys (docs/design/2026-10-04-app-foundation.md#window).
 
 The help dialog is generated from it, so the help cannot drift from the keys. Shortcuts
-are window-wide; Qt keeps them quiet while a text field has focus. Plan 1c adds the
-editing actions here.
+are window-wide; Qt keeps them quiet while a text field has focus.
 """
 
 from __future__ import annotations
@@ -13,6 +12,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QDialog, QHeaderView, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+
+from .classes import DEFAULT_HOTKEYS
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,16 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("done_next", "Done & next: mark reviewed, go to the next item", ("Space",)),
     ActionSpec("toggle_reviewed", "Toggle reviewed", ("K",)),
     ActionSpec("mark_negative", "Mark negative (an image with no label file and no boxes)", ("N",)),
+    *(ActionSpec(f"class_{key}", f"Class {key}: reclassify the selection, or set the active class",
+                 (key,)) for key in DEFAULT_HOTKEYS),
+    ActionSpec("pick_class", "Class picker: type to filter, Enter to choose", ("C",)),
+    ActionSpec("delete", "Delete the selected boxes", ("Delete", "Backspace")),
+    ActionSpec("select_next", "Select the next box", ("Tab",)),
+    ActionSpec("select_previous", "Select the previous box", ("Shift+Tab",)),
+    ActionSpec("select_all", "Select every box", ("Ctrl+A",)),
+    ActionSpec("escape", "Cancel the drawing, or clear the selection", ("Esc",)),
+    ActionSpec("copy", "Copy the selected boxes", ("Ctrl+C",)),
+    ActionSpec("paste", "Paste boxes, clamped into the image, as one edit", ("Ctrl+V",)),
     ActionSpec("undo", "Undo", ("Ctrl+Z",)),
     ActionSpec("redo", "Redo", ("Ctrl+Shift+Z", "Ctrl+Y")),
     ActionSpec("fit", "Fit the image to the view", ("F",)),
@@ -36,6 +47,7 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("zoom_out", "Zoom out", ("-",)),
     ActionSpec("toggle_labels", "Labels", ("L",), checkable=True),
     ActionSpec("toggle_captions", "Captions", ("T",), checkable=True),
+    ActionSpec("toggle_crosshair", "Crosshair", (), checkable=True),
     ActionSpec("go_to", "Go to an item by number or name", ("Ctrl+G",)),
     ActionSpec("help", "Shortcut help", ("?",)),
 )
