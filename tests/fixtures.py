@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import subprocess
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -150,6 +153,33 @@ def build_dataset(root: Path) -> DatasetFixture:
         "groups": GROUPS,
     }, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return DatasetFixture(root)
+
+
+SRC = Path(__file__).resolve().parents[1] / "src"
+
+_HOLD = """
+import sys, time
+sys.path.insert(0, {src!r})
+from deeplabeling.core.state import DatasetLock
+lock = DatasetLock({directory!r})
+lock.acquire()
+print("held", flush=True)
+time.sleep(60)
+"""
+
+
+@contextmanager
+def held_elsewhere(directory: Path):
+    """Another live process holds the dataset lock in `directory`; yields its pid."""
+    child = subprocess.Popen([sys.executable, "-c", _HOLD.format(src=str(SRC), directory=str(directory))],
+                             stdout=subprocess.PIPE, text=True)
+    try:
+        assert child.stdout.readline().strip() == "held"
+        yield child.pid
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
 
 
 def snapshot(root: Path) -> dict[str, str]:

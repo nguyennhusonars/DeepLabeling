@@ -420,8 +420,11 @@ launch directory. `DEEPLABELING_STATE_DIR` overrides it, and the tests always se
     lock                              the pid of the DeepLabeling that has this root open
 ```
 
-- **The lock.** Opening a dataset whose lock names a live process is refused with that pid.
-  A lock left by a dead process is taken over. The lock is released on close or switch.
+- **The lock** is an exclusive `flock` on the `lock` file, held while the root is open
+  (`src/deeplabeling/core/state.py::DatasetLock`). A second open of the same root is
+  refused, from another process or from this one (switching yaml means closing first),
+  and the message names the holder's pid. The kernel drops the lock when its process
+  dies, so a crash never leaves a stale lock to delete by hand.
 - **Settings registry.** `core/settings.py` defines each setting once: its key, scope
   (global or dataset), default and validator. The registry is the list of settings.
   Widgets bind through one helper that seeds the widget from `settings.get` and writes

@@ -3,12 +3,11 @@ one fixed folder found from this file's location, never from the launch folder."
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import time
 from pathlib import Path
-
-from .atomic import write_atomic
 
 ENV = "DEEPLABELING_STATE_DIR"
 
@@ -28,30 +27,57 @@ def dataset_state_dir(root: Path) -> Path:
 
 
 class Locked(Exception):
-    def __init__(self, pid: int, path: Path):
-        super().__init__(f"this dataset is open in another DeepLabeling (process {pid}); "
-                         f"if none is running, delete {path}")
+    def __init__(self, pid: int | None, path: Path):
+        holder = f"process {pid}" if pid is not None else "another process"
+        super().__init__(f"this dataset is already open in DeepLabeling ({holder}); "
+                         "close it there first")
         self.pid = pid
+        self.path = path
 
 
 class DatasetLock:
-    """One DeepLabeling per dataset root: a file holding the owner's process id."""
+    """One open dataset per root, across processes and within one.
+
+    An exclusive flock on the `lock` file, held while the dataset is open. The
+    kernel drops it when the process dies, so a crash never leaves a stale lock,
+    and two opens in one process conflict too, since a flock belongs to the open
+    file, not the process. The file holds the holder's pid, for the message only.
+    It is never deleted: deleting a lock file lets a late opener lock the orphaned
+    file while a newcomer locks a fresh one.
+    """
 
     def __init__(self, directory: Path):
         self.path = Path(directory) / "lock"
-        self.held = False
+        self._fd: int | None = None
+
+    @property
+    def held(self) -> bool:
+        return self._fd is not None
 
     def acquire(self) -> None:
-        pid = _read_pid(self.path)
-        if pid is not None and pid != os.getpid() and _alive(pid):
-            raise Locked(pid, self.path)
-        write_atomic(self.path, f"{os.getpid()}\n".encode())
-        self.held = True
+        if self._fd is not None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o666)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            raise Locked(_read_pid(self.path), self.path) from None
+        except BaseException:
+            os.close(fd)
+            raise
+        try:
+            os.ftruncate(fd, 0)
+            os.write(fd, f"{os.getpid()}\n".encode())
+        except OSError:
+            pass                # the pid only feeds the message; the flock is the lock
+        self._fd = fd
 
     def release(self) -> None:
-        if self.held and _read_pid(self.path) == os.getpid():
-            self.path.unlink(missing_ok=True)
-        self.held = False
+        if self._fd is not None:
+            os.close(self._fd)  # closing the file drops the flock
+            self._fd = None
 
 
 def set_aside(path: Path, error: Exception) -> tuple[str, bool]:
@@ -74,13 +100,3 @@ def _read_pid(path: Path) -> int | None:
         return int(path.read_text().strip())
     except (OSError, ValueError):
         return None
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True

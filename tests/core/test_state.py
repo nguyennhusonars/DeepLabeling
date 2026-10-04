@@ -7,6 +7,7 @@ import pytest
 
 from deeplabeling.core import state
 from deeplabeling.core.state import DatasetLock, Locked, dataset_state_dir, set_aside, state_dir
+from fixtures import SRC, held_elsewhere
 
 
 def test_the_state_folder_comes_from_the_environment():
@@ -26,23 +27,40 @@ def test_dataset_folders_are_stable_and_distinct(tmp_path):
     assert dataset_state_dir(a).parent == state_dir() / "datasets"
 
 
-def test_a_lock_holds_our_pid_until_released(tmp_path):
+RACE = """
+import sys, time
+from pathlib import Path
+sys.path.insert(0, {src!r})
+from deeplabeling.core.state import DatasetLock, Locked
+go = Path({go!r})
+while not go.exists():
+    time.sleep(0.001)
+lock = DatasetLock({directory!r})
+try:
+    lock.acquire()
+    print("ok", flush=True)
+except Locked:
+    print("locked", flush=True)
+time.sleep(1)
+"""
+
+
+def test_a_lock_records_our_pid_while_held(tmp_path):
     lock = DatasetLock(tmp_path)
     lock.acquire()
     assert lock.path.read_text().strip() == str(os.getpid()) and lock.held
     lock.release()
-    assert not lock.path.exists() and not lock.held
+    assert not lock.held
 
 
 def test_a_lock_held_by_another_live_process_refuses(tmp_path):
-    (tmp_path / "lock").write_text(f"{os.getppid()}\n")
-    with pytest.raises(Locked) as caught:
-        DatasetLock(tmp_path).acquire()
-    assert caught.value.pid == os.getppid()
-    assert "delete" in str(caught.value)
+    with held_elsewhere(tmp_path) as pid:
+        with pytest.raises(Locked) as caught:
+            DatasetLock(tmp_path).acquire()
+    assert caught.value.pid == pid and str(pid) in str(caught.value)
 
 
-def test_a_lock_left_by_a_dead_process_is_taken_over(tmp_path):
+def test_a_lock_file_left_without_a_holder_is_taken(tmp_path):
     child = subprocess.Popen([sys.executable, "-c", "pass"])
     child.wait()
     (tmp_path / "lock").write_text(f"{child.pid}\n")
@@ -51,17 +69,34 @@ def test_a_lock_left_by_a_dead_process_is_taken_over(tmp_path):
     assert lock.path.read_text().strip() == str(os.getpid())
 
 
-def test_our_own_lock_can_be_taken_again(tmp_path):
-    DatasetLock(tmp_path).acquire()
+def test_a_holder_that_dies_frees_the_lock(tmp_path):
+    with held_elsewhere(tmp_path):
+        pass
     DatasetLock(tmp_path).acquire()
 
 
-def test_release_leaves_someone_elses_lock(tmp_path):
-    lock = DatasetLock(tmp_path)
-    lock.acquire()
-    lock.path.write_text(f"{os.getppid()}\n")
-    lock.release()
-    assert lock.path.exists()
+def test_a_second_lock_in_the_same_process_is_refused(tmp_path):
+    first = DatasetLock(tmp_path)
+    first.acquire()
+    with pytest.raises(Locked) as caught:
+        DatasetLock(tmp_path).acquire()
+    assert caught.value.pid == os.getpid()
+    first.release()
+    DatasetLock(tmp_path).acquire()
+
+
+def test_only_one_of_two_racing_processes_gets_the_lock(tmp_path):
+    go = tmp_path / "go"
+    script = RACE.format(src=str(SRC), go=str(go), directory=str(tmp_path))
+    children = [subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True)
+                for _ in range(2)]
+    go.touch()
+    results = sorted(child.communicate(timeout=30)[0].strip() for child in children)
+    assert results == ["locked", "ok"]
+
+
+def test_releasing_a_lock_never_taken_is_harmless(tmp_path):
+    DatasetLock(tmp_path).release()
 
 
 def test_set_aside_keeps_the_unreadable_file(tmp_path):

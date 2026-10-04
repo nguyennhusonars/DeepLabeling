@@ -9,6 +9,7 @@ from deeplabeling.core.edits import AddBox, Intent
 from deeplabeling.core.state import Locked, dataset_state_dir
 from deeplabeling.core.store import LabelStore
 from deeplabeling.core.taxonomy import OutOfRange, count_out_of_range, names_changed
+from fixtures import held_elsewhere
 from deeplabeling.core.workspace import (
     CLASS_COLORS,
     QUEUE_CURSOR,
@@ -41,7 +42,8 @@ def test_opening_takes_the_lock_and_records_the_class_names(ds):
     assert data["root"]["taxonomy.source"] == str(ds.yaml)
     assert ws.warnings == ()
     ws.close()
-    assert not ws.lock.path.exists()
+    assert not ws.lock.held
+    Workspace.open(ds.yaml, confirm_taxonomy=never).close()   # the lock is free again
 
 
 def test_marks_and_settings_survive_a_reopen(ds):
@@ -56,11 +58,17 @@ def test_marks_and_settings_survive_a_reopen(ds):
 
 
 def test_a_root_open_elsewhere_is_refused(ds):
-    lock = dataset_state_dir(ds.root.resolve()) / "lock"
-    lock.parent.mkdir(parents=True)
-    lock.write_text(f"{os.getppid()}\n")
+    with held_elsewhere(dataset_state_dir(ds.root.resolve())):
+        with pytest.raises(Locked):
+            Workspace.open(ds.yaml, confirm_taxonomy=never)
+
+
+def test_a_second_yaml_of_an_open_root_is_refused_in_the_same_process(ds):
+    first = Workspace.open(ds.yaml, confirm_taxonomy=never)
     with pytest.raises(Locked):
-        Workspace.open(ds.yaml, confirm_taxonomy=never)
+        Workspace.open(second_yaml(ds, NAMES), confirm_taxonomy=never)
+    first.close()
+    Workspace.open(second_yaml(ds, NAMES), confirm_taxonomy=never).close()
 
 
 def test_a_different_class_list_asks_first_and_can_be_declined(ds):
@@ -75,8 +83,7 @@ def test_a_different_class_list_asks_first_and_can_be_declined(ds):
     with pytest.raises(OpenCancelled):
         Workspace.open(other, confirm_taxonomy=decline)
     assert asked == [(str(ds.yaml), NAMES, str(other), ("BSD", "BSV", "bus"))]
-    assert not (dataset_state_dir(ds.root.resolve()) / "lock").exists()
-    ws = Workspace.open(other, confirm_taxonomy=lambda *args: True)
+    ws = Workspace.open(other, confirm_taxonomy=lambda *args: True)   # declining freed the lock
     assert ws.root_settings.get(TAXONOMY_NAMES) == ["BSD", "BSV", "bus"]
     ws.close()
 
