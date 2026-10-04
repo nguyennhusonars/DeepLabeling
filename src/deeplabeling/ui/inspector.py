@@ -1,6 +1,6 @@
 """The inspector (docs/design/2026-10-04-app-foundation.md#window): the current image, its
-classes and its boxes. Read-only in plan 1b; plan 1c makes the palette and the box list
-act on the selection."""
+classes and its boxes. Clicking a class reclassifies the selection, or makes it the active
+class (marked ✎); the box list shows the one selection and sets it."""
 
 from __future__ import annotations
 
@@ -9,13 +9,23 @@ from collections import Counter
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPixmap
-from PySide6.QtWidgets import QFormLayout, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFormLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..core.store import LabelState
-from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS
+from ..core.workspace import CLASS_COLORS
 from .boxes import box_views
-from .classes import class_infos
 from .session import Session
+
+#: After the active class's name in the palette.
+ACTIVE_MARK = "✎"
 
 
 def swatch(color: str) -> QIcon:
@@ -25,9 +35,10 @@ def swatch(color: str) -> QIcon:
 
 
 class Inspector(QWidget):
-    def __init__(self, session: Session, parent=None):
+    def __init__(self, session: Session, editing, parent=None):
         super().__init__(parent)
-        self._session = session
+        self._session, self._editing = session, editing
+        self._syncing = False                       # the box list is being set, not clicked
         self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label = (
             QLabel() for _ in range(5))
         for label in self._fields():
@@ -43,6 +54,8 @@ class Inspector(QWidget):
         self.boxes = QListWidget()
         for widget in (self.classes, self.boxes):
             widget.setFocusPolicy(Qt.NoFocus)
+        self.classes.setSelectionMode(QAbstractItemView.NoSelection)    # ✎ marks the active class
+        self.boxes.setSelectionMode(QAbstractItemView.ExtendedSelection)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addLayout(form)
@@ -55,6 +68,10 @@ class Inspector(QWidget):
         session.labelsChanged.connect(self._labels_event)
         session.images.ready.connect(self._image_event)
         session.images.failed.connect(lambda path, why: self._image_event(path))
+        self.classes.itemClicked.connect(self._class_clicked)
+        self.boxes.itemSelectionChanged.connect(self._boxes_clicked)
+        editing.selection.changed.connect(self._show_selection)
+        editing.activeChanged.connect(self.refresh)
         self.refresh()
 
     def _fields(self) -> tuple[QLabel, ...]:
@@ -71,8 +88,39 @@ class Inspector(QWidget):
         if item is not None and item.entry.path == path:
             self.refresh()
 
+    def _class_clicked(self, row: QListWidgetItem) -> None:
+        info = next(i for i in self._editing.classes() if i.cls_id == row.data(Qt.UserRole))
+        self._editing.choose_class(info)
+
+    def _boxes_clicked(self) -> None:
+        if not self._syncing:
+            self._editing.pick([row.data(Qt.UserRole) for row in self.boxes.selectedItems()])
+
+    def _show_selection(self) -> None:
+        selected = set(self._editing.selected())
+        self._syncing = True
+        try:
+            first = None
+            for i in range(self.boxes.count()):
+                row = self.boxes.item(i)
+                row.setSelected(row.data(Qt.UserRole) in selected)
+                if first is None and row.isSelected():
+                    first = row
+            if first is not None:
+                self.boxes.scrollToItem(first)
+        finally:
+            self._syncing = False
+
     def refresh(self) -> None:
         session, item = self._session, self._session.current()
+        self._syncing = True
+        try:
+            self._fill(session, item)
+        finally:
+            self._syncing = False
+        self._show_selection()
+
+    def _fill(self, session, item) -> None:
         self.classes.clear()
         self.boxes.clear()
         if session.workspace is None or item is None:
@@ -91,14 +139,18 @@ class Inspector(QWidget):
         self.reviewed_label.setText(time.strftime("%Y-%m-%d %H:%M", time.localtime(marked)) if marked else "not yet")
         colors = ws.root_settings.get(CLASS_COLORS)
         counts = Counter(line.cls_id for _, line in labels.boxes)
-        for info in class_infos(ws.dataset, colors, ws.root_settings.get(CLASS_HOTKEYS)):
-            row = QListWidgetItem(swatch(info.color), f"{info.hotkey or ' '}   {info.name}   {counts.get(info.cls_id, 0)}")
+        active = self._editing.active_class()
+        for info in self._editing.classes():
+            text = f"{info.hotkey or ' '}   {info.name}   {counts.get(info.cls_id, 0)}"
+            row = QListWidgetItem(swatch(info.color), text + (f"   {ACTIVE_MARK}" if info == active else ""))
+            row.setData(Qt.UserRole, info.cls_id)
             self.classes.addItem(row)
         if image is not None:
             for view in box_views(labels, ws.dataset, (image.width(), image.height()), colors):
                 x1, y1, x2, y2 = view.rect
-                self.boxes.addItem(QListWidgetItem(swatch(view.color),
-                                                   f"{view.caption}   {round(x2 - x1)} × {round(y2 - y1)} px"))
+                row = QListWidgetItem(swatch(view.color), f"{view.caption}   {round(x2 - x1)} × {round(y2 - y1)} px")
+                row.setData(Qt.UserRole, view.index)
+                self.boxes.addItem(row)
 
     @staticmethod
     def _state_text(labels) -> str:

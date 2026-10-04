@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.queue_panel = QueuePanel(session)
         self.queue_dock = self._dock("Queue", "queue", self.queue_panel, Qt.LeftDockWidgetArea)
-        self.inspector = Inspector(session)
+        self.inspector = Inspector(session, self.editing)
         self.inspector_dock = self._dock("Inspector", "inspector", self.inspector, Qt.RightDockWidgetArea)
         self.resizeDocks([self.queue_dock, self.inspector_dock], [280, 280], Qt.Horizontal)
         self.status_text = QLabel()

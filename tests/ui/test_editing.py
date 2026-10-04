@@ -184,3 +184,35 @@ def test_the_box_being_drawn_shows_the_active_class_colour(qtbot, window):
     assert any(abs(c.red() - want.red()) + abs(c.green() - want.green()) + abs(c.blue() - want.blue()) < 40
                for c in near)
     window.canvas.cancel_drag()
+
+
+def click_row(qtbot, listview, row, modifier=Qt.NoModifier):
+    item = listview.item(row)
+    qtbot.mouseClick(listview.viewport(), Qt.LeftButton, modifier, listview.visualItemRect(item).center())
+
+
+def test_clicking_a_class_in_the_inspector_reclassifies_the_selection(qtbot, window, ds):
+    click(window.canvas, PERSON)
+    click_row(qtbot, window.inspector.classes, 3)                # bus_l
+    assert read_exact(ds.lbl("camA/0001")) == "3" + CAMA_0001[1:]
+    assert window.editing.active_class().name == "person"
+
+
+def test_the_box_list_and_the_canvas_show_one_selection(qtbot, window):
+    boxes = window.inspector.boxes
+    qtbot.waitUntil(lambda: boxes.count() == 2)
+    click(window.canvas, CAR)
+    assert [boxes.item(i).isSelected() for i in range(2)] == [False, True]
+    assert boxes.viewport().rect().contains(boxes.visualItemRect(boxes.item(1)))
+    click_row(qtbot, boxes, 0)
+    assert selected(window) == [0] and len(window.canvas.handle_items()) == 8
+    click_row(qtbot, boxes, 1, Qt.ControlModifier)
+    assert selected(window) == [0, 1] and window.canvas.handle_items() == []
+
+
+def test_the_box_list_keeps_the_selection_through_an_edit(qtbot, window):
+    boxes = window.inspector.boxes
+    click(window.canvas, PERSON)
+    qtbot.keyClick(window, Qt.Key_2)                             # reclassify: the list is rebuilt
+    qtbot.waitUntil(lambda: boxes.count() == 2)
+    assert [boxes.item(i).isSelected() for i in range(2)] == [True, False]
