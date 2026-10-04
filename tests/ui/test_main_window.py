@@ -193,3 +193,11 @@ def test_closing_while_jobs_run_frees_the_root(qtbot, ds):
     assert w.session.workspace is None
     again = start(qtbot, [str(ds.yaml)])    # the lock is free
     again.close()
+
+
+def test_a_label_file_created_outside_appears_on_the_canvas(qtbot, window, ds):
+    window.session.go_to("camA/images/0003.jpg")
+    qtbot.waitUntil(lambda: window._shown == ds.img("camA/0003.jpg"))
+    assert window.canvas.caption_items() == []
+    ds.lbl("camA/0003").write_bytes(b"1 0.5 0.5 0.2 0.2\n")
+    qtbot.waitUntil(lambda: [c.text for c in window.canvas.caption_items()] == ["car"], timeout=5000)

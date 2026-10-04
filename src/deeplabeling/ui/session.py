@@ -68,6 +68,9 @@ class Session(QObject):
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
+        self._follow: ImageEntry | None = None      # where a rebuilding queue must land
+        self._seen: tuple | None = None             # (image, raw, state) last reported on screen
+        self._keys: frozenset[str] | None = None    # review marks, snapshotted until they change
         self._reloaded.connect(lambda image: self.labelsChanged.emit((image,)))
         self.labelsChanged.connect(self._recheck)
         # The store notices an outside edit when its file is next read; reading the one on
@@ -110,6 +113,7 @@ class Session(QObject):
             return False
         self.workspace = ws
         self._by_rel = {e.rel: e for e in ws.dataset.images}
+        self._follow = self._seen = self._keys = None
         remember_source(self.settings, *self.current_source())
         self.saver.schedule()
         self.opened.emit()
@@ -130,6 +134,7 @@ class Session(QObject):
         self.images.clear()
         self.io.wait(2000)
         self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
+        self._follow = self._seen = self._keys = None
         try:
             ws.close()
         except OSError as e:
@@ -168,8 +173,11 @@ class Session(QObject):
         ws = self._require()
         if self._build is not None:
             self._build.cancel()
-        if follow is None and self.current() is not None:
-            follow = self.current().entry
+        if follow is None:
+            # A rebuild that has not yet reached the user's place still owes it: follow
+            # that, not the item the unfinished queue happens to show.
+            follow = self._follow or (self.current().entry if self.current() is not None else None)
+        self._follow = follow
         queue = self.queue = Queue(source, follow=follow)
         ws.opening_settings.set(QUEUE_SOURCE, source.to_json())
         self.saver.schedule()
@@ -183,14 +191,21 @@ class Session(QObject):
             failed=lambda why: self.notice.emit("error", f"building the queue failed: {why}", None))
 
     def context(self) -> BuildContext:
+        """The inputs of a build or a recheck. The review marks are snapshotted once and
+        reused until they change: an import underneath the app reports thousands of
+        changed files, and a fresh snapshot each time froze the GUI for seconds."""
         ws = self._require()
-        return BuildContext(ws.dataset, ws.store, ws.review.keys())
+        if self._keys is None:
+            self._keys = ws.review.keys()
+        return BuildContext(ws.dataset, ws.store, self._keys)
 
     def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
         if queue is not self.queue:
             return                                  # a cancelled build's last batch
         before = queue.cursor
         queue.extend(items)
+        if self._follow is not None and queue.cursor == self._follow.rel:
+            self._follow = None                     # the user's place has arrived
         self.queueGrew.emit()
         if queue.cursor != before:
             self._cursor_moved()
@@ -200,6 +215,7 @@ class Session(QObject):
             return
         before = queue.cursor
         queue.finish()
+        self._follow = None                         # finish() settled the place
         self.queueDone.emit()
         if queue.cursor != before:
             self._cursor_moved()
@@ -208,6 +224,8 @@ class Session(QObject):
         return self.queue.current() if self.queue is not None else None
 
     def move(self, delta: int) -> bool:
+        if self.queue is not None and len(self.queue):
+            self._follow = None                     # the user chose a place
         if self.queue is None or not self.queue.move(delta):
             if self.queue is not None and len(self.queue):
                 self.status.emit("the end of the queue" if delta > 0 else "the start of the queue")
@@ -218,6 +236,7 @@ class Session(QObject):
     def go_to(self, key: str) -> bool:
         if self.queue is None or not self.queue.go_to(key):
             return False
+        self._follow = None                         # the user chose a place
         self._cursor_moved()
         return True
 
@@ -237,19 +256,32 @@ class Session(QObject):
     def _cursor_moved(self) -> None:
         item = self.current()
         if item is not None and self.workspace is not None:
-            self.workspace.opening_settings.set(QUEUE_CURSOR, item.key)
-            self.saver.schedule()
+            if self._follow is None:                # never save a place the rebuild passes through
+                self.workspace.opening_settings.set(QUEUE_CURSOR, item.key)
+                self.saver.schedule()
             self.workspace.store.pin(item.entry.path)
+            labels = self.workspace.store.get(item.entry.path)
+            self._seen = (item.entry.path, labels.raw, labels.state)
             i, items = self.queue.position(), self.queue.items
             self.images.keep([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
                               if 0 <= j < len(items)])
         self.cursorChanged.emit()
 
     def check_current(self) -> None:
-        """Re-read the current image's label file; a change is reported as labelsChanged."""
+        """Re-read the current image's label file, and report any change as labelsChanged.
+
+        The store reports a reload only when it replaces a cached copy; a file that was
+        missing (never cached) and now exists is caught here, against what was last shown.
+        """
         item = self.current()
-        if item is not None and self.workspace is not None:
-            self.workspace.store.get(item.entry.path)
+        if item is None or self.workspace is None:
+            return
+        labels = self.workspace.store.get(item.entry.path)      # may report a reload itself
+        seen = (item.entry.path, labels.raw, labels.state)
+        if self._seen is not None and self._seen[0] == seen[0] and self._seen != seen:
+            self._seen = seen
+            self.labelsChanged.emit((item.entry.path,))
+        self._seen = seen
 
     def left(self) -> int:
         if self.queue is None or self.workspace is None:
@@ -306,6 +338,7 @@ class Session(QObject):
         self._review_changed([item.key])
 
     def _review_changed(self, keys: list[str]) -> None:
+        self._keys = None                           # the marks snapshot is out of date
         self.saver.schedule()
         self.reviewChanged.emit()
         self.itemsChanged.emit(keys)
@@ -359,17 +392,27 @@ class Session(QObject):
         self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {rel}")
 
     def _recheck(self, images) -> None:
-        if self.queue is None or self.workspace is None:
+        if self.workspace is None:
             return
-        ctx, keys = self.context(), []
+        item = self.current()
+        if item is not None and item.entry.path in images:
+            labels = self.workspace.store.get(item.entry.path)
+            self._seen = (item.entry.path, labels.raw, labels.state)
+        if self.queue is None:
+            return
+        ctx, keys = None, []
         for image in images:
             try:
                 entry = self.workspace.dataset.entry(image)
             except KeyError:
                 continue
+            if entry.rel not in self.queue:
+                continue
+            ctx = ctx or self.context()
             self.queue.recheck(entry, ctx)
             keys.append(entry.rel)
-        self.itemsChanged.emit(keys)
+        if keys:
+            self.itemsChanged.emit(keys)
 
     # -- the taxonomy guard ----------------------------------------------------
 

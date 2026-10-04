@@ -229,3 +229,66 @@ def test_a_closed_workspace_is_freed(qtbot, ds):
     qtbot.wait(50)
     gc.collect()
     assert workspace() is None
+
+
+class Slow(ImageFilter):
+    """Every image, one per batch, slowly: a rebuild the user can overtake."""
+
+    def build(self, ctx, emit, cancelled=lambda: False, **kw):
+        import time
+
+        from deeplabeling.core.queue import QueueItem
+
+        for entry in ctx.dataset.images:
+            if cancelled():
+                return False
+            time.sleep(0.02)
+            emit([QueueItem(entry.rel, entry)])
+        return True
+
+
+def test_a_label_file_created_outside_for_the_image_on_screen_is_noticed(qtbot, session, ds):
+    session.go_to("camA/images/0003.jpg")              # no label file yet
+    ds.lbl("camA/0003").write_bytes(b"1 0.5 0.5 0.2 0.2\n")
+    with qtbot.waitSignal(session.labelsChanged, timeout=5000) as caught:
+        pass
+    assert caught.args[0] == (ds.img("camA/0003.jpg"),)
+
+
+def test_a_superseded_rebuild_keeps_the_users_place(qtbot, session):
+    session.go_to("seg/images/mixed.jpg")
+    session.set_queue(Slow())
+    qtbot.waitUntil(lambda: len(session.queue) >= 2)    # the cursor waits on items[0]
+    with qtbot.waitSignal(session.queueDone, timeout=5000):
+        session.set_queue(ImageFilter())
+    assert session.current().key == "seg/images/mixed.jpg"
+
+
+def test_closing_during_a_rebuild_keeps_the_saved_place(qtbot, ds):
+    s = open_session(qtbot, ds.yaml)
+    s.go_to("seg/images/mixed.jpg")
+    s.set_queue(Slow())
+    qtbot.waitUntil(lambda: len(s.queue) >= 2)
+    s.close()
+    again = open_session(qtbot, ds.yaml)
+    assert again.current().key == "seg/images/mixed.jpg"
+    again.close()
+
+
+def test_many_outside_changes_take_one_snapshot_of_the_marks(qtbot, session, monkeypatch):
+    calls, keys = [], session.workspace.review.keys
+    monkeypatch.setattr(session.workspace.review, "keys", lambda: calls.append(1) or keys())
+    for image in [e.path for e in session.workspace.dataset.images] * 20:
+        session.labelsChanged.emit((image,))
+    assert len(calls) <= 1
+
+
+def test_the_marks_snapshot_is_renewed_when_marks_change(qtbot, session):
+    from deeplabeling.core.queue import Reviewed
+
+    with qtbot.waitSignal(session.queueDone, timeout=5000):
+        session.set_queue(ImageFilter(conditions=(Reviewed(False),)))
+    session.labelsChanged.emit((session.current().entry.path,))
+    session.toggle_reviewed()
+    session.labelsChanged.emit((session.current().entry.path,))
+    assert session.current().key in session.queue.stale

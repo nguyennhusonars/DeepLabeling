@@ -52,7 +52,7 @@ class Inspector(QWidget):
         layout.addWidget(self.boxes, 1)
         for signal in (session.cursorChanged, session.reviewChanged, session.opened, session.closed):
             signal.connect(self.refresh)
-        session.labelsChanged.connect(lambda images: self.refresh())
+        session.labelsChanged.connect(self._labels_event)
         session.images.ready.connect(self._image_event)
         session.images.failed.connect(lambda path, why: self._image_event(path))
         self.refresh()
@@ -60,6 +60,11 @@ class Inspector(QWidget):
     def _fields(self) -> tuple[QLabel, ...]:
         # *_label names: a field called `size` would shadow QWidget.size()
         return (self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label)
+
+    def _labels_event(self, images) -> None:
+        item = self._session.current()
+        if item is not None and item.entry.path in images:
+            self.refresh()                          # another image's change is not shown here
 
     def _image_event(self, path) -> None:
         item = self._session.current()
