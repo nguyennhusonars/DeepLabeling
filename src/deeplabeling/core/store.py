@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .atomic import write_atomic
 from .dataset import Dataset, ImageEntry
-from .edits import Edit, FileChange, Intent, LineRef, Refused, materialize
+from .edits import Conflict, Edit, FileChange, Intent, LineRef, Refused, materialize
 from .labelio import LabelLine, parse_label_bytes
 
 #: (inode, mtime_ns, size). An atomic replace changes the inode, and a class
@@ -203,7 +203,8 @@ class LabelStore:
         """Put every file of `edit` back as it was before it (undo) or after it (redo).
 
         Every file is checked first. If any no longer holds what `edit` left (undo)
-        or found (redo), something else changed it, and nothing at all is written.
+        or found (redo), something else changed it: Conflict, and nothing at all is
+        written. A failed read or write raises plain Refused, which may be retried.
         A file absent on the target side is deleted: only ever a file this edit
         created, and only while it still holds exactly what the edit wrote.
         """
@@ -211,7 +212,7 @@ class LabelStore:
         for change in edit.changes:
             expected = change.after if undo else change.before
             if _read_or_none(change.path) != expected:
-                raise Refused(f"{change.path.name} has changed since, so it is left as it is")
+                raise Conflict(f"{change.path.name} has changed since, so it is left as it is")
         for change in edit.changes:
             target = change.before if undo else change.after
             if target is None:

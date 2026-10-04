@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from collections import deque
 
-from .edits import Edit, Refused
+from .edits import Conflict, Edit, Refused
 from .store import LabelStore
 
 
 class History:
     """One global list of Edits, capped in bytes; the oldest are dropped first.
 
-    Undo and redo go through `LabelStore.restore`, which refuses when a file no
-    longer holds what the edit left. A refused edit can never succeed, so it is
-    dropped, and the edits before it stay undoable.
+    Undo and redo go through `LabelStore.restore`. When a file no longer holds what
+    the edit left, it raises Conflict: that edit can never succeed, so it is dropped
+    and the edits before it stay undoable. Any other refusal -- a full disk, a read
+    error -- keeps the edit, since it holds the only copy of the bytes it replaced.
     """
 
     def __init__(self, store: LabelStore, *, cap_bytes: int = 64 * 2**20):
@@ -56,11 +57,14 @@ class History:
         edit = self._undo[-1]
         try:
             self._store.restore(edit, undo=True)
-        except Refused as e:
+        except Conflict as e:
             self._undo.pop()
             self._bytes -= edit.nbytes
             raise Refused(f"cannot undo “{edit.description}”: {e}. "
                           "It has been dropped from the history.") from e
+        except Refused as e:
+            raise Refused(f"cannot undo “{edit.description}”: {e}. "
+                          "It is still in the history; try again.") from e
         self._redo.append(self._undo.pop())
         return edit
 
@@ -70,10 +74,13 @@ class History:
         edit = self._redo[-1]
         try:
             self._store.restore(edit, undo=False)
-        except Refused as e:
+        except Conflict as e:
             self._redo.pop()
             self._bytes -= edit.nbytes
             raise Refused(f"cannot redo “{edit.description}”: {e}. "
                           "It has been dropped from the history.") from e
+        except Refused as e:
+            raise Refused(f"cannot redo “{edit.description}”: {e}. "
+                          "It is still in the history; try again.") from e
         self._undo.append(self._redo.pop())
         return edit

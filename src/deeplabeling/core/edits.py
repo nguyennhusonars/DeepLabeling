@@ -23,6 +23,14 @@ class Refused(Exception):
     """An edit or undo that would be wrong, so it was not done. The message is for the user."""
 
 
+class Conflict(Refused):
+    """A file no longer holds what an edit expects: something else changed it since.
+
+    Unlike a failed read or write, retrying cannot help, so an undo or redo refused
+    this way is dropped from the history.
+    """
+
+
 @dataclass(frozen=True)
 class LineRef:
     """Where a box was: its line index (only a hint), its class and its normalised box."""

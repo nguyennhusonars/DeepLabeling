@@ -1,12 +1,13 @@
 import pytest
 
+from deeplabeling.core import store as store_module
 from deeplabeling.core.dataset import Dataset
 from deeplabeling.core.edits import AddBox, DeleteLine, Intent, Refused, SetClass
 from deeplabeling.core.editor import Editor
 from deeplabeling.core.history import History
 from deeplabeling.core.review import ReviewMarks
 from deeplabeling.core.store import LabelStore
-from fixtures import GAUNTLET, read_exact
+from fixtures import CAMA_0001, GAUNTLET, read_exact
 
 BOX = (0.5, 0.5, 0.2, 0.2)
 
@@ -111,6 +112,37 @@ def test_redo_after_an_outside_change_is_refused_and_dropped(editor, ds):
         editor.redo()
     assert not editor.history.can_redo
     assert ds.lbl("camA/0003").read_bytes() == b"outside\n"
+
+
+def full_disk(path, data):
+    raise OSError(28, "No space left on device")
+
+
+def test_an_undo_that_cannot_write_keeps_the_edit_for_a_retry(editor, ds, monkeypatch):
+    img = ds.img("camA/0001.jpg")
+    snap = editor.store.get(img)
+    editor.apply(Intent(img, tuple(DeleteLine(snap.ref(i)) for i, _ in snap.boxes), "delete both"))
+    with monkeypatch.context() as m:
+        m.setattr(store_module, "write_atomic", full_disk)
+        with pytest.raises(Refused, match="still in the history"):
+            editor.undo()
+    assert editor.history.can_undo and ds.lbl("camA/0001").read_bytes() == b""
+    editor.undo()
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
+
+
+def test_a_redo_that_cannot_write_keeps_the_edit_for_a_retry(editor, ds, monkeypatch):
+    img = ds.img("camA/0001.jpg")
+    snap = editor.store.get(img)
+    editor.apply(Intent(img, (DeleteLine(snap.ref(0)),), "delete one"))
+    editor.undo()
+    with monkeypatch.context() as m:
+        m.setattr(store_module, "write_atomic", full_disk)
+        with pytest.raises(Refused, match="still in the history"):
+            editor.redo()
+    assert editor.history.can_redo and read_exact(ds.lbl("camA/0001")) == CAMA_0001
+    editor.redo()
+    assert len(editor.store.get(img).boxes) == 1
 
 
 def test_the_history_drops_its_oldest_edits_past_its_budget(ds, tmp_path):
