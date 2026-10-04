@@ -34,10 +34,13 @@ class NoticeRow(QFrame):
         close.setText("×")
         close.setAutoRaise(True)
         close.setFocusPolicy(Qt.NoFocus)
-        close.clicked.connect(lambda: self.dismissed.emit(self))
+        close.clicked.connect(self._dismiss)       # a method: a lambda slot would never be freed
         layout.addWidget(self.label, 1)
         layout.addWidget(close)
         self.close_button = close
+
+    def _dismiss(self) -> None:
+        self.dismissed.emit(self)
 
 
 class NoticeStrip(QWidget):

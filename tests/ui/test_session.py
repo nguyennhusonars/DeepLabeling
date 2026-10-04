@@ -216,3 +216,16 @@ def test_a_full_disk_while_opening_says_why(qtbot, ds, monkeypatch):
     s = Session(prompter)
     assert not s.open(ds.yaml)
     assert s.workspace is None and "No space left" in prompter.errors[0][1]
+
+
+def test_a_closed_workspace_is_freed(qtbot, ds):
+    import gc
+    import weakref
+
+    s = open_session(qtbot, ds.yaml)
+    s.go_to("camA/images/0002.jpg")
+    workspace = weakref.ref(s.workspace)
+    s.close()
+    qtbot.wait(50)
+    gc.collect()
+    assert workspace() is None

@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QImage, QImageReader
 
-from .workers import Job, Jobs
+from .workers import Handle, Jobs
 
 
 def decode_image(path) -> QImage:
@@ -41,7 +41,7 @@ class ImageCache(QObject):
         self._limit = limit_bytes
         self._images: OrderedDict[Path, QImage] = OrderedDict()
         self._errors: dict[Path, str] = {}
-        self._pending: dict[Path, Job] = {}
+        self._pending: dict[Path, Handle] = {}
         self._keep: set[Path] = set()
         self._bytes = 0
 

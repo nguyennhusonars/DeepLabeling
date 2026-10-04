@@ -58,3 +58,16 @@ def test_dismissing_removes_and_an_empty_strip_hides(qtbot, strip):
     qtbot.mouseClick(strip.rows[0].close_button, Qt.LeftButton)
     qtbot.waitUntil(lambda: not strip.isVisible())
     assert strip.rows == []
+
+
+def test_a_dismissed_row_is_freed(qtbot, strip):
+    import gc
+    import weakref
+
+    strip.add("error", "refused")
+    row = weakref.ref(strip.rows[0])
+    qtbot.mouseClick(strip.rows[0].close_button, Qt.LeftButton)
+    qtbot.waitUntil(lambda: not strip.rows)
+    qtbot.wait(20)                                  # deleteLater runs
+    gc.collect()
+    assert row() is None

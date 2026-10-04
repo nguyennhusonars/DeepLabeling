@@ -59,4 +59,24 @@ def test_a_cancelled_job_reports_nothing_and_is_released(qtbot):
     with qtbot.waitSignal(job.signals.finished, timeout=5000):
         jobs.cancel_all()
     qtbot.wait(20)
-    assert done == [] and jobs._live == set()
+    assert done == [] and not jobs._live
+
+
+def test_finished_jobs_and_what_they_captured_are_freed(qtbot):
+    """A job's closures can hold a whole workspace; once it finishes, nothing may keep them."""
+    import gc
+    import weakref
+
+    class Big:
+        pass
+
+    jobs, refs = Jobs(2), []
+    for _ in range(20):
+        big = Big()
+        refs.append(weakref.ref(big))
+        handle = jobs.start(lambda emit, cancelled, b=big: None, done=lambda result, b=big: None)
+    del big, handle
+    jobs.wait(5000)
+    qtbot.waitUntil(lambda: not jobs._live, timeout=5000)
+    gc.collect()
+    assert [r for r in refs if r() is not None] == []
