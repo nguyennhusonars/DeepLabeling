@@ -1,0 +1,93 @@
+"""Opening a dataset: the one funnel every launch path goes through
+(docs/design/2026-10-04-app-foundation.md#state-and-settings)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from .dataset import Dataset
+from .editor import Editor
+from .history import History
+from .review import ReviewMarks
+from .settings import JsonFile, Settings, define, is_str_list, is_str_map, is_str_or_none
+from .state import DatasetLock, dataset_state_dir
+from .store import LabelStore
+from .taxonomy import names_changed
+
+TAXONOMY_NAMES = define("taxonomy.names", "root", None, lambda v: v is None or is_str_list(v))
+TAXONOMY_SOURCE = define("taxonomy.source", "root", "", lambda v: isinstance(v, str))
+CLASS_COLORS = define("classes.colors", "root", {}, is_str_map)
+CLASS_HOTKEYS = define("classes.hotkeys", "root", {}, is_str_map)
+QUEUE_SOURCE = define("queue.source", "opening", None, lambda v: v is None or isinstance(v, dict))
+QUEUE_CURSOR = define("queue.cursor", "opening", None, is_str_or_none)
+ACTIVE_CLASS = define("classes.active", "opening", None, is_str_or_none)
+
+#: (source last opened, its names, this source, these names) -> open anyway?
+ConfirmTaxonomy = Callable[[str, list[str], str, tuple[str, ...]], bool]
+
+
+class OpenCancelled(Exception):
+    """The user chose not to open the dataset."""
+
+
+@dataclass(eq=False)
+class Workspace:
+    dataset: Dataset
+    directory: Path
+    lock: DatasetLock
+    file: JsonFile
+    root_settings: Settings
+    opening_settings: Settings
+    review: ReviewMarks
+    store: LabelStore
+    history: History
+    editor: Editor
+
+    @classmethod
+    def open(cls, source, labels=None, *, confirm_taxonomy: ConfirmTaxonomy,
+             on_labels_changed: Callable[[tuple[Path, ...]], None] | None = None,
+             on_history_changed: Callable[[], None] | None = None,
+             on_reload: Callable[[Path], None] | None = None) -> Workspace:
+        """Open a dataset for editing. Raises DatasetError, Locked or OpenCancelled."""
+        dataset = Dataset.open(source, labels)
+        directory = dataset_state_dir(dataset.root)
+        lock = DatasetLock(directory)
+        lock.acquire()
+        try:
+            file = JsonFile(directory / "dataset.json")
+            root = Settings(file, "root", ("root",))
+            last = root.get(TAXONOMY_NAMES)
+            if names_changed(last, dataset.names) and not confirm_taxonomy(
+                    root.get(TAXONOMY_SOURCE), last, str(dataset.source), dataset.names):
+                raise OpenCancelled(f"{dataset.source.name} was not opened")
+            root.set(TAXONOMY_NAMES, list(dataset.names))
+            root.set(TAXONOMY_SOURCE, str(dataset.source))
+            file.save()
+            review = ReviewMarks(directory / "review.json", dataset.root)
+            store = LabelStore(dataset, on_reload=on_reload)
+            history = History(store)
+            editor = Editor(store, history, review, on_labels_changed=on_labels_changed,
+                            on_history_changed=on_history_changed)
+        except BaseException:
+            lock.release()
+            raise
+        return cls(dataset, directory, lock, file, root,
+                   Settings(file, "opening", ("openings", dataset.opening_key)),
+                   review, store, history, editor)
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """State files that could not be read, for the notice strip."""
+        return tuple(w for w in (self.file.warning, self.review.warning) if w)
+
+    def save(self) -> None:
+        self.review.save()
+        self.file.save()
+
+    def close(self) -> None:
+        try:
+            self.save()
+        finally:
+            self.lock.release()
