@@ -53,3 +53,15 @@ def test_a_growing_queue_refreshes_the_bar_at_most_once_per_interval(qtbot, sess
         session.queueGrew.emit()
     assert refreshes == []
     qtbot.waitUntil(lambda: refreshes == [1], timeout=2000)
+
+
+def test_a_growing_queue_still_refreshes_the_bar_while_it_grows(qtbot, session, monkeypatch):
+    bar = shown(qtbot, StateBar(session), 1400)
+    refreshes = []
+    monkeypatch.setattr(bar, "refresh", lambda: refreshes.append(1))
+    bar._soon.timeout.disconnect()
+    bar._soon.timeout.connect(bar.refresh)
+    for _ in range(10):                     # a batch every 0.1 s for a second
+        session.queueGrew.emit()
+        qtbot.wait(100)
+    assert len(refreshes) >= 3

@@ -201,3 +201,19 @@ def test_a_label_file_created_outside_appears_on_the_canvas(qtbot, window, ds):
     assert window.canvas.caption_items() == []
     ds.lbl("camA/0003").write_bytes(b"1 0.5 0.5 0.2 0.2\n")
     qtbot.waitUntil(lambda: [c.text for c in window.canvas.caption_items()] == ["car"], timeout=5000)
+
+
+def test_the_queue_chip_can_refresh_the_same_queue(qtbot, ds):
+    w = start(qtbot, [str(ds.yaml)], FakePrompter(queue=ImageFilter()))    # the queue in force
+    with qtbot.waitSignal(w.session.queueReset, timeout=2000):
+        qtbot.mouseClick(w.state_bar.queue, Qt.LeftButton)
+    w.close()
+
+
+def test_a_closed_panel_can_be_shown_again(qtbot, window):
+    window.queue_dock.close()
+    qtbot.waitUntil(lambda: not window.queue_dock.isVisible())
+    action = next(a for a in window.panels_menu.actions() if a.text() == "Queue")
+    action.trigger()
+    qtbot.waitUntil(window.queue_dock.isVisible)
+    assert window.state_bar.layers.full_text == "Layers: labels, captions"

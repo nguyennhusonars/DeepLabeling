@@ -72,6 +72,9 @@ class MainWindow(QMainWindow):
         for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS)):
             bind_toggle(self.actions[key], session.settings, setting, self._layers_changed)
             layers.addAction(self.actions[key])
+        self.panels_menu = layers.addMenu("Panels")     # a closed dock comes back from here
+        self.panels_menu.addAction(self.queue_dock.toggleViewAction())
+        self.panels_menu.addAction(self.inspector_dock.toggleViewAction())
         self._layers_changed()
         self.state_bar.dataset.menu().aboutToShow.connect(self._fill_dataset_menu)
         self.state_bar.queue.clicked.connect(self.edit_queue)
@@ -212,7 +215,7 @@ class MainWindow(QMainWindow):
             return
         current = self.session.queue.source
         chosen = self.prompter.edit_queue(self.session.workspace.dataset, current)
-        if chosen is not None and chosen != current:
+        if chosen is not None:                      # the same filter again is a refresh
             self.session.set_queue(chosen)
 
     def go_to(self) -> None:

@@ -73,8 +73,14 @@ class StateBar(QWidget):
         self._soon.setSingleShot(True)
         self._soon.setInterval(REFRESH_MS)
         self._soon.timeout.connect(self.refresh)
-        session.queueGrew.connect(self._soon.start)
+        session.queueGrew.connect(self._soon_once)
         self.refresh()
+
+    def _soon_once(self) -> None:
+        # Start the timer only when it is idle: restarting it on every batch would hold
+        # the refresh off until the queue stopped growing.
+        if not self._soon.isActive():
+            self._soon.start()
 
     def refresh(self) -> None:
         session, ws = self._session, self._session.workspace

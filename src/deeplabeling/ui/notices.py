@@ -65,7 +65,10 @@ class NoticeStrip(QWidget):
         self._layout.insertWidget(0, row)
         row.show()              # a layout shows a new child of a visible parent only later
         while len(self.rows) > MAX_ROWS:
-            self._remove(self.rows[-1])
+            oldest = next((r for r in reversed(self.rows) if r.key is None), None)
+            if oldest is None:
+                break
+            self._remove(oldest)                    # a standing notice is never pushed out
         self.show()
 
     def texts(self) -> list[str]:

@@ -72,7 +72,10 @@ class QueuePanel(QWidget):
         self.view.setUniformItemSizes(True)
         self.view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.view.setFocusPolicy(Qt.NoFocus)         # arrows belong to the window's actions
-        self.view.clicked.connect(lambda index: session.go_to(index.data(Qt.UserRole)))
+        # The view's current row drives the cursor, however the mouse got there (a drag
+        # across rows moves it without a click); following the cursor does not count.
+        self._following = False
+        self.view.selectionModel().currentChanged.connect(self._picked)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.title)
@@ -99,4 +102,16 @@ class QueuePanel(QWidget):
         if row is None or row >= self.model.rowCount():
             self.view.clearSelection()
             return
-        self.view.setCurrentIndex(self.model.index(row))     # which also scrolls to it
+        self._following = True
+        try:
+            self.view.setCurrentIndex(self.model.index(row))     # which also scrolls to it
+        finally:
+            self._following = False
+
+    def _picked(self, current, previous) -> None:
+        if self._following or not current.isValid():
+            return
+        key = current.data(Qt.UserRole)
+        item = self._session.current()
+        if item is None or item.key != key:
+            self._session.go_to(key)

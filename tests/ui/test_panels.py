@@ -99,3 +99,22 @@ def test_the_inspector_ignores_changes_to_other_images(qtbot, inspector, session
     assert calls == []
     session.labelsChanged.emit((session.current().entry.path,))
     assert calls == [1]
+
+
+def test_dragging_across_rows_moves_the_cursor_with_the_highlight(panel, session):
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    def send(kind, point, buttons):
+        event = QMouseEvent(kind, QPointF(point), panel.view.viewport().mapToGlobal(QPointF(point)),
+                            Qt.LeftButton, buttons, Qt.NoModifier)
+        QApplication.sendEvent(panel.view.viewport(), event)
+
+    a = panel.view.visualRect(panel.model.index(1)).center()
+    b = panel.view.visualRect(panel.model.index(5)).center()
+    send(QEvent.MouseButtonPress, a, Qt.LeftButton)
+    send(QEvent.MouseMove, b, Qt.LeftButton)
+    send(QEvent.MouseButtonRelease, b, Qt.NoButton)
+    assert panel.view.currentIndex().row() == 5
+    assert session.current().key == session.queue.items[5].key

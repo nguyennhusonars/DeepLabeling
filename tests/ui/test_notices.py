@@ -71,3 +71,10 @@ def test_a_dismissed_row_is_freed(qtbot, strip):
     qtbot.wait(20)                                  # deleteLater runs
     gc.collect()
     assert row() is None
+
+
+def test_a_standing_notice_is_never_pushed_out(strip):
+    strip.add("warning", "ids the yaml does not name", key="out-of-range")
+    for i in range(MAX_ROWS + 1):
+        strip.add("error", f"refused {i}")
+    assert "ids the yaml does not name" in strip.texts()
