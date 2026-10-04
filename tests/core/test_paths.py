@@ -17,5 +17,6 @@ def test_the_training_rule(image, label):
     assert training_label_path(Path(image)) == Path(label)
 
 
-def test_an_explicit_label_folder():
-    assert folder_label_path(Path("/d/frames/sub/a.jpg"), Path("/l")) == Path("/l/a.txt")
+def test_an_explicit_label_folder_mirrors_the_image_folder():
+    assert folder_label_path(Path("/d/frames/a.b.jpg"), Path("/d/frames"), Path("/l")) == Path("/l/a.b.txt")
+    assert folder_label_path(Path("/d/frames/sub/a.JPG"), Path("/d/frames"), Path("/l")) == Path("/l/sub/a.txt")

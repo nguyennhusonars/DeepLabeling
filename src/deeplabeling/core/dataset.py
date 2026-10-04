@@ -125,7 +125,7 @@ def _from_folder(folder: Path, labels: Path | None) -> Dataset:
     label_dir = labels or training_label_path(folder / "_.jpg").parent
     if labels:
         def label_of(image: Path) -> Path:
-            return folder_label_path(image, labels)
+            return folder_label_path(image, folder, labels)
     else:
         label_of = training_label_path
     found = [(FOLDER_SPLIT, Path(f)) for f in sorted(files)]

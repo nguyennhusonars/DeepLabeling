@@ -17,6 +17,7 @@ def training_label_path(image: Path) -> Path:
     return Path(sb.join(s.rsplit(sa, 1)).rsplit(".", 1)[0] + ".txt")
 
 
-def folder_label_path(image: Path, label_dir: Path) -> Path:
-    """The label file in an explicitly given label folder."""
-    return label_dir / f"{image.stem}.txt"
+def folder_label_path(image: Path, image_dir: Path, label_dir: Path) -> Path:
+    """The label file in an explicitly given label folder, mirroring the image's
+    subfolders: flattening them would read and write a shadow file beside the real one."""
+    return label_dir / image.relative_to(image_dir).with_suffix(".txt")

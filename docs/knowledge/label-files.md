@@ -135,8 +135,9 @@ line is gone or ambiguous.
   folder in the path becomes `labels` and the extension `.txt`, which leaves the `.txt`
   beside an image with no `images` folder in its path:
   `src/deeplabeling/core/paths.py::training_label_path`.
-  A folder launch with an explicit label folder uses `<folder>/<stem>.txt`; a folder
-  launch with neither is refused, never guessed
+  A folder launch with an explicit label folder mirrors the image folder's subfolders
+  (`src/deeplabeling/core/paths.py::folder_label_path`); a folder launch with neither is
+  refused, never guessed
   ([app design](../design/2026-10-04-app-foundation.md#dataset)).
 - The legacy resolver (`legacy/yolo_labeling/core/paths.py::LabelPathResolver`) tried an
   explicit folder, then the longest yaml folder mapping, then convention with fallbacks.

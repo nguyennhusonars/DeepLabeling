@@ -144,6 +144,13 @@ def test_a_folder_with_no_images_component_needs_a_label_folder(ds):
     assert d.images[0].label_path == ds.root / "frame_labels/x0001.txt"
 
 
+def test_an_explicit_label_folder_mirrors_subfolders(ds):
+    make_image(ds.root / "frames/sub/y0001.jpg")
+    d = Dataset.open(ds.root / "frames", labels=ds.root / "frame_labels")
+    assert d.entry(ds.root / "frames/sub/y0001.jpg").label_path == ds.root / "frame_labels/sub/y0001.txt"
+    assert d.entry(ds.root / "frames/x0001.jpg").label_path == ds.root / "frame_labels/x0001.txt"
+
+
 def test_a_folder_with_no_images_is_refused(ds):
     (ds.root / "empty/images").mkdir(parents=True)
     with pytest.raises(DatasetError, match="no images"):

@@ -211,7 +211,9 @@ replace the **last** `images` folder in the path with `labels`, and the extensio
 `.txt`. For a yaml-listed image with no `images` folder in its path, that rule yields a
 `.txt` beside the image,
 and since that is what training reads, DeepLabeling uses it too. A folder-pair launch with
-an explicit label folder uses `<label folder>/<stem>.txt`. A folder launch whose path has no
+an explicit label folder mirrors the image folder: `<label folder>/<path under the image
+folder>.txt`, so a nested image never reads or writes a flat shadow file
+(`src/deeplabeling/core/paths.py::folder_label_path`). A folder launch whose path has no
 `images` component and no label folder is refused at open, with a message asking for the
 label folder: with no yaml there is no training rule to follow, and DeepLabeling does not
 guess. This replaces the legacy
