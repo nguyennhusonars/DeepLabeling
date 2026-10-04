@@ -21,7 +21,8 @@ from ..core.queue import BuildContext, ImageFilter, Queue, QueueItem
 from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
-from ..core.workspace import QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
+from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
+from .classes import assign_classes
 from .images import ImageCache
 from .settings_ui import Saver, global_settings, remember_source
 from .workers import Jobs
@@ -114,6 +115,10 @@ class Session(QObject):
         self.workspace = ws
         self._by_rel = {e.rel: e for e in ws.dataset.images}
         self._follow = self._seen = self._keys = None
+        root = ws.root_settings
+        colors, hotkeys = assign_classes(ws.dataset.names, root.get(CLASS_COLORS), root.get(CLASS_HOTKEYS))
+        root.set(CLASS_COLORS, colors)
+        root.set(CLASS_HOTKEYS, hotkeys)
         remember_source(self.settings, *self.current_source())
         self.saver.schedule()
         self.opened.emit()
@@ -353,6 +358,12 @@ class Session(QObject):
         if why is not None:
             self.notice.emit("error", f"{rel}: the image cannot be decoded ({why}), "
                              "so its labels are not edited", intent.image)
+            return None
+        if self.images.get(intent.image) is None:
+            # Until it is decoded, whether it CAN be decoded is unknown -- and "could not
+            # read" must never become "no boxes" (legacy defect #2).
+            self.notice.emit("error", f"{rel}: the image is still loading, so its labels "
+                             "are not edited yet", intent.image)
             return None
         try:
             edit = ws.editor.apply(intent)

@@ -255,3 +255,8 @@ def open_session(qtbot, source, prompter=None, **kw):
     with qtbot.waitSignal(s.queueDone, timeout=5000):
         assert s.open(source, **kw)
     return s
+
+
+def wait_decoded(qtbot, session, image):
+    """Edits wait for the image to be decoded; so do tests that edit."""
+    qtbot.waitUntil(lambda: session.images.get(image) is not None, timeout=5000)

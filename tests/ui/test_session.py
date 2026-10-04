@@ -3,8 +3,10 @@ import yaml
 
 from deeplabeling.core.edits import AddBox, Intent
 from deeplabeling.core.queue import HasClass, ImageFilter
+from deeplabeling.core.workspace import CLASS_COLORS, CLASS_HOTKEYS
+from deeplabeling.ui.classes import PALETTE
 from deeplabeling.ui.session import OUT_OF_RANGE, Session
-from fixtures import FakePrompter, assert_only_changed, open_session
+from fixtures import FakePrompter, assert_only_changed, open_session, wait_decoded
 
 BOX = (0.5, 0.5, 0.2, 0.2)
 
@@ -57,8 +59,9 @@ def test_toggle_reviewed(session):
     assert not session.workspace.review.is_marked("camA/images/0001.jpg")
 
 
-def test_mark_negative_creates_an_empty_file_and_undo_removes_it(session, ds):
+def test_mark_negative_creates_an_empty_file_and_undo_removes_it(qtbot, session, ds):
     session.go_to("camA/images/0003.jpg")
+    wait_decoded(qtbot, session, ds.img("camA/0003.jpg"))
     before = ds.snapshot()
     changed = record(session.labelsChanged)
     session.mark_negative()
@@ -72,7 +75,8 @@ def test_mark_negative_creates_an_empty_file_and_undo_removes_it(session, ds):
     assert ds.lbl("camA/0003").read_bytes() == b""
 
 
-def test_mark_negative_on_a_labelled_image_is_refused_visibly(session, ds):
+def test_mark_negative_on_a_labelled_image_is_refused_visibly(qtbot, session, ds):
+    wait_decoded(qtbot, session, ds.img("camA/0001.jpg"))
     notices = record(session.notice)
     before = ds.snapshot()
     session.mark_negative()
@@ -81,8 +85,9 @@ def test_mark_negative_on_a_labelled_image_is_refused_visibly(session, ds):
     assert level == "error" and "already has a label file" in text and image == ds.img("camA/0001.jpg")
 
 
-def test_undo_goes_to_the_image_it_changes(session, ds):
+def test_undo_goes_to_the_image_it_changes(qtbot, session, ds):
     session.go_to("camA/images/0003.jpg")
+    wait_decoded(qtbot, session, ds.img("camA/0003.jpg"))
     session.mark_negative()
     session.go_to("seg/images/poly1.jpg")
     session.undo()
@@ -292,3 +297,25 @@ def test_the_marks_snapshot_is_renewed_when_marks_change(qtbot, session):
     session.toggle_reviewed()
     session.labelsChanged.emit((session.current().entry.path,))
     assert session.current().key in session.queue.stale
+
+
+def test_an_image_still_loading_is_not_edited(qtbot, session, ds):
+    notices, before = record(session.notice), ds.snapshot()
+    session.apply(Intent(ds.img("seg/poly1.jpg"), (AddBox(0, BOX),), "draw"))   # never shown
+    assert_only_changed(before, ds.snapshot(), set())
+    assert "still loading" in notices[-1][1]
+
+
+def test_class_colours_and_hotkeys_follow_the_name_across_yamls(qtbot, ds):
+    s = open_session(qtbot, ds.yaml)
+    assert s.workspace.root_settings.get(CLASS_HOTKEYS) == {"person": "1", "car": "2", "bus_m": "3", "bus_l": "4"}
+    s.close()
+    data = yaml.safe_load(ds.yaml.read_text(encoding="utf-8"))
+    data["names"] = ["car", "truck", "person"]
+    other = ds.root / "other.yaml"
+    other.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    again = open_session(qtbot, other)
+    keys, colors = again.workspace.root_settings.get(CLASS_HOTKEYS), again.workspace.root_settings.get(CLASS_COLORS)
+    assert (keys["car"], keys["person"], keys["truck"]) == ("2", "1", "3")
+    assert (colors["car"], colors["truck"]) == (PALETTE[1], PALETTE[2])
+    again.close()

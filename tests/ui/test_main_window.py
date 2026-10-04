@@ -87,6 +87,7 @@ def test_space_marks_and_moves_and_k_toggles(qtbot, window):
 
 def test_n_marks_a_missing_image_negative_and_ctrl_z_takes_it_back(qtbot, window, ds):
     window.session.go_to("camA/images/0003.jpg")
+    qtbot.waitUntil(lambda: window._shown == ds.img("camA/0003.jpg"))     # edits wait for the image
     qtbot.keyClick(window, Qt.Key_N)
     assert ds.lbl("camA/0003").read_bytes() == b""
     assert "↶ 1" in window.status_text.text()
