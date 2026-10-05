@@ -216,3 +216,25 @@ def test_the_box_list_keeps_the_selection_through_an_edit(qtbot, window):
     qtbot.keyClick(window, Qt.Key_2)                             # reclassify: the list is rebuilt
     qtbot.waitUntil(lambda: boxes.count() == 2)
     assert [boxes.item(i).isSelected() for i in range(2)] == [True, False]
+
+
+def test_every_kind_of_edit_undoes_back_to_the_bytes_it_started_from(qtbot, window, ds):
+    before = ds.snapshot()
+    go(qtbot, window, "camA/images/0003.jpg")
+    drag(window.canvas, (5, 5), (20, 20))                       # draw a person
+    qtbot.keyClick(window, Qt.Key_2)                            # it is a car
+    drag(window.canvas, (12, 12), (22, 17))                     # move it by (10, 5)
+    drag(window.canvas, (30, 25), (35, 32))                     # its bottom-right handle
+    [(cls_id, bbox)] = lines(ds.lbl("camA/0003"))
+    assert cls_id == 1 and bbox == pytest.approx((25 / 64, 21 / 48, 20 / 64, 22 / 48), abs=0.01)
+    qtbot.keyClick(window, Qt.Key_C, Qt.ControlModifier)
+    go(qtbot, window, "camA/images/0001.jpg")
+    qtbot.keyClick(window, Qt.Key_V, Qt.ControlModifier)        # pasted, and selected
+    assert len(lines(ds.lbl("camA/0001"))) == 3 and selected(window) == [2]
+    qtbot.keyClick(window, Qt.Key_Delete)
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
+    assert window.session.workspace.history.depth == 6
+    for _ in range(6):
+        qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
+    assert ds.snapshot() == before
+    assert window.session.current().key == "camA/images/0003.jpg"   # undo went to its image

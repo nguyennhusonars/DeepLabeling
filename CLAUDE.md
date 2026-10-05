@@ -4,8 +4,8 @@ A labeling and dataset-cleaning tool for YOLO datasets, built on PySide6 / Qt. I
 replaces `yolo_labeling` (Tkinter), kept as a frozen reference in
 [legacy/](legacy/README.md) — never imported, never edited.
 
-**Status:** slice 1's core and its viewer UI are built; editing on the canvas (plan 1c)
-is next. The design and the plans are in [docs/design/](docs/design/).
+**Status:** slice 1's core, its viewer UI and editing on the canvas are built; the queue
+grid (plan 1d) is next. The design and the plans are in [docs/design/](docs/design/).
 
 ```sh
 ./run.sh                       # launch from this checkout; nothing to install
