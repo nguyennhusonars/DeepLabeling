@@ -144,3 +144,11 @@ def test_a_box_at_the_frame_edge_stays_inside_the_image_and_is_writable():
     cx, cy, w, h = pred.box
     assert cx - w / 2 >= 0 and cx + w / 2 <= 1
     materialize(None, (AddBox(0, pred.box),), class_ok=lambda c: True)    # not refused
+
+
+def test_a_closed_predictor_lets_go_of_its_model_and_its_decoders(predictor, tmp_path):
+    predictor.close()
+    assert predictor._model is None and predictor._decoder._shutdown
+    with pytest.raises(ModelError, match="closed"):
+        predictor.predict([tmp_path / "a.jpg"])
+    predictor.close()                                       # twice is harmless
