@@ -1,15 +1,17 @@
 """The GUI thread's one way to change labels (docs/design/2026-10-04-app-foundation.md#edits).
 
 An applied edit is written by the store, recorded in the history and marks its
-image reviewed; the listeners hear which images changed.
+image reviewed; the listeners hear which images changed. An edit across many images
+(accepting predictions over a queue) is written in chunks by an EditBatch and recorded
+as one edit that marks nothing (docs/design/2026-10-05-model-assist.md#accepting).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .edits import Edit, Intent
+from .edits import Edit, FileChange, Intent, Refused
 from .history import History
 from .review import ReviewMarks
 from .store import LabelStore
@@ -36,6 +38,16 @@ class Editor:
         self._history_changed()
         return edit
 
+    def batch(self, description: str) -> EditBatch:
+        """An edit across many images, written a chunk at a time, recorded at finish()."""
+        return EditBatch(self, description)
+
+    def apply_many(self, intents: Iterable[Intent], description: str) -> Edit | None:
+        """Apply intents across many images as one edit that marks nothing."""
+        batch = self.batch(description)
+        batch.apply(intents)
+        return batch.finish()
+
     def undo(self) -> Edit | None:
         try:
             edit = self.history.undo()
@@ -52,4 +64,68 @@ class Editor:
             self._history_changed()
         if edit is not None:
             self._labels_changed(edit.images)
+        return edit
+
+
+class EditBatch:
+    """One edit across many images. Each chunk is written at once, on the owner thread,
+    and its images reported; finish() records the whole as one edit and marks nothing.
+
+    If a write fails, every file the batch has written gets its before-bytes back, the
+    batch is spent, and nothing is recorded: a failed batch leaves no half.
+    """
+
+    def __init__(self, editor: Editor, description: str):
+        self._editor, self._description = editor, description
+        self._changes: dict[Path, FileChange] = {}      # by label file: first before, last after
+        self._images: dict[Path, None] = {}
+        self._spent = False
+
+    def apply(self, intents: Iterable[Intent]) -> None:
+        if self._spent:
+            raise RuntimeError("this batch is finished or failed")
+        store, touched = self._editor.store, []
+        try:
+            for intent in intents:
+                edit = store.apply(intent)
+                if edit is None:
+                    continue
+                for change in edit.changes:
+                    first = self._changes.get(change.path)
+                    self._changes[change.path] = FileChange(
+                        change.path, change.before if first is None else first.before, change.after)
+                for image in edit.images:
+                    self._images[image] = None
+                    touched.append(image)
+        except Refused as e:
+            self._spent = True
+            self._roll_back(e)
+        if touched:
+            self._editor._labels_changed(tuple(touched))
+
+    def _roll_back(self, cause: Refused) -> None:
+        written = self._edit()
+        if written is not None:
+            try:
+                self._editor.store.restore(written, undo=True)
+            except Refused as e:
+                raise Refused(f"{cause}; putting back what was written failed too: {e}") from cause
+            finally:
+                self._editor._labels_changed(written.images)
+        raise cause
+
+    def _edit(self) -> Edit | None:
+        if not self._changes:
+            return None
+        return Edit(tuple(self._changes.values()), tuple(self._images), self._description)
+
+    def finish(self) -> Edit | None:
+        """Record what was written as one edit; None when nothing changed."""
+        if self._spent:
+            raise RuntimeError("this batch is finished or failed")
+        self._spent = True
+        edit = self._edit()
+        if edit is not None:
+            self._editor.history.push(edit)
+            self._editor._history_changed()
         return edit
