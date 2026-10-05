@@ -31,6 +31,7 @@ TILE = QSize(176, 150)                      #: one grid cell
 THUMB_AREA = QRect(8, 6, THUMB_PX, 120)     #: where a cell's thumbnail goes, within it
 TILE_BG, TILE_TEXT, TILE_CURRENT = "#3a3a3a", "#e0e0e0", "#4a90d9"
 WANT_MS = 30                                #: thumbnails are wanted this long after a scroll
+REFOLLOW_MS = 120                           #: a resize is settled when none came for this long
 
 
 def tile_thumb_rect(cell: QRect, thumb: QSize) -> QRect:
@@ -42,10 +43,10 @@ def tile_thumb_rect(cell: QRect, thumb: QSize) -> QRect:
     return rect
 
 
-def tile_text(session: Session, item: QueueItem) -> str:
+def tile_text(session: Session, item: QueueItem, labels=None) -> str:
     """A tile's caption: the reviewed tick, the file name and the badge."""
     tick = "✓ " if session.workspace.review.is_marked(item.key) else ""
-    return f"{tick}{Path(item.key).name} · {session.badge(item)}"
+    return f"{tick}{Path(item.key).name} · {session.badge(item, labels)}"
 
 
 class QueueModel(QAbstractListModel):
@@ -116,6 +117,7 @@ class TileDelegate(QStyledItemDelegate):
         if queue is None or session.workspace is None or index.row() >= len(queue):
             return
         item, cell = queue.items[index.row()], option.rect
+        labels = session.labels(item.entry)        # once a paint: the caption and the boxes
         painter.save()
         painter.fillRect(cell.adjusted(2, 2, -2, -2), QColor(TILE_BG))
         if option.state & QStyle.State_Selected:
@@ -130,18 +132,17 @@ class TileDelegate(QStyledItemDelegate):
         else:
             target = tile_thumb_rect(cell, thumb.size())
             painter.drawImage(target, thumb)
-            self._draw_boxes(painter, item, target)
+            self._draw_boxes(painter, labels, target)
         caption = QRect(cell.x() + 8, cell.y() + THUMB_AREA.bottom() + 4, cell.width() - 16,
                         cell.height() - THUMB_AREA.bottom() - 8)
         painter.setPen(QColor(TILE_TEXT))
         painter.drawText(caption, Qt.AlignLeft | Qt.AlignVCenter,
-                         option.fontMetrics.elidedText(tile_text(session, item), Qt.ElideMiddle,
+                         option.fontMetrics.elidedText(tile_text(session, item, labels), Qt.ElideMiddle,
                                                        caption.width()))
         painter.restore()
 
-    def _draw_boxes(self, painter, item: QueueItem, target: QRect) -> None:
+    def _draw_boxes(self, painter, labels, target: QRect) -> None:
         session, ws = self._session, self._session.workspace
-        labels = session.labels(item.entry)
         highlight = session.queue.source.highlight(labels, ws.dataset)
         painter.save()
         painter.setBrush(Qt.NoBrush)
@@ -211,7 +212,7 @@ class QueuePanel(QWidget):
         # hides the current item, so once the size settles it is brought back.
         self._refollow = QTimer(self)
         self._refollow.setSingleShot(True)
-        self._refollow.setInterval(0)
+        self._refollow.setInterval(REFOLLOW_MS)    # a drag of the dock's edge: once, at its end
         self._refollow.timeout.connect(self._relayout)
         self.view.verticalScrollBar().valueChanged.connect(self._want_soon)
         session.queueReset.connect(self._want_soon)
@@ -246,7 +247,8 @@ class QueuePanel(QWidget):
         """Tiles per grid row; 1 in the list."""
         if not self.grid:
             return 1
-        return max(1, self.view.viewport().width() // TILE.width())
+        # Qt wraps a row when a tile would reach the viewport's last pixel.
+        return max(1, (self.view.viewport().width() - 1) // TILE.width())
 
     def _visible_rows(self, partial: bool) -> list[int]:
         area = self.view.viewport().rect()
@@ -269,8 +271,20 @@ class QueuePanel(QWidget):
 
     def mark_page(self) -> None:
         """Mark every tile wholly in view reviewed: what was seen, nothing more."""
-        if self.grid and self._session.workspace is not None:
-            self._session.mark_reviewed(self.visible_keys())
+        session = self._session
+        if not self.grid or session.workspace is None or session.queue is None:
+            return
+        whole = self.visible_keys()
+        if not whole:
+            session.status.emit("no tile is wholly in view")
+            return
+        # A tile still loading, or one that cannot be decoded, shows no picture: unseen.
+        items = session.queue.items
+        shown = [key for key in whole if session.thumbs.get(items[session.queue.index_of(key)].entry.path)]
+        if not shown:
+            session.status.emit("no tile in view shows its picture yet; nothing was marked")
+            return
+        session.mark_reviewed(shown, left=len(whole) - len(shown))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -287,9 +301,17 @@ class QueuePanel(QWidget):
             self._session.thumbs.want([queue.items[row].entry.path
                                        for row in self._visible_rows(partial=True) if row < len(queue)])
 
-    def _thumb_arrived(self, *_) -> None:
-        if self.grid:
-            self.view.viewport().update()
+    def _thumb_arrived(self, path, *_) -> None:
+        """Repaint the one tile whose thumbnail came, if it is in the queue."""
+        session = self._session
+        if not self.grid or session.workspace is None or session.queue is None:
+            return
+        try:
+            row = session.queue.index_of(session.workspace.dataset.entry(path).rel)
+        except KeyError:
+            return
+        if row is not None and row < self.model.rowCount():
+            self.view.update(self.model.index(row))
 
     # -- the title and the cursor ----------------------------------------------------------
 

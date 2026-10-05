@@ -314,8 +314,8 @@ class Session(QObject):
     def labels(self, entry: ImageEntry) -> ImageLabels:
         return self._require().store.get(entry.path)
 
-    def badge(self, item: QueueItem) -> str:
-        labels = self.labels(item.entry)
+    def badge(self, item: QueueItem, labels: ImageLabels | None = None) -> str:
+        labels = self.labels(item.entry) if labels is None else labels
         if labels.state is LabelState.ERROR:
             text = "unreadable"
         elif labels.state is LabelState.SHARED:
@@ -358,17 +358,22 @@ class Session(QObject):
         self._require().review.toggle(item.key)
         self._review_changed([item.key])
 
-    def mark_reviewed(self, keys) -> int:
-        """Mark these images reviewed (the grid's mark page); how many were not already."""
+    def mark_reviewed(self, keys, left: int = 0) -> int:
+        """Mark these images reviewed (the grid's mark page); how many were not already.
+        `left` counts the tiles mark page passed over, for the message."""
         ws = self.workspace
         if ws is None:
             return 0
         newly = [key for key in keys if ws.review.mark(key)]
         if newly:
             self._review_changed(newly)
-            self.status.emit(f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed")
+            said = f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed"
         else:
-            self.status.emit("these were all reviewed already")
+            said = "these were all reviewed already"
+        if left:
+            said += ("; 1 tile showing no picture was left unmarked" if left == 1 else
+                     f"; {left} tiles showing no picture were left unmarked")
+        self.status.emit(said)
         return len(newly)
 
     def _review_changed(self, keys: list[str]) -> None:
@@ -422,7 +427,8 @@ class Session(QObject):
             return
         image = edit.images[0]
         rel = ws.dataset.entry(image).rel
-        if self.queue is not None and rel in self.queue:
+        current = self.current()
+        if self.queue is not None and rel in self.queue and (current is None or current.key != rel):
             self.go_to(rel)                         # the change happens in view
         try:
             (ws.editor.undo if undo else ws.editor.redo)()

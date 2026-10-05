@@ -67,9 +67,10 @@ def test_resize(store, ds):
     assert actions.resize(img, labels, 4, BOX) is None
 
 
-def test_copy_writes_label_lines_and_a_polygon_as_its_extent(store, ds):
-    poly = store.get(ds.img("seg/poly1.jpg"))
-    assert actions.copy_text(poly, [0]) == "0 0.150000 0.150000 0.100000 0.100000\n"
+def test_copy_writes_label_lines_and_leaves_polygons_out(store, ds):
+    mixed = store.get(ds.img("seg/mixed.jpg"))               # a box, then a polygon
+    assert actions.copy_text(mixed, [0, 1]) == "0 0.500000 0.500000 0.200000 0.200000\n"
+    assert actions.copy_text(store.get(ds.img("seg/poly1.jpg")), [0, 1]) == ""
 
 
 def test_a_copy_pastes_back_as_the_same_lines(store, ds):
@@ -122,3 +123,16 @@ def test_changed_fires_only_when_the_selection_changes(qtbot, store, ds):
     selection.clear()
     selection.clear()
     assert seen == [1, 1]
+
+
+def test_boxes_moved_together_stop_together_at_the_edge(store, ds):
+    img = ds.img("camA/0001.jpg")                           # person cx 0.5 w 0.2; car cx 0.25 w 0.1
+    intent = actions.move(img, store.get(img), [0, 1], 0.6, 0.0)
+    assert [op.bbox[0] for op in intent.ops] == pytest.approx([0.9, 0.65])
+
+
+def test_pasted_classes_follow_their_names_into_another_class_list():
+    text = "0 0.5 0.5 0.2 0.3\n1 0.25 0.25 0.1 0.1\n2 0.7 0.7 0.1 0.1\nhello\n"
+    remapped, lost = actions.remap_classes(text, ("person", "car", "bus_m"), ("car", "truck", "person"))
+    assert remapped == "2 0.500000 0.500000 0.200000 0.300000\n0 0.250000 0.250000 0.100000 0.100000\n"
+    assert lost == 1                                        # bus_m has no place in the new list

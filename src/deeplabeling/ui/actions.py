@@ -48,16 +48,15 @@ def delete(image, labels: ImageLabels, indices: Iterable[int]) -> Intent | None:
 
 
 def move(image, labels: ImageLabels, indices: Iterable[int], dx: float, dy: float) -> Intent | None:
-    """Shift boxes by (dx, dy), normalised. Each keeps its size and stays inside the image."""
+    """Shift boxes by (dx, dy), normalised. They keep their sizes and move together: the
+    shift is cut where the first of them would leave the image."""
     rows = _rows(labels, indices)
     if not rows or (dx == 0 and dy == 0):
         return None
-    ops = []
-    for i in rows:
-        cx, cy, w, h = labels.lines[i].bbox
-        nx = min(max(cx + dx, w / 2), 1 - w / 2)
-        ny = min(max(cy + dy, h / 2), 1 - h / 2)
-        ops.append(SetBox(labels.ref(i), (nx, ny, w, h)))
+    boxes = [labels.lines[i].bbox for i in rows]
+    dx = min(max(dx, max(w / 2 - cx for cx, _, w, _ in boxes)), min(1 - w / 2 - cx for cx, _, w, _ in boxes))
+    dy = min(max(dy, max(h / 2 - cy for _, cy, _, h in boxes)), min(1 - h / 2 - cy for _, cy, _, h in boxes))
+    ops = [SetBox(labels.ref(i), (cx + dx, cy + dy, w, h)) for i, (cx, cy, w, h) in zip(rows, boxes)]
     return Intent(Path(image), tuple(ops), f"move {_plural(len(rows), 'box')}")
 
 
@@ -67,14 +66,32 @@ def resize(image, labels: ImageLabels, index: int, bbox: Box) -> Intent | None:
     return Intent(Path(image), (SetBox(labels.ref(index), bbox),), "resize a box")
 
 
+def _line(cls_id: int, bbox: Box) -> str:
+    cx, cy, w, h = bbox
+    return f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\n"
+
+
 def copy_text(labels: ImageLabels, indices: Iterable[int]) -> str:
-    """The boxes as label-file lines; a polygon is copied as its extent."""
-    out = []
-    for i in _rows(labels, indices):
-        line = labels.lines[i]
-        cx, cy, w, h = line.bbox
-        out.append(f"{line.cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\n")
-    return "".join(out)
+    """The boxes as label-file lines. Polygons are left out: pasted, one would become a box."""
+    return "".join(_line(labels.lines[i].cls_id, labels.lines[i].bbox)
+                   for i in _rows(labels, indices) if not labels.lines[i].is_polygon)
+
+
+def remap_classes(text: str, old_names, new_names) -> tuple[str, int]:
+    """Boxes copied under the class list `old_names`, re-numbered by name for `new_names`.
+    A line that is no box is dropped; a box whose class the new list lacks is dropped and
+    counted: (the text, how many were lost)."""
+    index = {name: i for i, name in enumerate(new_names)}
+    out, lost = [], 0
+    for line in parse_label_text(text):
+        if not line.parsed or line.is_polygon or not 0 <= line.cls_id < len(old_names):
+            continue
+        name = old_names[line.cls_id]
+        if name in index:
+            out.append(_line(index[name], line.bbox))
+        else:
+            lost += 1
+    return "".join(out), lost
 
 
 def clamp_box(bbox: Box) -> Box | None:
@@ -88,7 +105,7 @@ def paste(image, text: str, class_ok: Callable[[int], bool]) -> Intent | None:
     file -- clamped into the image. A line that is no box of a known class is skipped."""
     ops = []
     for line in parse_label_text(text):
-        if not line.parsed or line.cls_id < 0 or not class_ok(line.cls_id):
+        if not line.parsed or line.is_polygon or line.cls_id < 0 or not class_ok(line.cls_id):
             continue
         box = clamp_box(line.bbox)
         if box is not None:

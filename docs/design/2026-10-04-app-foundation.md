@@ -350,8 +350,8 @@ clicking it changes that setting.
 (`3 boxes`, `negative`, `missing`, *no longer matches*) and a reviewed tick. `G` switches it
 to a grid of thumbnails with their label boxes drawn on them, and widens the panel to the
 last grid width; the list keeps its own width, and the view and both widths persist. In the
-grid, **mark page** (a button on the panel) marks every tile wholly in view: what was seen,
-nothing more. Thumbnails decode at display size on workers, only for visible rows, into a
+grid, **mark page** (a button on the panel) marks every tile wholly in view and showing its
+picture: what was seen, nothing more. Thumbnails decode at display size on workers, only for visible rows, into a
 cache bounded in bytes (64 MB).
 
 **Canvas** (centre, a `QGraphicsView`):
@@ -362,7 +362,8 @@ cache bounded in bytes (64 MB).
   scope *any class* and IoU 0.99–1.00; slice 3's overlap filter reuses the same predicate
   ([why counts](../knowledge/matching.md#overlap-between-labels)). A box a condition
   highlighted gets a thicker outline.
-- **Mouse.** Left-drag on empty space draws a box of the **active class**. Click selects a
+- **Mouse.** Left-drag draws a box of the **active class**, anywhere but inside a selected
+  box, which the drag moves instead. Click selects a
   box; clicking again at the same spot cycles through the boxes under the cursor,
   smallest first. Shift+click adds to or removes from the selection. Drag a selected box
   to move it, or a handle to resize it. A drag under 3 px is a click. The wheel zooms
@@ -404,7 +405,7 @@ from it, so the help cannot drift from the keys. No key works while a text field
 | `Ctrl+A` | select every box |
 | `Esc` | cancel the drawing, or clear the selection |
 | `Ctrl+Z` / `Ctrl+Shift+Z`, `Ctrl+Y` | undo / redo |
-| `Ctrl+C` / `Ctrl+V` | copy / paste the selected boxes as normalised, clamped coordinates; one edit |
+| `Ctrl+C` / `Ctrl+V` | copy / paste the selected boxes as normalised, clamped coordinates; one edit. Polygons are not copied, and a paste under another class list of the same root keeps each box's class name |
 | `F`, `+`, `-` | fit, zoom in, zoom out |
 | `L`, `T` | toggle the labels layer, the captions |
 | `G` | queue list ⇄ grid |
@@ -463,6 +464,7 @@ launch directory. `DEEPLABELING_STATE_DIR` overrides it, and the tests always se
 | The label file cannot be read | state `error`; edits refused | inspector, notice strip |
 | The label file is shared by two images | state `shared`; edits refused | inspector |
 | A move or resize of a polygon | refused | notice strip |
+| An edit to an image still decoding | refused; nothing is written | notice strip |
 | A write fails (disk full, permissions) | the atomic writer leaves the old file; the Edit is not pushed | notice strip |
 | The dataset is open in another DeepLabeling | the open is refused | dialog |
 | The root was last opened with different class names | the open asks for confirmation, naming both yamls | dialog |

@@ -289,11 +289,22 @@ class Canvas(QGraphicsView):
             moving = self._selected if drag.kind == "move" else ()
             drag.origins = {item: item.pos() for i in moving for item in self._box_items.get(i, ())}
 
+    def _move_delta(self, delta: QPointF) -> QPointF:
+        """`delta`, cut so every selected box stays inside the image: they move together."""
+        w, h = self._size
+        rects = [v.rect for v in self._views if v.index in self._selected]
+        if not rects:
+            return delta
+        dx = min(max(delta.x(), max(-r[0] for r in rects)), min(w - r[2] for r in rects))
+        dy = min(max(delta.y(), max(-r[1] for r in rects)), min(h - r[3] for r in rects))
+        return QPointF(dx, dy)
+
     def _preview_to(self, drag: _Drag, point: QPointF) -> None:
         delta = point - drag.start
         if drag.kind == "draw":
             self._preview.setRect(QRectF(drag.start, self._inside_image(point)).normalized())
         elif drag.kind == "move":
+            delta = self._move_delta(delta)
             for item, origin in drag.origins.items():
                 item.setPos(origin + delta)
         else:
@@ -310,12 +321,12 @@ class Canvas(QGraphicsView):
     def _finish(self, drag: _Drag, point: QPointF) -> None:
         self._redraw()                              # the window shows the saved result
         if drag.kind == "draw":
-            a, b = drag.start, self._inside_image(point)
+            a, b = self._inside_image(drag.start), self._inside_image(point)
             rect = (min(a.x(), b.x()), min(a.y(), b.y()), max(a.x(), b.x()), max(a.y(), b.y()))
             if rect[2] - rect[0] >= 1 and rect[3] - rect[1] >= 1:
                 self.drawn.emit(rect)
         elif drag.kind == "move":
-            delta = point - drag.start
+            delta = self._move_delta(point - drag.start)
             if delta.x() or delta.y():
                 self.moved.emit(delta.x(), delta.y())
         else:
@@ -430,7 +441,7 @@ class Canvas(QGraphicsView):
             point = self.mapToScene(event.position().toPoint())
             if drag.active:
                 self._finish(drag, point)
-            else:
+            elif drag.kind != "resize":             # a click on a handle selects nothing new
                 self._click(drag.start, drag.shift)
             event.accept()
             return

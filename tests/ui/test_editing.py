@@ -285,3 +285,52 @@ def test_with_the_labels_hidden_no_key_or_list_click_touches_a_box(qtbot, window
     click_row(qtbot, boxes, 0)
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and selected(window) == []
     assert window.editing.active_class().name == "car" and not boxes.item(0).isSelected()
+
+
+def test_undo_on_the_image_on_screen_keeps_the_selection(qtbot, window, ds):
+    drag(window.canvas, (50, 40), (60, 46))                 # a new box, selected
+    click(window.canvas, PERSON)
+    qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)    # the drawn box goes; the person stays
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and selected(window) == [0]
+
+
+def test_an_edit_redraws_the_canvas_once(qtbot, window, monkeypatch):
+    click(window.canvas, PERSON)
+    redraws, redraw = [], window.canvas._redraw
+    monkeypatch.setattr(window.canvas, "_redraw", lambda: (redraws.append(1), redraw()))
+    qtbot.keyClick(window, Qt.Key_3)
+    assert len(redraws) == 1 and selected(window) == [0]
+    assert len(window.canvas.handle_items()) == 8
+
+
+def test_copying_polygons_says_they_were_left_out(qtbot, window):
+    go(qtbot, window, "seg/images/mixed.jpg")
+    qtbot.keyClick(window, Qt.Key_A, Qt.ControlModifier)
+    with qtbot.waitSignal(window.session.status) as said:
+        qtbot.keyClick(window, Qt.Key_C, Qt.ControlModifier)
+    assert said.args == ["copied 1 box; 1 polygon is not copied: a paste would make it a box"]
+
+
+def test_a_paste_says_what_it_skipped(qtbot, window, ds):
+    QGuiApplication.clipboard().setText("0 0.5 0.5 0.2 0.2\n9 0.5 0.5 0.1 0.1\nnot a box\n")
+    go(qtbot, window, "camA/images/0003.jpg")
+    with qtbot.waitSignal(window.session.status) as said:
+        qtbot.keyClick(window, Qt.Key_V, Qt.ControlModifier)
+    assert said.args == ["pasted 1 box; 2 lines were not boxes of this dataset's classes"]
+    assert len(lines(ds.lbl("camA/0003"))) == 1
+
+
+def test_a_paste_under_another_class_list_keeps_each_box_its_class_name(qtbot, window, ds):
+    import yaml
+
+    qtbot.keyClick(window, Qt.Key_A, Qt.ControlModifier)
+    qtbot.keyClick(window, Qt.Key_C, Qt.ControlModifier)    # person (id 0), car (id 1)
+    data = yaml.safe_load(ds.yaml.read_text(encoding="utf-8"))
+    data["names"] = ["car", "truck", "person"]
+    other = ds.root / "other.yaml"
+    other.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    with qtbot.waitSignal(window.session.queueDone, timeout=5000):
+        assert window.session.open(other)
+    go(qtbot, window, "camA/images/0003.jpg")
+    qtbot.keyClick(window, Qt.Key_V, Qt.ControlModifier)
+    assert [cls for cls, _ in lines(ds.lbl("camA/0003"))] == [2, 0]   # person, car by name
