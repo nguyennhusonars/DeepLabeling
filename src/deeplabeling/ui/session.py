@@ -358,6 +358,19 @@ class Session(QObject):
         self._require().review.toggle(item.key)
         self._review_changed([item.key])
 
+    def mark_reviewed(self, keys) -> int:
+        """Mark these images reviewed (the grid's mark page); how many were not already."""
+        ws = self.workspace
+        if ws is None:
+            return 0
+        newly = [key for key in keys if ws.review.mark(key)]
+        if newly:
+            self._review_changed(newly)
+            self.status.emit(f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed")
+        else:
+            self.status.emit("these were all reviewed already")
+        return len(newly)
+
     def _review_changed(self, keys: list[str]) -> None:
         self._keys = None                           # the marks snapshot is out of date
         self.saver.schedule()

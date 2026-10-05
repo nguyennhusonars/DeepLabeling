@@ -336,3 +336,13 @@ def test_a_build_that_fails_says_so_and_stops_building(qtbot, session):
     assert session.queue.complete and session.queue.failed == "OSError: the disk went away"
     assert session.progress_text() == " · build failed"
     assert ("error", "building the queue failed: OSError: the disk went away", None) in notices
+
+
+def test_marking_many_marks_each_once_and_says_how_many(session):
+    said = record(session.status)
+    keys = [item.key for item in session.queue.items[:3]]
+    session.toggle_reviewed()                               # the first is reviewed already
+    assert session.mark_reviewed(keys) == 2
+    assert session.workspace.review.keys() == frozenset(keys)
+    assert said[-1] == ("marked 2 images reviewed",)
+    assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)
