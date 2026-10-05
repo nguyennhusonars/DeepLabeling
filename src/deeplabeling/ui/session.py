@@ -422,7 +422,8 @@ class Session(QObject):
             return
         image = edit.images[0]
         rel = ws.dataset.entry(image).rel
-        if self.queue is not None and rel in self.queue:
+        current = self.current()
+        if self.queue is not None and rel in self.queue and (current is None or current.key != rel):
             self.go_to(rel)                         # the change happens in view
         try:
             (ws.editor.undo if undo else ws.editor.redo)()

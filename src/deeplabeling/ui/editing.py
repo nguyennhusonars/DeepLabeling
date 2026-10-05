@@ -38,6 +38,8 @@ class Editing(QObject):
         self.session, self.canvas, self.prompter = session, canvas, prompter
         self.selection = Selection(self)
         self._shown: ImageLabels | None = None      # what the canvas draws; its indices mean these
+        self._applying: tuple | None = None         # (image, what to select) while an edit applies
+        self._copied: tuple[str, tuple[str, ...]] | None = None    # (text, the class names it used)
         canvas.drawn.connect(self.draw)
         canvas.picked.connect(self.pick)
         canvas.moved.connect(self.move)
@@ -45,6 +47,9 @@ class Editing(QObject):
         self.selection.changed.connect(self._selection_changed)
         session.cursorChanged.connect(self.selection.clear)
         session.opened.connect(self._active_changed)
+        # Before the window and the inspector redraw for an edit, the edit's selection is
+        # set, so the canvas is drawn once with it: Editing connects ahead of them.
+        session.labelsChanged.connect(self._labels_changed)
 
     # -- the image being edited ----------------------------------------------------------
 
@@ -68,13 +73,28 @@ class Editing(QObject):
         return self.selection.indices(current[1]) if current else []
 
     def _selection_changed(self) -> None:
+        if self._applying is not None:
+            return                                  # the edit's own redraw shows it
         self.canvas.set_selected(self.selection.indices(self._shown) if self._shown is not None else [])
 
-    def _apply(self, intent: Intent | None, select=None) -> None:
-        """Apply an intent; then select `select` -- indices, or a function of the new labels."""
-        if intent is None or self.session.apply(intent) is None or select is None:
+    def _apply(self, intent: Intent | None, select=None) -> bool:
+        """Apply an intent, selecting `select` -- indices, or a function of the new labels --
+        as its labels change. False when there was nothing to apply or it was refused."""
+        if intent is None:
+            return False
+        self._applying = (intent.image, select)
+        try:
+            return self.session.apply(intent) is not None
+        finally:
+            self._applying = None
+
+    def _labels_changed(self, images) -> None:
+        if self._applying is None:
             return
-        labels = self.session.workspace.store.get(intent.image)
+        image, select = self._applying
+        if select is None or image not in images:
+            return
+        labels = self.session.workspace.store.get(image)
         self.selection.select(labels, select(labels) if callable(select) else select)
 
     def _norm(self, rect):
@@ -201,20 +221,40 @@ class Editing(QObject):
         current = self._current()
         if not current:
             return
-        indices = self.selected()
-        text = actions.copy_text(current[1], indices)
+        labels, indices = current[1], self.selected()
+        text = actions.copy_text(labels, indices)
+        polygons = sum(1 for i in indices if labels.lines[i].is_polygon)
+        said = []
         if text:
             QGuiApplication.clipboard().setText(text)
+            self._copied = (text, self.session.workspace.dataset.names)
             n = len(text.splitlines())
-            self.session.status.emit(f"copied {n} box" if n == 1 else f"copied {n} boxes")
+            said.append(f"copied {n} box" if n == 1 else f"copied {n} boxes")
+        if polygons:
+            said.append("1 polygon is not copied: a paste would make it a box" if polygons == 1 else
+                        f"{polygons} polygons are not copied: a paste would make them boxes")
+        if said:
+            self.session.status.emit("; ".join(said))
 
     def paste(self) -> None:
         current = self._current()
         if not current:
             return
-        intent = actions.paste(current[0], QGuiApplication.clipboard().text(),
-                               self.session.workspace.dataset.known)
+        text, dataset = QGuiApplication.clipboard().text(), self.session.workspace.dataset
+        lines = sum(1 for line in text.splitlines() if line.strip())
+        copied = self._copied
+        if copied is not None and copied[0] == text and copied[1] and dataset.names and copied[1] != dataset.names:
+            # Copied under another class list of this root: the ids follow their names.
+            text, _ = actions.remap_classes(text, copied[1], dataset.names)
+        intent = actions.paste(current[0], text, dataset.known)
         if intent is None:
             self.session.status.emit("the clipboard holds no boxes to paste")
             return
-        self._apply(intent, select=_last(len(intent.ops)))
+        n = len(intent.ops)
+        if self._apply(intent, select=_last(n)):
+            said = f"pasted {n} box" if n == 1 else f"pasted {n} boxes"
+            skipped = lines - n
+            if skipped:
+                said += (f"; 1 line was not a box of this dataset's classes" if skipped == 1 else
+                         f"; {skipped} lines were not boxes of this dataset's classes")
+            self.session.status.emit(said)
