@@ -37,6 +37,7 @@ class Editing(QObject):
         super().__init__(parent)
         self.session, self.canvas, self.prompter = session, canvas, prompter
         self.selection = Selection(self)
+        self._shown: ImageLabels | None = None      # what the canvas draws; its indices mean these
         canvas.drawn.connect(self.draw)
         canvas.picked.connect(self.pick)
         canvas.moved.connect(self.move)
@@ -47,10 +48,18 @@ class Editing(QObject):
 
     # -- the image being edited ----------------------------------------------------------
 
+    def show(self, labels: ImageLabels) -> None:
+        """The labels the canvas now draws. The file can change before the canvas is
+        redrawn, so an index the canvas reports means a line of THIS snapshot: it is
+        turned into a box identity here, and the core locates that box in the file."""
+        self._shown = labels
+
     def _current(self) -> tuple[Path, ImageLabels] | None:
-        """The current image and its labels, while that image is on the canvas."""
+        """The current image and its labels, while that image is on the canvas with its
+        labels shown: hidden boxes are never acted on."""
         item = self.session.current()
-        if item is None or self.session.workspace is None or self.canvas.image_size is None:
+        if (item is None or self.session.workspace is None or self.canvas.image_size is None
+                or not self.canvas.show_labels):
             return None
         return item.entry.path, self.session.labels(item.entry)
 
@@ -59,7 +68,7 @@ class Editing(QObject):
         return self.selection.indices(current[1]) if current else []
 
     def _selection_changed(self) -> None:
-        self.canvas.set_selected(self.selected())
+        self.canvas.set_selected(self.selection.indices(self._shown) if self._shown is not None else [])
 
     def _apply(self, intent: Intent | None, select=None) -> None:
         """Apply an intent; then select `select` -- indices, or a function of the new labels."""
@@ -130,10 +139,13 @@ class Editing(QObject):
         if current and active is not None:
             self._apply(actions.add_box(current[0], active.cls_id, self._norm(rect)), select=_last(1))
 
-    def pick(self, indices: list[int]) -> None:
+    def pick(self, indices: list[int], labels: ImageLabels | None = None) -> None:
+        """Select boxes by their indices in `labels`, the snapshot they were shown from
+        (the canvas's unless given), so a file changed since selects the same boxes."""
+        labels = self._shown if labels is None else labels      # before _current(): a re-read redraws
         current = self._current()
-        if current:
-            self.selection.select(current[1], indices)
+        if current and labels is not None and labels.image == current[0]:
+            self.selection.select(labels, indices)
 
     def move(self, dx: float, dy: float) -> None:
         current = self._current()
@@ -144,10 +156,12 @@ class Editing(QObject):
             self._apply(actions.move(image, labels, indices, dx / w, dy / h), select=indices)
 
     def resize(self, index: int, rect) -> None:
+        shown = self._shown                         # before _current(): a re-read redraws
         current = self._current()
-        if current:
+        if current and shown is not None and shown.image == current[0]:
             image, labels = current
-            self._apply(actions.resize(image, labels, index, self._norm(rect)), select=[index])
+            self._apply(actions.resize(image, shown, index, self._norm(rect)),
+                        select=self.selection.indices(labels))      # the one box with handles
 
     # -- the editing keys -----------------------------------------------------------------
 

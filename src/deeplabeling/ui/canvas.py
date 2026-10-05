@@ -237,7 +237,9 @@ class Canvas(QGraphicsView):
         if len(self._selected) != 1 or len(views) != 1 or views[0].polygon:
             return None
         x1, y1, x2, y2 = views[0].rect
-        best, handle = GRAB_PX, None
+        a, b = self.mapFromScene(QPointF(x1, y1)), self.mapFromScene(QPointF(x2, y2))
+        # A box a few pixels across on screen would be all handle: its middle moves it.
+        best, handle = min(GRAB_PX, min(b.x() - a.x(), b.y() - a.y()) / 4), None
         for fx, fy in HANDLES:
             at = self.mapFromScene(QPointF(x1 + fx * (x2 - x1), y1 + fy * (y2 - y1)))
             distance = math.hypot(at.x() - pos.x(), at.y() - pos.y())

@@ -238,3 +238,50 @@ def test_every_kind_of_edit_undoes_back_to_the_bytes_it_started_from(qtbot, wind
         qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
     assert ds.snapshot() == before
     assert window.session.current().key == "camA/images/0003.jpg"   # undo went to its image
+
+
+INSERTED = "2 0.100000 0.100000 0.050000 0.050000\n"
+
+
+def write_unseen(window, ds, text):
+    """Another program rewrites the label file, and the app has not looked since: its
+    watch, which re-reads the file on screen every 1.5 s, is stopped."""
+    window.session._watch.stop()
+    ds.lbl("camA/0001").write_bytes(text.encode())
+
+
+def test_a_handle_drag_resizes_the_box_it_showed_after_an_unseen_outside_write(qtbot, window, ds):
+    click(window.canvas, PERSON)
+    write_unseen(window, ds, INSERTED + CAMA_0001)          # the person is now line 1
+    drag(window.canvas, (38.4, 31.2), (44.8, 36))
+    assert read_exact(ds.lbl("camA/0001")).startswith(INSERTED)
+    assert lines(ds.lbl("camA/0001"))[1][1] == pytest.approx((0.55, 0.55, 0.3, 0.4), abs=0.01)
+
+
+def test_a_click_selects_the_box_it_showed_after_an_unseen_outside_write(qtbot, window, ds):
+    write_unseen(window, ds, INSERTED + CAMA_0001)
+    click(window.canvas, CAR)
+    qtbot.keyClick(window, Qt.Key_Delete)
+    assert read_exact(ds.lbl("camA/0001")) == INSERTED + CAMA_0001.splitlines(keepends=True)[0]
+
+
+def test_a_box_list_click_selects_the_box_it_listed_after_an_unseen_outside_write(qtbot, window, ds):
+    boxes = window.inspector.boxes
+    qtbot.waitUntil(lambda: boxes.count() == 2)
+    write_unseen(window, ds, INSERTED + CAMA_0001)
+    click_row(qtbot, boxes, 1)                               # car, as listed
+    qtbot.keyClick(window, Qt.Key_Delete)
+    assert read_exact(ds.lbl("camA/0001")) == INSERTED + CAMA_0001.splitlines(keepends=True)[0]
+
+
+def test_with_the_labels_hidden_no_key_or_list_click_touches_a_box(qtbot, window, ds):
+    boxes = window.inspector.boxes
+    qtbot.waitUntil(lambda: boxes.count() == 2)
+    qtbot.keyClick(window, Qt.Key_L)
+    qtbot.keyClick(window, Qt.Key_A, Qt.ControlModifier)
+    qtbot.keyClick(window, Qt.Key_Delete)
+    qtbot.keyClick(window, Qt.Key_Tab)
+    qtbot.keyClick(window, Qt.Key_2)                         # sets the active class instead
+    click_row(qtbot, boxes, 0)
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and selected(window) == []
+    assert window.editing.active_class().name == "car" and not boxes.item(0).isSelected()

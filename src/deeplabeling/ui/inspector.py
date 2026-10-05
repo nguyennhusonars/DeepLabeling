@@ -39,6 +39,7 @@ class Inspector(QWidget):
         super().__init__(parent)
         self._session, self._editing = session, editing
         self._syncing = False                       # the box list is being set, not clicked
+        self._labels = None                         # what the box list shows; its rows mean these
         self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label = (
             QLabel() for _ in range(5))
         for label in self._fields():
@@ -94,10 +95,11 @@ class Inspector(QWidget):
 
     def _boxes_clicked(self) -> None:
         if not self._syncing:
-            self._editing.pick([row.data(Qt.UserRole) for row in self.boxes.selectedItems()])
+            self._editing.pick([row.data(Qt.UserRole) for row in self.boxes.selectedItems()], self._labels)
+            self._show_selection()                  # a refused pick (labels hidden) un-highlights
 
     def _show_selection(self) -> None:
-        selected = set(self._editing.selected())
+        selected = set(self._editing.selection.indices(self._labels)) if self._labels is not None else set()
         self._syncing = True
         try:
             first = None
@@ -123,6 +125,7 @@ class Inspector(QWidget):
     def _fill(self, session, item) -> None:
         self.classes.clear()
         self.boxes.clear()
+        self._labels = None
         if session.workspace is None or item is None:
             for label in self._fields():
                 label.setText("—")
@@ -146,6 +149,7 @@ class Inspector(QWidget):
             row.setData(Qt.UserRole, info.cls_id)
             self.classes.addItem(row)
         if image is not None:
+            self._labels = labels
             for view in box_views(labels, ws.dataset, (image.width(), image.height()), colors):
                 x1, y1, x2, y2 = view.rect
                 row = QListWidgetItem(swatch(view.color), f"{view.caption}   {round(x2 - x1)} × {round(y2 - y1)} px")

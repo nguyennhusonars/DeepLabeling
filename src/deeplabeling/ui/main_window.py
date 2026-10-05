@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
         ws = session.workspace
         labels = session.labels(item.entry)
         highlight = session.queue.source.highlight(labels, ws.dataset)
+        self.editing.show(labels)
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels))

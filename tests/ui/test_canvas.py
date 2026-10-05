@@ -352,3 +352,13 @@ def test_the_crosshair_follows_the_mouse(canvas):
     mouse(canvas, QEvent.MouseMove, vp(canvas, 100, 50), button=Qt.NoButton)
     canvas.set_crosshair(False)
     assert all(c == GREY for c in near(canvas, 100, 10))
+
+
+def test_a_small_selected_box_moves_from_its_middle_and_resizes_from_a_corner(canvas):
+    canvas.set_image(grey_image())
+    small = BoxView(0, (100, 50, 106, 56), (), "#ff0000", "car", True, False)     # 12 px on screen
+    canvas.set_boxes([small], selected=[0])
+    seen = record(canvas)
+    drag(canvas, (103, 53), (113, 63))
+    drag(canvas, (106, 56), (116, 66))
+    assert [s[0] for s in seen] == ["moved", "resized"]
