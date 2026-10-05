@@ -25,8 +25,10 @@ class ActionSpec:
 
 
 ACTIONS: tuple[ActionSpec, ...] = (
-    ActionSpec("next", "Next item", ("Right", "Down")),
-    ActionSpec("previous", "Previous item", ("Left", "Up")),
+    ActionSpec("next", "Next item", ("Right",)),
+    ActionSpec("previous", "Previous item", ("Left",)),
+    ActionSpec("down", "Next item; in the grid, the item below", ("Down",)),
+    ActionSpec("up", "Previous item; in the grid, the item above", ("Up",)),
     ActionSpec("done_next", "Done & next: mark reviewed, go to the next item", ("Space",)),
     ActionSpec("toggle_reviewed", "Toggle reviewed", ("K",)),
     ActionSpec("mark_negative", "Mark negative (an image with no label file and no boxes)", ("N",)),
@@ -48,6 +50,8 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("toggle_labels", "Labels", ("L",), checkable=True),
     ActionSpec("toggle_captions", "Captions", ("T",), checkable=True),
     ActionSpec("toggle_crosshair", "Crosshair", (), checkable=True),
+    ActionSpec("toggle_grid", "Grid", ("G",), checkable=True),
+    ActionSpec("mark_page", "Mark page: mark every tile in view reviewed (in the grid)", ()),
     ActionSpec("go_to", "Go to an item by number or name", ("Ctrl+G",)),
     ActionSpec("help", "Shortcut help", ("?",)),
 )

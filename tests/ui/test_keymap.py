@@ -37,4 +37,4 @@ def test_the_help_lists_every_action(qtbot):
     dialog = HelpDialog()
     qtbot.addWidget(dialog)
     assert dialog.table.rowCount() == len(ACTIONS) == len(help_rows())
-    assert dialog.table.item(2, 1).text().startswith("Done & next")
+    assert dialog.table.item(4, 1).text().startswith("Done & next")

@@ -6,6 +6,8 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 
 from deeplabeling.ui.queue_panel import QueuePanel, tile_text, tile_thumb_rect
+from deeplabeling.ui.settings_ui import QUEUE_GRID_WIDTH, SHOW_GRID
+from drive import start
 
 
 @pytest.fixture
@@ -161,3 +163,77 @@ def test_the_list_comes_back_as_it_was(qtbot, grid, session):
     rect = tile(grid, 4)
     assert rect.width() > 300 and rect.height() < 40            # a list row again
     assert grid.view.viewport().rect().contains(rect.center())
+
+
+# -- in the window ------------------------------------------------------------------------
+
+
+@pytest.fixture
+def window(qtbot, ds):
+    w = start(qtbot, [str(ds.yaml)])
+    yield w
+    w.close()
+
+
+def near(width, want, slack=6):
+    return abs(width - want) <= slack
+
+
+def test_g_shows_the_grid_at_its_width_and_the_list_at_its_own(qtbot, window):
+    dock, panel = window.queue_dock, window.queue_panel
+    qtbot.waitUntil(lambda: near(dock.width(), 280))
+    qtbot.keyClick(window, Qt.Key_G)
+    assert panel.grid and panel.mark_button.isVisible() and window.actions["mark_page"].isEnabled()
+    qtbot.waitUntil(lambda: near(dock.width(), 560))
+    assert window.session.settings.get(SHOW_GRID) is True
+    qtbot.keyClick(window, Qt.Key_G)
+    assert not panel.grid and not panel.mark_button.isVisible()
+    assert not window.actions["mark_page"].isEnabled()
+    qtbot.waitUntil(lambda: near(dock.width(), 280))
+
+
+def test_the_grid_and_its_width_survive_a_relaunch(qtbot, window, ds):
+    qtbot.keyClick(window, Qt.Key_G)
+    window.resizeDocks([window.queue_dock], [720], Qt.Horizontal)
+    qtbot.waitUntil(lambda: near(window.queue_dock.width(), 720))
+    window.close()
+    assert window.session.settings.get(QUEUE_GRID_WIDTH) == window.queue_dock.width()
+    again = start(qtbot, [str(ds.yaml)])
+    assert again.queue_panel.grid and again.actions["toggle_grid"].isChecked()
+    qtbot.waitUntil(lambda: near(again.queue_dock.width(), 720))
+    qtbot.keyClick(again, Qt.Key_G)                         # the list has kept its own width
+    qtbot.waitUntil(lambda: near(again.queue_dock.width(), 280))
+    again.close()
+
+
+def test_down_and_up_move_by_a_row_in_the_grid_and_by_one_in_the_list(qtbot, window):
+    queue = window.session.queue
+    qtbot.keyClick(window, Qt.Key_Down)
+    assert queue.position() == 1
+    qtbot.keyClick(window, Qt.Key_G)
+    qtbot.waitUntil(lambda: window.queue_panel.columns() == 3)
+    qtbot.keyClick(window, Qt.Key_Down)
+    assert queue.position() == 4
+    qtbot.keyClick(window, Qt.Key_Right)
+    assert queue.position() == 5
+    qtbot.keyClick(window, Qt.Key_Up)
+    assert queue.position() == 2
+    qtbot.keyClick(window, Qt.Key_Up)                       # no row above: it stays put
+    assert queue.position() == 2
+
+
+def test_the_mark_page_button_marks_the_tiles_in_view(qtbot, window):
+    qtbot.keyClick(window, Qt.Key_G)
+    qtbot.waitUntil(lambda: near(window.queue_dock.width(), 560))
+    in_view = window.queue_panel.visible_keys()
+    assert in_view
+    qtbot.mouseClick(window.queue_panel.mark_button, Qt.LeftButton)
+    assert window.session.workspace.review.keys() == frozenset(in_view)
+    assert window.state_bar.reviewed.full_text == f"Reviewed {len(in_view)} / 15"
+
+
+def test_the_grid_button_in_the_panel_is_the_g_toggle(qtbot, window):
+    button = window.queue_panel.grid_button
+    assert button.isVisible() and not button.isChecked()
+    qtbot.mouseClick(button, Qt.LeftButton)
+    assert window.queue_panel.grid and button.isChecked() and window.actions["toggle_grid"].isChecked()

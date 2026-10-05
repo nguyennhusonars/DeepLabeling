@@ -173,6 +173,8 @@ class QueuePanel(QWidget):
         self.mark_button.setFocusPolicy(Qt.NoFocus)
         self.mark_button.clicked.connect(self.mark_page)
         self.mark_button.hide()
+        self.grid_button = QToolButton()           # the window gives it the G action
+        self.grid_button.setFocusPolicy(Qt.NoFocus)
         self.model = QueueModel(session, self)
         self.view = QListView()
         self.view.setModel(self.model)
@@ -188,6 +190,7 @@ class QueuePanel(QWidget):
         header = QHBoxLayout()
         header.addWidget(self.title, 1)
         header.addWidget(self.mark_button)
+        header.addWidget(self.grid_button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addLayout(header)
