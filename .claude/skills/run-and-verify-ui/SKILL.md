@@ -62,3 +62,11 @@ Lessons from building the grid (plan 1d):
   scrolls nowhere, so scroll explicitly.
 - **A painter clip outlives the drawing it was for.** Wrap a clipped part of a delegate's
   paint in `save()`/`restore()`, or everything painted after it is clipped too.
+- **A model in a test is a fake.** Load `tests/fixtures.py::FakePredictor` through
+  `session.model.factory`; a test that relaunches patches the name `UltralyticsPredictor`
+  in `deeplabeling.ui.model`, where `src/deeplabeling/ui/model.py::ModelSession` takes its
+  default. `import ultralytics` fails in every test
+  (`tests/conftest.py::_no_real_model`), so a real weights file is never loaded.
+- **A running QThread must outlive its owner.** Qt aborts the process when one is
+  destroyed while it runs: give the thread no parent, stop it with a bounded wait, and
+  keep a reference while it finishes (`src/deeplabeling/ui/model.py::ModelSession`).

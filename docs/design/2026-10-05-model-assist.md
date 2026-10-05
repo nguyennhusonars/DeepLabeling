@@ -1,6 +1,7 @@
 # DeepLabeling — slice 2: model assist
 
-**Status:** approved 2026-10-05 · plan 2a (the core) implemented; 2b (the UI) next
+**Status:** approved 2026-10-05 · plans 2a (the core) and 2b (the UI on screen) implemented;
+2c (the dataset pass and the queue accept) next
 **Scope:** slice 2 of [the app foundation](2026-10-04-app-foundation.md#slices): load a
 model, see its predictions beside the labels, accept them (one box, one image, or a whole
 queue), infer a whole queue ahead of time, and map the model's classes onto the dataset's.
@@ -150,7 +151,7 @@ keeps raw model ids and translates on read
   ([History](2026-10-04-app-foundation.md#history)).
 - **Undo and redo of a queue accept are written in chunks too**, behind the same dialog:
   45k files undone at once would freeze the window as long as writing them at once.
-  `LabelStore.restore` and `History` gain a chunked form in plan 2b.
+  `LabelStore.restore` and `History` gain a chunked form in plan 2c.
 - An accept that skips unmapped predictions says how many it skipped.
 
 ### A dataset pass
