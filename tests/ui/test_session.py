@@ -6,7 +6,7 @@ from deeplabeling.core.queue import HasClass, ImageFilter
 from deeplabeling.core.workspace import CLASS_COLORS, CLASS_HOTKEYS
 from deeplabeling.ui.classes import PALETTE
 from deeplabeling.ui.session import OUT_OF_RANGE, Session
-from fixtures import FakePrompter, assert_only_changed, open_session, wait_decoded
+from fixtures import Broken, FakePrompter, assert_only_changed, open_session, wait_decoded
 
 BOX = (0.5, 0.5, 0.2, 0.2)
 
@@ -319,3 +319,30 @@ def test_class_colours_and_hotkeys_follow_the_name_across_yamls(qtbot, ds):
     assert (keys["car"], keys["person"], keys["truck"]) == ("2", "1", "3")
     assert (colors["car"], colors["truck"]) == (PALETTE[1], PALETTE[2])
     again.close()
+
+
+def test_undo_and_redo_with_no_dataset_open_say_there_is_nothing_to_do(qtbot):
+    s = Session(FakePrompter())
+    said = record(s.status)
+    s.undo()
+    s.redo()
+    assert said == [("nothing to undo",), ("nothing to redo",)]
+
+
+def test_a_build_that_fails_says_so_and_stops_building(qtbot, session):
+    notices = record(session.notice)
+    with qtbot.waitSignal(session.queueDone, timeout=5000):
+        session.set_queue(ImageFilter(conditions=(Broken(),)))
+    assert session.queue.complete and session.queue.failed == "OSError: the disk went away"
+    assert session.progress_text() == " · build failed"
+    assert ("error", "building the queue failed: OSError: the disk went away", None) in notices
+
+
+def test_marking_many_marks_each_once_and_says_how_many(session):
+    said = record(session.status)
+    keys = [item.key for item in session.queue.items[:3]]
+    session.toggle_reviewed()                               # the first is reviewed already
+    assert session.mark_reviewed(keys) == 2
+    assert session.workspace.review.keys() == frozenset(keys)
+    assert said[-1] == ("marked 2 images reviewed",)
+    assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)

@@ -96,9 +96,8 @@ class StateBar(QWidget):
             if q is None:
                 self.queue.set_full_text("Queue: —")
             else:
-                building = "" if q.complete else " · building…"
                 self.queue.set_full_text(f"Queue: {q.source.describe(d)} · {len(q):,} · "
-                                         f"{session.left():,} left{building}")
+                                         f"{session.left():,} left{session.progress_text()}")
             marked, total = session.reviewed_counts()
             self.reviewed.set_full_text(f"Reviewed {marked:,} / {total:,}")
         shown = [a.text().lower() for a in self.layers.menu().actions() if a.isChecked()]

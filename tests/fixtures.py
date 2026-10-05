@@ -13,11 +13,14 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import cv2
 import numpy as np
 import yaml
 from PIL import Image
+
+from deeplabeling.core.queue import Condition
 
 CAMA_0001 = "0 0.500000 0.500000 0.200000 0.300000\n1 0.250000 0.250000 0.100000 0.100000\n"
 CAMB_0001 = "2 0.750000 0.750000 0.150000 0.150000\n"
@@ -265,3 +268,20 @@ def open_session(qtbot, source, prompter=None, **kw):
 def wait_decoded(qtbot, session, image):
     """Edits wait for the image to be decoded; so do tests that edit."""
     qtbot.waitUntil(lambda: session.images.get(image) is not None, timeout=5000)
+
+
+@dataclass(frozen=True)
+class Broken(Condition):
+    """A condition whose test raises, as a build meets an unreadable disk."""
+
+    kind: ClassVar[str] = "broken"
+    needs_labels: ClassVar[bool] = False
+
+    def test(self, entry, ctx):
+        raise OSError("the disk went away")
+
+    def describe(self, dataset):
+        return "broken"
+
+    def to_json(self):
+        return {"kind": self.kind}

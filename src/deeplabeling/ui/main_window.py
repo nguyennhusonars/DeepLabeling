@@ -22,8 +22,8 @@ from .keymap import HelpDialog, build_actions
 from .notices import NoticeStrip
 from .queue_panel import QueuePanel
 from .session import Session
-from .settings_ui import (RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_LABELS, WINDOW_GEOMETRY, WINDOW_STATE,
-                          bind_toggle)
+from .settings_ui import (QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_GRID,
+                          SHOW_LABELS, WINDOW_GEOMETRY, WINDOW_STATE, bind_toggle)
 from .state_bar import StateBar
 
 MIN_SIZE = (1024, 640)
@@ -61,6 +61,9 @@ class MainWindow(QMainWindow):
         self.actions = build_actions(self, {
             "next": lambda: session.move(1),
             "previous": lambda: session.move(-1),
+            "down": lambda: session.move(self.queue_panel.columns()),
+            "up": lambda: session.move(-self.queue_panel.columns()),
+            "mark_page": self.queue_panel.mark_page,
             "done_next": session.done_and_next,
             "toggle_reviewed": session.toggle_reviewed,
             "mark_negative": session.mark_negative,
@@ -86,6 +89,8 @@ class MainWindow(QMainWindow):
                              ("toggle_crosshair", SHOW_CROSSHAIR)):
             bind_toggle(self.actions[key], session.settings, setting, self._layers_changed)
             layers.addAction(self.actions[key])
+        bind_toggle(self.actions["toggle_grid"], session.settings, SHOW_GRID, self._grid_changed)
+        self.queue_panel.grid_button.setDefaultAction(self.actions["toggle_grid"])
         self.panels_menu = layers.addMenu("Panels")     # a closed dock comes back from here
         self.panels_menu.addAction(self.queue_dock.toggleViewAction())
         self.panels_menu.addAction(self.inspector_dock.toggleViewAction())
@@ -104,6 +109,7 @@ class MainWindow(QMainWindow):
         session.standing.connect(lambda key, text: self.notices.add("warning", text, key=key))
         session.status.connect(lambda text: self.statusBar().showMessage(text, 4000))
         self._restore_layout()
+        self._show_grid(self.actions["toggle_grid"].isChecked())
         self.show_current()
 
     def _dock(self, title: str, name: str, widget: QWidget, area) -> QDockWidget:
@@ -184,6 +190,23 @@ class MainWindow(QMainWindow):
         self.session.saver.schedule()
         self.state_bar.refresh()
 
+    def _grid_changed(self, on: bool) -> None:
+        """G: keep the width the panel had for the view it leaves, then show the other
+        view at its own width."""
+        self._remember_queue_width(not on)
+        self._show_grid(on)
+        self.session.saver.schedule()
+
+    def _show_grid(self, on: bool) -> None:
+        self.queue_panel.set_grid(on)
+        self.actions["mark_page"].setEnabled(on)
+        width = self.session.settings.get(QUEUE_GRID_WIDTH if on else QUEUE_LIST_WIDTH)
+        self.resizeDocks([self.queue_dock], [width], Qt.Horizontal)
+
+    def _remember_queue_width(self, grid: bool) -> None:
+        if self.queue_dock.isVisible() and not self.queue_dock.isFloating():
+            self.session.settings.set(QUEUE_GRID_WIDTH if grid else QUEUE_LIST_WIDTH, self.queue_dock.width())
+
     def _update_status(self) -> None:
         session, item = self.session, self.session.current()
         if item is None or session.workspace is None:
@@ -258,6 +281,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         settings = self.session.settings
+        self._remember_queue_width(self.queue_panel.grid)
         settings.set(WINDOW_GEOMETRY, bytes(self.saveGeometry().toBase64()).decode())
         settings.set(WINDOW_STATE, bytes(self.saveState().toBase64()).decode())
         self.session.close()

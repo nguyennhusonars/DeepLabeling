@@ -1,9 +1,10 @@
 import pytest
 from PySide6.QtCore import QPoint, QRect
 
+from deeplabeling.core.queue import ImageFilter
 from deeplabeling.ui.session import Session
 from deeplabeling.ui.state_bar import StateBar
-from fixtures import FakePrompter
+from fixtures import Broken, FakePrompter
 
 
 def shown(qtbot, widget, width=900):
@@ -65,3 +66,11 @@ def test_a_growing_queue_still_refreshes_the_bar_while_it_grows(qtbot, session, 
         session.queueGrew.emit()
         qtbot.wait(100)
     assert len(refreshes) >= 3
+
+
+def test_the_queue_chip_says_building_and_then_nothing_or_failed(qtbot, session):
+    bar = shown(qtbot, StateBar(session), 1400)
+    assert not bar.queue.full_text.endswith("…")
+    with qtbot.waitSignal(session.queueDone, timeout=5000):
+        session.set_queue(ImageFilter(conditions=(Broken(),)))
+    assert bar.queue.full_text == "Queue: broken · 0 · 0 left · build failed"

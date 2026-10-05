@@ -130,6 +130,23 @@ def main(argv=None) -> int:
         rows.append((f"an image not prefetched, {big.entry.path.name}",
                      time.perf_counter() - t0 + wait(app, lambda: window._shown == big.entry.path), "≤ 300 ms"))
 
+    def page_shown() -> bool:
+        """Every tile at least partly in view has its thumbnail, or its error."""
+        paths = [s.queue.items[s.queue.index_of(key)].entry.path
+                 for key in window.queue_panel.visible_keys(partial=True)]
+        return bool(paths) and all(s.thumbs.get(p) is not None or s.thumbs.error(p) for p in paths)
+
+    t0 = time.perf_counter()
+    window.actions["toggle_grid"].trigger()
+    rows.append(("the grid: the first page of thumbnails", time.perf_counter() - t0 + wait(app, page_shown),
+                 "≤ 1 s"))
+    far = s.queue.items[len(s.queue) // 2].key
+    t0 = time.perf_counter()
+    s.go_to(far)
+    rows.append(("the grid: a page after a jump", time.perf_counter() - t0
+                 + wait(app, lambda: far in window.queue_panel.visible_keys() and page_shown()), "≤ 1 s"))
+    window.actions["toggle_grid"].trigger()                     # the builds below, as before
+
     _, first_pass = build(ImageFilter(conditions=(HasClass((args.cls,)),)))
     rows.append((f"has {args.cls}: first pass after open", first_pass, "≤ 30 s"))
     _, warm = build(ImageFilter(conditions=(HasClass((args.cls,)),)))

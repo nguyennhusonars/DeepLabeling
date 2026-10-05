@@ -50,3 +50,15 @@ Lessons from building editing (plan 1c):
   pixel) points and send real mouse events to the viewport.
 - **Sample a box edge between its handles.** A selected box's handles sit on its corners
   and edge midpoints and are drawn white over the edge.
+
+Lessons from building the grid (plan 1d):
+
+- **A 15-item fixture hides what 45k items show.** Switching to the grid with the cursor
+  mid-queue left it a million pixels out of view, and finding the tiles in view cost 60 ms
+  a call during the switch; neither showed in the fixture. Run a UI change on the real
+  dataset (`tools/measure_ui.py`, read-only) before calling it done.
+- **A list view scrolls by the layout it has.** After changing its flow or grid size, call
+  `doItemsLayout()` before `scrollTo()`; and `setCurrentIndex` to the current index
+  scrolls nowhere, so scroll explicitly.
+- **A painter clip outlives the drawing it was for.** Wrap a clipped part of a delegate's
+  paint in `save()`/`restore()`, or everything painted after it is clipped too.

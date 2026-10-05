@@ -12,6 +12,10 @@ from ..core.settings import JsonFile, Setting, Settings, define
 from ..core.state import state_dir
 
 
+def _is_width(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v > 0
+
+
 def _is_source(v) -> bool:
     return (isinstance(v, dict) and isinstance(v.get("source"), str)
             and (v.get("labels") is None or isinstance(v.get("labels"), str)))
@@ -25,6 +29,10 @@ WINDOW_STATE = define("window.state", "global", "", lambda v: isinstance(v, str)
 SHOW_LABELS = define("view.labels", "global", True, lambda v: isinstance(v, bool))
 SHOW_CAPTIONS = define("view.captions", "global", True, lambda v: isinstance(v, bool))
 SHOW_CROSSHAIR = define("view.crosshair", "global", False, lambda v: isinstance(v, bool))
+SHOW_GRID = define("view.queue_grid", "global", False, lambda v: isinstance(v, bool))
+#: The queue panel's width in each view: the grid widens it, the list takes its own back.
+QUEUE_LIST_WIDTH = define("window.queue_list_width", "global", 280, _is_width)
+QUEUE_GRID_WIDTH = define("window.queue_grid_width", "global", 560, _is_width)
 
 RECENT_MAX = 8
 

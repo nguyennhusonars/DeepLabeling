@@ -23,7 +23,7 @@ from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
 from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
 from .classes import assign_classes
-from .images import ImageCache
+from .images import THUMB_BYTES, ImageCache, decode_thumb
 from .settings_ui import Saver, global_settings, remember_source
 from .workers import Jobs
 
@@ -66,6 +66,7 @@ class Session(QObject):
         self.queue: Queue | None = None
         self.io = Jobs(2)
         self.images = ImageCache(Jobs(2), parent=self)
+        self.thumbs = ImageCache(Jobs(2), THUMB_BYTES, decode=decode_thumb, parent=self)
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
@@ -137,6 +138,7 @@ class Session(QObject):
             return
         self.io.cancel_all()
         self.images.clear()
+        self.thumbs.clear()
         self.io.wait(2000)
         self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
         self._follow = self._seen = self._keys = None
@@ -193,7 +195,7 @@ class Session(QObject):
             lambda emit, cancelled: source.build(ctx, emit, cancelled),
             batch=lambda items: self._grew(queue, items),
             done=lambda finished: self._built(queue, finished),
-            failed=lambda why: self.notice.emit("error", f"building the queue failed: {why}", None))
+            failed=lambda why: self._build_failed(queue, why))
 
     def context(self) -> BuildContext:
         """The inputs of a build or a recheck. The review marks are snapshotted once and
@@ -215,11 +217,18 @@ class Session(QObject):
         if queue.cursor != before:
             self._cursor_moved()
 
-    def _built(self, queue: Queue, finished: bool) -> None:
+    def _build_failed(self, queue: Queue, why: str) -> None:
+        self.notice.emit("error", f"building the queue failed: {why}", None)
+        self._built(queue, True, failed=why)
+
+    def _built(self, queue: Queue, finished: bool, failed: str | None = None) -> None:
         if queue is not self.queue or not finished:
             return
         before = queue.cursor
-        queue.finish()
+        if failed is None:
+            queue.finish()
+        else:
+            queue.fail(failed)
         self._follow = None                         # finish() settled the place
         self.queueDone.emit()
         if queue.cursor != before:
@@ -288,6 +297,13 @@ class Session(QObject):
             self.labelsChanged.emit((item.entry.path,))
         self._seen = seen
 
+    def progress_text(self) -> str:
+        """How the queue's build stands, for the chip and the panel: "" once built."""
+        queue = self.queue
+        if queue is None or (queue.complete and queue.failed is None):
+            return ""
+        return " · build failed" if queue.failed is not None else " · building…"
+
     def left(self) -> int:
         if self.queue is None or self.workspace is None:
             return 0
@@ -342,6 +358,19 @@ class Session(QObject):
         self._require().review.toggle(item.key)
         self._review_changed([item.key])
 
+    def mark_reviewed(self, keys) -> int:
+        """Mark these images reviewed (the grid's mark page); how many were not already."""
+        ws = self.workspace
+        if ws is None:
+            return 0
+        newly = [key for key in keys if ws.review.mark(key)]
+        if newly:
+            self._review_changed(newly)
+            self.status.emit(f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed")
+        else:
+            self.status.emit("these were all reviewed already")
+        return len(newly)
+
     def _review_changed(self, keys: list[str]) -> None:
         self._keys = None                           # the marks snapshot is out of date
         self.saver.schedule()
@@ -386,8 +415,8 @@ class Session(QObject):
         self._step(undo=False)
 
     def _step(self, *, undo: bool) -> None:
-        ws = self._require()
-        edit = ws.history.peek_undo() if undo else ws.history.peek_redo()
+        ws = self.workspace
+        edit = None if ws is None else ws.history.peek_undo() if undo else ws.history.peek_redo()
         if edit is None:
             self.status.emit("nothing to undo" if undo else "nothing to redo")
             return
