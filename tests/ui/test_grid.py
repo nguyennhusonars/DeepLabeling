@@ -164,6 +164,8 @@ def test_only_the_tiles_in_view_are_decoded(qtbot, grid, session):
 def test_mark_page_marks_exactly_the_tiles_fully_in_view(qtbot, grid, session):
     whole, partly = grid.visible_keys(), grid.visible_keys(partial=True)
     assert len(whole) == 2 and len(partly) == 4             # one row whole, one cut by the edge
+    paths = {item.key: item.entry.path for item in session.queue.items}
+    qtbot.waitUntil(lambda: all(session.thumbs.get(paths[k]) is not None for k in partly))
     grid.mark_page()
     assert session.workspace.review.keys() == frozenset(whole)
     assert grid.title.text() == "Queue · 15"
@@ -248,6 +250,11 @@ def test_the_mark_page_button_marks_the_tiles_in_view(qtbot, window):
     qtbot.waitUntil(lambda: near(window.queue_dock.width(), 560))
     in_view = window.queue_panel.visible_keys()
     assert in_view
+    session, partly = window.session, in_view
+    paths = {item.key: item.entry.path for item in session.queue.items}
+    qtbot.waitUntil(lambda: all(session.thumbs.get(paths[k]) is not None or session.thumbs.error(paths[k])
+                                for k in partly))
+    in_view = [k for k in in_view if session.thumbs.get(paths[k]) is not None]   # pictures shown
     qtbot.mouseClick(window.queue_panel.mark_button, Qt.LeftButton)
     assert window.session.workspace.review.keys() == frozenset(in_view)
     assert window.state_bar.reviewed.full_text == f"Reviewed {len(in_view)} / 15"
@@ -258,3 +265,61 @@ def test_the_grid_button_in_the_panel_is_the_g_toggle(qtbot, window):
     assert button.isVisible() and not button.isChecked()
     qtbot.mouseClick(button, Qt.LeftButton)
     assert window.queue_panel.grid and button.isChecked() and window.actions["toggle_grid"].isChecked()
+
+
+def test_columns_match_the_layout_at_every_width(qtbot, grid):
+    for width in range(330, 740, 2):
+        grid.resize(width, 300)
+        qtbot.wait(0)
+        grid.view.doItemsLayout()
+        laid = sum(1 for row in range(6) if tile(grid, row).top() == tile(grid, 0).top())
+        assert grid.columns() == laid, (width, grid.view.viewport().width())
+
+
+def test_a_run_of_resizes_brings_the_cursor_back_once(qtbot, grid, monkeypatch):
+    layouts, follow = [], grid._follow
+    monkeypatch.setattr(grid, "_follow", lambda: (layouts.append(1), follow()))
+    for width in (430, 450, 470, 490, 510):                 # a drag of the dock's edge
+        grid.resize(width, 300)
+        qtbot.wait(20)
+    qtbot.waitUntil(lambda: len(layouts) >= 1)
+    qtbot.wait(200)
+    assert len(layouts) == 1
+
+
+def test_mark_page_with_no_tile_wholly_in_view_says_so(qtbot, grid, session):
+    grid.resize(150, 300)                                   # narrower than a tile
+    qtbot.waitUntil(lambda: grid.visible_keys() == [])
+    with qtbot.waitSignal(session.status) as said:
+        grid.mark_page()
+    assert said.args == ["no tile is wholly in view"] and not session.workspace.review.keys()
+
+
+def test_mark_page_leaves_the_tiles_not_showing_their_picture(qtbot, grid, session):
+    whole = grid.visible_keys()
+    path = {item.key: item.entry.path for item in session.queue.items}
+    qtbot.waitUntil(lambda: all(session.thumbs.get(path[k]) is not None for k in whole))
+    session.thumbs.clear()                                  # as just after a jump: none decoded yet
+    with qtbot.waitSignal(session.status) as said:
+        grid.mark_page()
+    assert said.args == ["no tile in view shows its picture yet; nothing was marked"]
+    assert not session.workspace.review.keys()
+    session.thumbs.want([path[whole[0]]])                   # one of the two arrives
+    qtbot.waitUntil(lambda: session.thumbs.get(path[whole[0]]) is not None)
+    with qtbot.waitSignal(session.status) as said:
+        grid.mark_page()
+    assert session.workspace.review.keys() == frozenset([whole[0]])
+    assert said.args == ["marked 1 image reviewed; 1 tile showing no picture was left unmarked"]
+
+
+def test_a_tile_reads_its_labels_once_and_a_thumbnail_repaints_only_its_tile(qtbot, grid, session, monkeypatch):
+    first = session.queue.items[0]
+    qtbot.waitUntil(lambda: session.thumbs.get(first.entry.path) is not None)
+    reads, read = [], session.labels
+    monkeypatch.setattr(session, "labels", lambda entry: (reads.append(entry.rel), read(entry))[1])
+    grid.view.viewport().repaint()
+    assert reads and len(reads) == len(set(reads))           # one read per tile painted
+    updates, update = [], grid.view.update
+    monkeypatch.setattr(grid.view, "update", lambda index: (updates.append(index.row()), update(index)))
+    session.thumbs.ready.emit(first.entry.path)
+    assert updates == [0]
