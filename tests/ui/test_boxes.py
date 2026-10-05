@@ -99,3 +99,16 @@ def test_a_dataset_without_names_offers_the_bare_ids_0_to_9(ds):
     infos = class_infos(folder, {}, {})
     assert [(i.cls_id, i.name, i.hotkey) for i in infos[:2]] == [(0, "0", "1"), (1, "1", "2")]
     assert len(infos) == 10 and infos[9].hotkey == "0" and infos[3].color == PALETTE[3]
+
+
+def test_prediction_views_are_in_pixels_with_their_class_colour_and_confidence(dataset):
+    from deeplabeling.core.assist import Shown
+    from deeplabeling.core.inference import Prediction
+    from deeplabeling.ui.boxes import prediction_views
+
+    shown = [Shown(Prediction(0, (0.5, 0.5, 0.2, 0.2), 0.876), 1, True),
+             Shown(Prediction(2, (0.25, 0.25, 0.1, 0.1), 0.5), None, False)]
+    car, unmapped = prediction_views(shown, dataset, SIZE, {"car": "#123456"}, ("car", "truck", "human"))
+    assert car.rect == pytest.approx((40, 20, 60, 30)) and car.color == "#123456"
+    assert (car.caption, car.faint, car.index) == ("car 0.88", False, 0)
+    assert (unmapped.caption, unmapped.color, unmapped.faint) == ("human? 0.50", UNKNOWN, True)

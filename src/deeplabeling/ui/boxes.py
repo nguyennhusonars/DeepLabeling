@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..core.assist import Shown
 from ..core.dataset import Dataset
 from ..core.geometry import norm_to_px
 from ..core.overlap import DUPLICATES, stack_counts
@@ -49,4 +50,29 @@ def box_views(labels: ImageLabels, dataset: Dataset, size: tuple[int, int],
             polygon = tuple((x * w, y * h) for x, y in zip(line.coords[0::2], line.coords[1::2]))
         views.append(BoxView(index, norm_to_px(line.bbox, w, h), polygon, color, caption,
                              known, index in highlight))
+    return views
+
+
+@dataclass(frozen=True)
+class PredictionView:
+    index: int                                  #: its place in the shown list
+    rect: tuple[float, float, float, float]     #: (x1, y1, x2, y2) in image pixels
+    color: str                                  #: its class's colour, grey when unmapped
+    caption: str                                #: "car 0.82", or "truck? 0.40" when unmapped
+    faint: bool                                 #: not missing: an accept would not add it
+
+
+def prediction_views(shown: list[Shown], dataset: Dataset, size: tuple[int, int],
+                     colors: dict[str, str], model_names: tuple[str, ...]) -> list[PredictionView]:
+    """What the predictions layer draws (docs/design/2026-10-05-model-assist.md#the-predictions-layer)."""
+    w, h = size
+    views = []
+    for index, s in enumerate(shown):
+        if s.cls is None:
+            name = model_names[s.pred.cls] if 0 <= s.pred.cls < len(model_names) else str(s.pred.cls)
+            color, caption = UNKNOWN, f"{name}? {s.pred.conf:.2f}"
+        else:
+            name = dataset.names[s.cls] if s.cls < len(dataset.names) else str(s.cls)
+            color, caption = class_color(s.cls, name, colors), f"{name} {s.pred.conf:.2f}"
+        views.append(PredictionView(index, norm_to_px(s.pred.box, w, h), color, caption, not s.missing))
     return views

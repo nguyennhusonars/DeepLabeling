@@ -5,7 +5,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QImage, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-from deeplabeling.ui.boxes import BoxView
+from deeplabeling.ui.boxes import BoxView, PredictionView
 from deeplabeling.ui.canvas import Canvas
 from drive import click, drag, mouse, vp
 
@@ -392,3 +392,57 @@ def test_boxes_moved_against_an_edge_stop_there_together(canvas):
     mouse(canvas, QEvent.MouseButtonRelease, vp(canvas, 170, 40))
     [(kind, delta)] = seen
     assert kind == "moved" and delta == pytest.approx((20, 0), abs=1)
+
+
+# -- predictions (plan 2b) ----------------------------------------------------------------
+
+
+GREEN_PRED = PredictionView(0, (50, 25, 150, 75), "#00ff00", "car 0.90", False)
+FAINT_PRED = PredictionView(1, (20, 10, 40, 30), "#00ff00", "car 0.40", True)
+
+
+def is_green(c):
+    return c.green() > 200 and c.red() < 80 and c.blue() < 80
+
+
+def test_a_prediction_is_drawn_dashed_in_its_colour_and_a_faint_one_fainter(canvas):
+    canvas.set_image(grey_image())
+    canvas.set_predictions([GREEN_PRED, FAINT_PRED])
+    image = shot(canvas)
+    x = canvas.mapFromScene(QPointF(150, 50)).x()
+    top, bottom = canvas.mapFromScene(QPointF(150, 30)).y(), canvas.mapFromScene(QPointF(150, 70)).y()
+    edge = [any(is_green(QColor(image.pixel(x + dx, y))) for dx in range(-2, 3)) for y in range(top, bottom)]
+    assert any(edge) and not all(edge)                      # dashes, with gaps
+    faint = [QColor(c) for c in near(canvas, 40, 20, image)]
+    assert not any(map(is_green, faint)) and any(c.green() > c.red() + 20 for c in faint)
+    # a label already names what a faint one shows: its caption would only cover the label's
+    assert [c.text for c in canvas.prediction_caption_items()] == ["car 0.90"]
+
+
+def test_a_predictions_caption_sits_above_its_box(canvas):
+    canvas.set_image(grey_image())
+    canvas.set_predictions([GREEN_PRED])
+    [caption] = canvas.prediction_caption_items()
+    top = canvas.mapFromScene(QPointF(50, 25))
+    plate = caption.sceneBoundingRect()
+    assert caption.text == "car 0.90"
+    assert canvas.mapFromScene(plate.bottomLeft()).y() <= top.y() + 1
+
+
+def test_double_clicking_a_prediction_picks_it_and_a_click_still_selects_labels(qtbot, canvas):
+    canvas.set_image(grey_image())
+    canvas.set_boxes([SMALL])
+    canvas.set_predictions([GREEN_PRED])
+    seen = record(canvas)
+    accepted = []
+    canvas.predictionPicked.connect(accepted.append)
+    click(canvas, (80, 50))
+    qtbot.mouseDClick(canvas.viewport(), Qt.LeftButton, pos=vp(canvas, 120, 60))
+    assert seen[0] == ("picked", [1]) and accepted == [0]
+
+
+def test_the_predictions_layer_can_be_hidden(canvas):
+    canvas.set_image(grey_image())
+    canvas.set_predictions([GREEN_PRED])
+    canvas.set_layers(labels=True, captions=True, predictions=False)
+    assert not any(map(is_green, near(canvas, 100, 25))) and canvas.prediction_caption_items() == []
