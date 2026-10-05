@@ -244,3 +244,11 @@ def test_index_of_finds_a_row_by_key(dataset):
     q = Queue(ImageFilter())
     q.extend(all_items(dataset)[:3])
     assert q.index_of(dataset.images[2].rel) == 2 and q.index_of("nope") is None
+
+
+def test_a_failed_build_keeps_what_came_and_settles_the_cursor(dataset):
+    q = Queue(ImageFilter(), follow=dataset.images[5])
+    q.extend(all_items(dataset)[:3])
+    q.fail("OSError: the disk went away")
+    assert len(q) == 3 and q.complete and q.failed == "OSError: the disk went away"
+    assert q.cursor == dataset.images[2].rel            # the followed item never came

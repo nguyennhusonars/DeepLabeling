@@ -193,7 +193,7 @@ class Session(QObject):
             lambda emit, cancelled: source.build(ctx, emit, cancelled),
             batch=lambda items: self._grew(queue, items),
             done=lambda finished: self._built(queue, finished),
-            failed=lambda why: self.notice.emit("error", f"building the queue failed: {why}", None))
+            failed=lambda why: self._build_failed(queue, why))
 
     def context(self) -> BuildContext:
         """The inputs of a build or a recheck. The review marks are snapshotted once and
@@ -215,11 +215,18 @@ class Session(QObject):
         if queue.cursor != before:
             self._cursor_moved()
 
-    def _built(self, queue: Queue, finished: bool) -> None:
+    def _build_failed(self, queue: Queue, why: str) -> None:
+        self.notice.emit("error", f"building the queue failed: {why}", None)
+        self._built(queue, True, failed=why)
+
+    def _built(self, queue: Queue, finished: bool, failed: str | None = None) -> None:
         if queue is not self.queue or not finished:
             return
         before = queue.cursor
-        queue.finish()
+        if failed is None:
+            queue.finish()
+        else:
+            queue.fail(failed)
         self._follow = None                         # finish() settled the place
         self.queueDone.emit()
         if queue.cursor != before:
@@ -287,6 +294,13 @@ class Session(QObject):
             self._seen = seen
             self.labelsChanged.emit((item.entry.path,))
         self._seen = seen
+
+    def progress_text(self) -> str:
+        """How the queue's build stands, for the chip and the panel: "" once built."""
+        queue = self.queue
+        if queue is None or (queue.complete and queue.failed is None):
+            return ""
+        return " · build failed" if queue.failed is not None else " · building…"
 
     def left(self) -> int:
         if self.queue is None or self.workspace is None:
@@ -386,8 +400,8 @@ class Session(QObject):
         self._step(undo=False)
 
     def _step(self, *, undo: bool) -> None:
-        ws = self._require()
-        edit = ws.history.peek_undo() if undo else ws.history.peek_redo()
+        ws = self.workspace
+        edit = None if ws is None else ws.history.peek_undo() if undo else ws.history.peek_redo()
         if edit is None:
             self.status.emit("nothing to undo" if undo else "nothing to redo")
             return

@@ -93,8 +93,7 @@ class QueuePanel(QWidget):
         if queue is None:
             self.title.setText("Queue")
         else:
-            building = "" if queue.complete else " · building…"
-            self.title.setText(f"Queue · {len(queue):,}{building}")
+            self.title.setText(f"Queue · {len(queue):,}{self._session.progress_text()}")
 
     def _follow(self) -> None:
         queue = self._session.queue

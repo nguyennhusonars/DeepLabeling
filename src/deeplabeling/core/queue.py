@@ -229,6 +229,7 @@ class Queue:
         self.cursor: str | None = None
         self.stale: set[str] = set()
         self.complete = False
+        self.failed: str | None = None      #: why the build stopped early, if it failed
         self._pos: dict[str, int] = {}
         self._follow = follow       #: the item the cursor was on before a rebuild
         self._moved = False
@@ -259,6 +260,12 @@ class Queue:
             after = next((it for it in self.items if it.entry.order > self._follow.order), None)
             self.cursor = (after or self.items[-1]).key
         self._follow = None
+
+    def fail(self, why: str) -> None:
+        """The build stopped with an error. The items that came stay, and the queue is
+        settled as if complete: nothing waits for items that will not come."""
+        self.failed = why
+        self.finish()
 
     def current(self) -> QueueItem | None:
         return self.items[self._pos[self.cursor]] if self.cursor is not None else None
