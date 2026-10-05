@@ -51,7 +51,10 @@ class QtPrompter:
 
     def edit_queue(self, dataset: Dataset, current: ImageFilter) -> ImageFilter | None:
         dialog = QueueEditor(dataset, current, self.parent)
-        return dialog.filter() if dialog.exec() == QDialog.Accepted else None
+        try:
+            return dialog.filter() if dialog.exec() == QDialog.Accepted else None
+        finally:
+            dialog.deleteLater()                    # a child of the window until deleted
 
     def ask_text(self, title: str, label: str) -> str | None:
         text, ok = QInputDialog.getText(self.parent, title, label)
@@ -59,4 +62,7 @@ class QtPrompter:
 
     def pick_class(self, infos: list[ClassInfo]) -> ClassInfo | None:
         dialog = ClassPicker(infos, self.parent)
-        return dialog.chosen() if dialog.exec() == QDialog.Accepted else None
+        try:
+            return dialog.chosen() if dialog.exec() == QDialog.Accepted else None
+        finally:
+            dialog.deleteLater()
