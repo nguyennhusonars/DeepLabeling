@@ -1,6 +1,6 @@
 # DeepLabeling — app foundation and slice 1 (the editor)
 
-**Status:** approved 2026-10-04 · slices 1a (the core) and 1b (the viewer) implemented; the amendments found while building them are folded in; 1c (editing) next
+**Status:** approved 2026-10-04 · slices 1a (the core), 1b (the viewer) and 1c (editing) implemented; the amendments found while building them are folded in; 1d (the queue grid) next
 **Scope:** the architecture every feature sits on, and **slice 1**: open a dataset, work
 through a queue of images, and fix their boxes. Later slices get their own spec, plan and
 build; [Later slices](#later-slices) records what each starts from.
@@ -247,7 +247,8 @@ EOF
 ```
 
 **Classes** come from the yaml's `names` (a list or a dict). A folder pair reads
-`classes.txt` from its label folder if there is one, and otherwise shows bare ids. The
+`classes.txt` from its label folder if there is one, and otherwise shows bare ids, offering
+ids 0–9 on the digit keys. The
 yaml's `groups:` block is parsed and kept for slice 4; slice 1 does not use it.
 
 **The canonical root** is the realpath of the yaml's `path:` when it has one, else of the
@@ -364,6 +365,9 @@ display size on workers, only for visible rows, into a cache bounded in bytes (6
   smallest first. Shift+click adds to or removes from the selection. Drag a selected box
   to move it, or a handle to resize it. A drag under 3 px is a click. The wheel zooms
   about the cursor; middle- or right-drag pans. Each new image is fitted to the view.
+  A drawn or pasted box is selected, and a box stays selected through a reclassify, a
+  move or a resize. With the labels layer off, the mouse only zooms and pans, and the
+  selection is cleared: hidden boxes are never acted on. The crosshair layer has no key.
 - **Images.** Decoding runs on workers with Qt's EXIF auto-transform, matching the EXIF
   handling of [the size function](../knowledge/caches.md#image-sizes). The current image,
   the next two and the previous one are kept decoded, in a cache bounded in bytes

@@ -3,8 +3,11 @@
 import pytest
 from PySide6.QtCore import Qt
 
+from deeplabeling.ui.canvas import Canvas
+from deeplabeling.ui.editing import Editing
 from deeplabeling.ui.inspector import Inspector
 from deeplabeling.ui.queue_panel import QueuePanel
+from fixtures import FakePrompter
 
 
 @pytest.fixture
@@ -19,7 +22,9 @@ def panel(qtbot, session):
 
 @pytest.fixture
 def inspector(qtbot, session):
-    i = Inspector(session)
+    canvas = Canvas()
+    qtbot.addWidget(canvas)
+    i = Inspector(session, Editing(session, canvas, FakePrompter()))
     qtbot.addWidget(i)
     i.resize(320, 600)
     i.show()
@@ -60,7 +65,7 @@ def test_the_inspector_describes_the_current_image(qtbot, inspector, session):
     assert inspector.path_label.text() == "camA/images/0001.jpg"
     assert inspector.state_label.text() == "2 boxes" and inspector.reviewed_label.text() == "not yet"
     assert [inspector.classes.item(i).text() for i in range(4)] == [
-        "1   person   1", "2   car   1", "3   bus_m   0", "4   bus_l   0"]
+        "1   person   1   ✎", "2   car   1", "3   bus_m   0", "4   bus_l   0"]
     qtbot.waitUntil(lambda: inspector.boxes.count() == 2)
     assert inspector.boxes.item(0).text() == "person   13 × 14 px"
 
@@ -118,3 +123,11 @@ def test_dragging_across_rows_moves_the_cursor_with_the_highlight(panel, session
     send(QEvent.MouseButtonRelease, b, Qt.NoButton)
     assert panel.view.currentIndex().row() == 5
     assert session.current().key == session.queue.items[5].key
+
+
+def test_clicking_a_class_with_nothing_selected_makes_it_the_active_class(qtbot, inspector):
+    row = inspector.classes.item(2)
+    qtbot.mouseClick(inspector.classes.viewport(), Qt.LeftButton,
+                     pos=inspector.classes.visualItemRect(row).center())
+    assert inspector.classes.item(2).text() == "3   bus_m   0   ✎"
+    assert inspector.classes.item(0).text() == "1   person   1"

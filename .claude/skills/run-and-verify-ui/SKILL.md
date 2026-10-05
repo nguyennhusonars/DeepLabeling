@@ -40,3 +40,13 @@ Lessons from building the viewer (plan 1b):
   `widget.size()` for everything that measured the widget.
 - **A slow UI is profiled, not guessed.** `cProfile` around the action; work done per batch
   in a slot on a growing queue was the culprit last time (see the spec's performance table).
+
+Lessons from building editing (plan 1c):
+
+- **A script outside `tests/` runs on the real display.** Only `tests/conftest.py` sets
+  offscreen: a spike run from elsewhere opened on `:0`, where synthetic keys never reached
+  the window and every shortcut looked broken. Set `QT_QPA_PLATFORM=offscreen` yourself.
+- **Drive the canvas with `tests/ui/drive.py`**: `drag` and `click` take scene (image
+  pixel) points and send real mouse events to the viewport.
+- **Sample a box edge between its handles.** A selected box's handles sit on its corners
+  and edge midpoints and are drawn white over the edge.
