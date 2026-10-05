@@ -255,6 +255,7 @@ class FakePrompter:
         return next((info for info in infos if info.name == self.class_name), None)
 
 
+
 def open_session(qtbot, source, prompter=None, **kw):
     """A Session with `source` open and its first queue fully built."""
     from deeplabeling.ui.session import Session
@@ -285,3 +286,33 @@ class Broken(Condition):
 
     def to_json(self):
         return {"kind": self.kind}
+
+
+class FakePredictor:
+    """Stands in for UltralyticsPredictor: finds what it is told per file name, fails the
+    names it is told to, records what it was asked, and can be held at a gate."""
+
+    def __init__(self, path, *, names=("car", "truck", "human"), found=None, fail=(), gate=None):
+        from deeplabeling.core.inference import ModelError
+
+        if "broken" in Path(path).name:
+            raise ModelError(f"{Path(path).name} could not be loaded: not a model")
+        self.key, self.names = f"fake:{Path(path).name}", tuple(names)
+        self.found, self.fail, self.gate = dict(found or {}), set(fail), gate
+        self.asked: list[str] = []
+        self.closed = False
+
+    def predict(self, paths):
+        from deeplabeling.core.inference import Failure
+
+        if self.gate is not None:
+            self.gate.wait(10)
+        out = []
+        for path in paths:
+            self.asked.append(Path(path).name)
+            out.append(Failure(f"{Path(path).name}: CUDA out of memory") if Path(path).name in self.fail
+                       else list(self.found.get(Path(path).name, [])))
+        return out
+
+    def close(self):
+        self.closed = True
