@@ -37,7 +37,7 @@ window serves every workflow.
 | Layout | **Three panes**: queue, frame, inspector, under an always-visible state bar ([Window](#window)) |
 | When an edit reaches disk | **Every edit**, as soon as it is made, atomically. There is no save key and no unsaved state |
 | Undo | **Global**: one history across images, covering every edit, bulk and review ones included |
-| What counts as reviewed | An image is marked when it is **edited**, on **done & next**, or by **mark page** in the grid. Viewing an image never marks it |
+| What counts as reviewed | An image is marked when it is **edited**, on **done & next**, or by **mark page** in the grid. Viewing an image never marks it, and neither does accepting predictions across a queue ([slice 2](2026-10-05-model-assist.md#decisions)) |
 | Code structure | **Pure-Python core, thin Qt shell.** An edit records each file's bytes before and after it. An on-disk journal is deferred; this design keeps it a small addition |
 | Which images and labels | Exactly what training reads ([Dataset](#dataset)) |
 
@@ -49,7 +49,7 @@ slice 3's IoU filter and slice 4 both read slice 2's prediction cache.
 | # | Slice | Replaces the legacy app for |
 |---|---|---|
 | 1 | **Foundation + editor** (this spec) | fixing boxes one image at a time |
-| 2 | Model assist: prediction cache and worker, a predictions layer, accept, a dataset inference pass, the class-map editor | pre-labeling |
+| 2 | [Model assist](2026-10-05-model-assist.md): prediction cache and worker, a predictions layer, accept, a dataset inference pass, the class-map editor | pre-labeling |
 | 3 | Filters as queue conditions: size, name, overlap, Label/Prediction IoU | hunting with filters |
 | 4 | Find Bad as a queue source: findings in the queue, crop tiles in the grid, the finding spotlighted in the full frame, dismissals that persist | cleaning with the model |
 | 5 | Bulk reassign, statistics, crop export and the Qwen round trip | the rest |
@@ -589,11 +589,7 @@ From the slice 1a whole-branch review; the core is built, these are what the UI 
 
 What each later spec starts from. None of this is designed yet.
 
-- **2 · Model assist.** Port `classmap` and `predcache` into a new store under
-  `.deeplabeling/` (clean break), following [caches.md](../knowledge/caches.md). Inference
-  runs on one worker and the GUI never waits on it. The predictions layer gets its own
-  caption anchor. Accepting predictions is an `AddBox` intent, so it can be undone. The
-  model chip joins the state bar.
+- **2 · Model assist.** Designed: [2026-10-05-model-assist.md](2026-10-05-model-assist.md).
 - **3 · Filters.** Size, name, overlap and IoU conditions for `ImageFilter`, each with its
   `highlight` ([matching.md](../knowledge/matching.md)). Ranges follow
   `legacy/yolo_labeling/core/ranges.py::range_error`.
