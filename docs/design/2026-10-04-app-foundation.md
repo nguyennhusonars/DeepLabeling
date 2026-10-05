@@ -1,6 +1,6 @@
 # DeepLabeling — app foundation and slice 1 (the editor)
 
-**Status:** approved 2026-10-04 · slices 1a (the core), 1b (the viewer) and 1c (editing) implemented; the amendments found while building them are folded in; 1d (the queue grid) next
+**Status:** approved 2026-10-04 · slice 1 implemented: 1a (the core), 1b (the viewer), 1c (editing) and 1d (the queue grid); the amendments found while building them are folded in; slice 2 (model assist) next
 **Scope:** the architecture every feature sits on, and **slice 1**: open a dataset, work
 through a queue of images, and fix their boxes. Later slices get their own spec, plan and
 build; [Later slices](#later-slices) records what each starts from.
@@ -349,8 +349,10 @@ clicking it changes that setting.
 **Queue panel** (left dock). A virtualised list: the dataset-relative path, a badge
 (`3 boxes`, `negative`, `missing`, *no longer matches*) and a reviewed tick. `G` switches it
 to a grid of thumbnails with their label boxes drawn on them, and widens the panel to the
-last grid width. In the grid, **mark page** marks every visible tile. Thumbnails decode at
-display size on workers, only for visible rows, into a cache bounded in bytes (64 MB).
+last grid width; the list keeps its own width, and the view and both widths persist. In the
+grid, **mark page** (a button on the panel) marks every tile wholly in view: what was seen,
+nothing more. Thumbnails decode at display size on workers, only for visible rows, into a
+cache bounded in bytes (64 MB).
 
 **Canvas** (centre, a `QGraphicsView`):
 
@@ -481,6 +483,7 @@ target is recorded with its measured value, not quietly dropped.
 | one edit applied and written | ≤ 20 ms | 2 ms, the worst of 50 (ext4 on NVMe) |
 | an *all images* queue: first items / complete | ≤ 1 s / ≤ 3 s | 109 ms / 272 ms |
 | a class condition over 45k label files, cold / warm cache | ≤ 30 s / ≤ 5 s, streaming | 4.4 s / 0.69 s |
+| the grid: the first page of thumbnails / a page after a jump | ≤ 1 s / ≤ 1 s | 237 ms / 68 ms (2026-10-05) |
 
 - "Cold" is the first pass after opening, while the open-time count of unnamed class ids
   reads every label file too; the OS page cache was warm.
