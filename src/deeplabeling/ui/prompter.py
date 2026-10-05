@@ -7,8 +7,11 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
 
+from ..core.classmap import ClassMap
 from ..core.dataset import Dataset
+from ..core.inference import FLOOR
 from ..core.queue import ImageFilter
+from .class_map_dialog import ClassMapDialog
 from .class_picker import ClassPicker
 from .classes import ClassInfo
 from .queue_editor import QueueEditor
@@ -64,5 +67,23 @@ class QtPrompter:
         dialog = ClassPicker(infos, self.parent)
         try:
             return dialog.chosen() if dialog.exec() == QDialog.Accepted else None
+        finally:
+            dialog.deleteLater()
+
+    def choose_weights(self) -> str | None:
+        path, _ = QFileDialog.getOpenFileName(self.parent, "Load a model", "",
+                                              "Model weights (*.pt);;All files (*)")
+        return path or None
+
+    def ask_threshold(self, current: float) -> float | None:
+        value, ok = QInputDialog.getDouble(self.parent, "Confidence threshold",
+                                           "Show and accept predictions at or above:",
+                                           current, FLOOR, 1.0, 2)
+        return value if ok else None
+
+    def edit_class_map(self, cmap: ClassMap, dataset_names) -> ClassMap | None:
+        dialog = ClassMapDialog(cmap, dataset_names, self.parent)
+        try:
+            return dialog.class_map() if dialog.exec() == QDialog.Accepted else None
         finally:
             dialog.deleteLater()

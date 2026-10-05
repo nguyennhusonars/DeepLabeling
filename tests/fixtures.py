@@ -220,9 +220,12 @@ def assert_only_changed(before: dict[str, str], after: dict[str, str], expected:
 class FakePrompter:
     """Answers the UI's dialogs from preset values and records what was asked."""
 
-    def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None):
+    def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None,
+                 weights=None, threshold=None, class_map=None):
         self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
         self.class_name = class_name
+        self.weights, self.threshold = weights, threshold
+        self.class_map = class_map          #: {model class name: dataset class name or None}
         self.folders = list(folders)
         self.errors: list[tuple[str, str]] = []
         self.asked: list[tuple] = []
@@ -254,6 +257,21 @@ class FakePrompter:
         self.asked.append(("class", tuple(info.name for info in infos)))
         return next((info for info in infos if info.name == self.class_name), None)
 
+    def choose_weights(self):
+        self.asked.append(("weights",))
+        return None if self.weights is None else str(self.weights)
+
+    def ask_threshold(self, current):
+        self.asked.append(("threshold", current))
+        return self.threshold
+
+    def edit_class_map(self, cmap, dataset_names):
+        self.asked.append(("class map", cmap.model_names, tuple(dataset_names)))
+        if self.class_map is None:
+            return None
+        for name, target in self.class_map.items():
+            cmap = cmap.with_target(cmap.model_names.index(name), target)
+        return cmap
 
 
 def open_session(qtbot, source, prompter=None, **kw):

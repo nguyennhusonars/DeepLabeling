@@ -25,3 +25,17 @@ def test_an_answered_dialog_is_freed(qtbot, ds):
         answer_with_cancel()
         assert prompter.edit_queue(Dataset.open(ds.yaml), ImageFilter()) is None
     qtbot.waitUntil(lambda: not parent.findChildren(ClassPicker) and not parent.findChildren(QueueEditor))
+
+
+def test_the_class_map_and_threshold_dialogs_answer_none_when_cancelled(qtbot):
+    from deeplabeling.core.classmap import ClassMap
+    from deeplabeling.ui.class_map_dialog import ClassMapDialog
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    prompter = QtPrompter(parent)
+    answer_with_cancel()
+    assert prompter.edit_class_map(ClassMap.seeded(("car",), ("car",)), ("car",)) is None
+    answer_with_cancel()
+    assert prompter.ask_threshold(0.25) is None
+    qtbot.waitUntil(lambda: not parent.findChildren(ClassMapDialog))

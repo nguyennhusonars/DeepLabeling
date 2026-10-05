@@ -19,6 +19,7 @@ from .classes import DEFAULT_HOTKEYS
 from .editing import Editing
 from .inspector import Inspector
 from .keymap import HelpDialog, build_actions
+from .model import RECENT_MODELS
 from .notices import NoticeStrip
 from .queue_panel import QueuePanel
 from .session import Session
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
         self.panels_menu.addAction(self.inspector_dock.toggleViewAction())
         self._layers_changed()
         self.state_bar.dataset.menu().aboutToShow.connect(self._fill_dataset_menu)
+        self.state_bar.model.menu().aboutToShow.connect(self._fill_model_menu)
         self.state_bar.queue.clicked.connect(self.edit_queue)
         session.cursorChanged.connect(self.show_current)
         session.opened.connect(self.show_current)
@@ -269,6 +271,35 @@ class MainWindow(QMainWindow):
             name = Path(entry["source"])
             menu.addAction(f"{name.name} — {name.parent}",
                            lambda e=entry: self.session.open(e["source"], e["labels"]))
+
+    def _fill_model_menu(self) -> None:
+        menu, model, ws = self.state_bar.model.menu(), self.session.model, self.session.workspace
+        menu.clear()
+        menu.addAction("Load a model…", self.load_model)
+        recent = self.session.settings.get(RECENT_MODELS)
+        if recent:
+            menu.addSeparator()
+        for path in map(Path, recent):
+            menu.addAction(f"{path.name} — {path.parent}", lambda p=path: model.load(p))
+        menu.addSeparator()
+        menu.addAction("Threshold…", self.ask_threshold).setEnabled(ws is not None)
+        menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
+
+    def load_model(self) -> None:
+        path = self.prompter.choose_weights()
+        if path:
+            self.session.model.load(path)
+
+    def ask_threshold(self) -> None:
+        value = self.prompter.ask_threshold(self.session.model.conf)
+        if value is not None:
+            self.session.model.set_conf(value)
+
+    def edit_class_map(self) -> None:
+        model = self.session.model
+        cmap = self.prompter.edit_class_map(model.class_map, self.session.workspace.dataset.names)
+        if cmap is not None:
+            model.set_class_map(cmap)
 
     def open_yaml(self) -> None:
         path = self.prompter.choose_yaml()
