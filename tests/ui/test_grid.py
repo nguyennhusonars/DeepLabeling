@@ -6,7 +6,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 
 from deeplabeling.ui.queue_panel import QueuePanel, tile_text, tile_thumb_rect
-from deeplabeling.ui.settings_ui import QUEUE_GRID_WIDTH, SHOW_GRID
+from deeplabeling.ui.settings_ui import QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, SHOW_GRID
 from drive import start
 
 
@@ -323,3 +323,21 @@ def test_a_tile_reads_its_labels_once_and_a_thumbnail_repaints_only_its_tile(qtb
     monkeypatch.setattr(grid.view, "update", lambda index: (updates.append(index.row()), update(index)))
     session.thumbs.ready.emit(first.entry.path)
     assert updates == [0]
+
+
+def test_two_quick_g_presses_keep_both_widths(qtbot, window):
+    settings = window.session.settings
+    qtbot.waitUntil(lambda: near(window.queue_dock.width(), 280))
+    qtbot.keyClick(window, Qt.Key_G)
+    qtbot.keyClick(window, Qt.Key_G)                        # before the layout catches up
+    assert settings.get(QUEUE_GRID_WIDTH) == 560 and near(settings.get(QUEUE_LIST_WIDTH), 280)
+    qtbot.waitUntil(lambda: near(window.queue_dock.width(), 280))
+
+
+def test_a_queue_dock_along_the_bottom_leaves_the_widths_alone(qtbot, window):
+    window.addDockWidget(Qt.BottomDockWidgetArea, window.queue_dock)
+    qtbot.waitUntil(lambda: window.queue_dock.width() > 1000)
+    qtbot.keyClick(window, Qt.Key_G)
+    qtbot.keyClick(window, Qt.Key_G)
+    settings = window.session.settings
+    assert settings.get(QUEUE_LIST_WIDTH) == 280 and settings.get(QUEUE_GRID_WIDTH) == 560

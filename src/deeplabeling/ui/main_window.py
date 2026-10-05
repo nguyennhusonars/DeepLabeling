@@ -202,10 +202,16 @@ class MainWindow(QMainWindow):
         self.actions["mark_page"].setEnabled(on)
         width = self.session.settings.get(QUEUE_GRID_WIDTH if on else QUEUE_LIST_WIDTH)
         self.resizeDocks([self.queue_dock], [width], Qt.Horizontal)
+        if self.isVisible():                        # now, so a second G at once reads this width;
+            self.layout().activate()                # before the first show, the show lays it out
 
     def _remember_queue_width(self, grid: bool) -> None:
-        if self.queue_dock.isVisible() and not self.queue_dock.isFloating():
-            self.session.settings.set(QUEUE_GRID_WIDTH if grid else QUEUE_LIST_WIDTH, self.queue_dock.width())
+        """Keep the panel's width for a view -- only while the panel is beside the canvas,
+        where its width is what the user set; along the top or bottom it is the window's."""
+        dock = self.queue_dock
+        beside = self.dockWidgetArea(dock) in (Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea)
+        if dock.isVisible() and not dock.isFloating() and beside:
+            self.session.settings.set(QUEUE_GRID_WIDTH if grid else QUEUE_LIST_WIDTH, dock.width())
 
     def _update_status(self) -> None:
         session, item = self.session, self.session.current()
