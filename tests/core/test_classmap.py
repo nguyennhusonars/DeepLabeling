@@ -64,3 +64,16 @@ def test_a_stored_map_missing_a_class_seeds_that_one_and_drops_strangers(dataset
 def test_the_settings_refuse_what_is_not_a_map_of_maps(settings):
     with pytest.raises(ValueError):
         settings.set(CLASS_MAPS, {"k": ["car"]})
+
+
+def test_a_choice_made_on_one_yaml_leaves_the_names_of_another_alone(dataset, settings, ds):
+    model = ("car", "truck", "person")
+    on_13 = load_class_map(settings, model, dataset.names).with_target(1, "bus_l")   # truck → bus_l
+    save_class_map(settings, on_13)
+    data = yaml.safe_load(ds.yaml.read_text(encoding="utf-8"))
+    data["names"] = ["car", "truck", "person"]
+    (ds.root / "seven.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    seven = Dataset.open(ds.root / "seven.yaml")
+    on_7 = load_class_map(settings, model, seven.names)
+    assert [on_7.translate(i, seven) for i in range(3)] == [0, 1, 2]   # bus_l is not here: by name
+    assert load_class_map(settings, model, dataset.names).targets == ("car", "bus_l", "person")

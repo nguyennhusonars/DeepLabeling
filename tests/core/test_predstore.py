@@ -106,3 +106,20 @@ def test_a_store_that_can_neither_be_read_nor_moved_aside_refuses_as_an_os_error
     monkeypatch.setattr(predstore, "set_aside", lambda path, e: ("predictions.sqlite could not be moved", False))
     with pytest.raises(OSError, match="predictions.sqlite could not be moved"):
         PredictionStore(tmp_path / STORE_NAME)
+
+
+def test_a_store_that_is_locked_or_unwritable_is_not_set_aside(tmp_path, monkeypatch):
+    import sqlite3
+
+    from deeplabeling.core import predstore
+
+    good = PredictionStore(tmp_path / STORE_NAME)
+    good.close()
+
+    def busy(*a, **kw):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(predstore.sqlite3, "connect", busy)
+    with pytest.raises(OSError, match="database is locked"):
+        PredictionStore(tmp_path / STORE_NAME)
+    assert not list(tmp_path.glob(f"{STORE_NAME}.unreadable-*"))

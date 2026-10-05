@@ -95,3 +95,18 @@ def test_a_queue_accept_plan_stops_when_cancelled(store, cmap, dataset, ds):
     plan = plan_queue_accept(entries, store.get, lambda e: [], cmap, dataset, conf=0.25,
                              cancelled=lambda: True)
     assert plan is None
+
+
+def test_a_prediction_a_label_covers_still_speaks_for_its_place(store, cmap, dataset, ds):
+    labels = store.get(ds.img("camA/0001.jpg"))              # person at (0.5, 0.5, 0.2, 0.3)
+    strong = p(0, (0.56, 0.5, 0.2, 0.3), 0.9)               # IoU 0.54 with the label
+    twin = p(1, (0.62, 0.5, 0.2, 0.3), 0.6)                 # 0.54 with strong, 0.25 with the label
+    shown = shown_predictions([strong, twin], labels, cmap, dataset, conf=0.25)
+    assert [s.missing for s in shown] == [False, False]
+
+
+def test_a_queue_accept_leaves_negative_samples_alone(store, cmap, dataset, ds):
+    entries = [dataset.entry(ds.img("camA/0002.jpg"))]      # an empty label file: no objects
+    plan = plan_queue_accept(entries, store.get, lambda e: [p(0, (0.5, 0.5, 0.2, 0.2), 0.9)],
+                             cmap, dataset, conf=0.25)
+    assert plan.intents == () and plan.negative == 1

@@ -57,12 +57,28 @@ def model_key(weights) -> str:
     return f"{path.name}:{stat.st_size}:{int(stat.st_mtime)}"
 
 
+def _inside(box) -> Box | None:
+    """A box as corners rounded and clipped to the image, then centre and size: rounding
+    cx, cy, w and h one by one put boxes at the frame's edge up to 7.5e-7 outside it, which
+    the write path refuses. None when nothing is left inside."""
+    cx, cy, w, h = (float(v) for v in box)
+    x1, y1 = (min(max(round(v, 6), 0.0), 1.0) for v in (cx - w / 2, cy - h / 2))
+    x2, y2 = (min(max(round(v, 6), 0.0), 1.0) for v in (cx + w / 2, cy + h / 2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    # 10 decimals drop float noise (0.09999999999999998) and stay within 7.5e-11 of the
+    # clipped corners, inside the write path's 1e-9.
+    return tuple(round(v, 10) for v in ((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1))
+
+
 def predictions_from(result) -> list[Prediction]:
     """One ultralytics result as Predictions, strongest first, at the floor and capped."""
     boxes = result.boxes
-    found = [Prediction(int(cls), tuple(round(float(v), 6) for v in box), round(float(conf), 3))
-             for box, cls, conf in zip(boxes.xywhn.tolist(), boxes.cls.tolist(), boxes.conf.tolist())
-             if conf >= FLOOR]
+    found = []
+    for box, cls, conf in zip(boxes.xywhn.tolist(), boxes.cls.tolist(), boxes.conf.tolist()):
+        inside = _inside(box)
+        if conf >= FLOOR and inside is not None:
+            found.append(Prediction(int(cls), inside, round(float(conf), 3)))
     found.sort(key=lambda p: -p.conf)
     return found[:MAX_BOXES]
 

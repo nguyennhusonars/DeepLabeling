@@ -99,3 +99,38 @@ def test_a_batch_that_changed_nothing_records_nothing(editor, ds, rec):
     batch = editor.batch("accept")
     batch.apply([])
     assert batch.finish() is None and editor.history.depth == 0 and rec.history == 0
+
+
+def test_what_cannot_be_put_back_stays_recorded_so_undo_can_retry(editor, ds, monkeypatch):
+    before = ds.snapshot()
+    real, calls = store_module.write_atomic, []
+
+    def full_from_the_third_write(path, data):
+        calls.append(path)
+        if len(calls) >= 3:
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", full_from_the_third_write)
+    with pytest.raises(Refused, match="could not be put back"):
+        editor.apply_many(adds(ds), "accept")               # 0001 and 0003 written, then full
+    monkeypatch.setattr(store_module, "write_atomic", real)  # space freed
+    assert editor.history.depth == 1
+    editor.undo()
+    assert_only_changed(before, ds.snapshot(), set())
+
+
+def test_after_a_failed_batch_the_store_serves_the_files_as_they_are_again(editor, ds, monkeypatch):
+    real, calls = store_module.write_atomic, []
+
+    def fails_third(path, data):
+        calls.append(path)
+        if len(calls) == 3:
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", fails_third)
+    with pytest.raises(Refused):
+        editor.apply_many(adds(ds), "accept")
+    assert editor.store.get(ds.img("camA/0001.jpg")).raw == CAMA_0001.encode()
+    assert editor.store.get(ds.img("camA/0003.jpg")).raw is None

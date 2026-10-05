@@ -39,9 +39,9 @@ def shown_predictions(preds: Iterable[Prediction], labels: ImageLabels, cmap: Cl
     out = []
     for pred in sorted((p for p in preds if p.conf >= conf), key=lambda p: -p.conf):
         covered = any(iou(pred.box, box) >= MATCH_IOU for box in boxes)
-        shadowed = not covered and any(iou(pred.box, q.box) >= MATCH_IOU for q in places)
-        if not covered and not shadowed:
-            places.append(pred)
+        shadowed = any(iou(pred.box, q.box) >= MATCH_IOU for q in places)
+        if not shadowed:
+            places.append(pred)                 # covered or not, it speaks for its place
         out.append(Shown(pred, cmap.translate(pred.cls, dataset), not covered and not shadowed))
     return out
 
@@ -73,6 +73,7 @@ class QueueAccept:
     uninferred: int     #: images with no row: skipped
     unmapped: int       #: missing predictions skipped for an unmapped class
     read_only: int      #: images whose label file cannot be edited: skipped
+    negative: int       #: negative samples (an empty label file, a decision): skipped
 
 
 def plan_queue_accept(entries: Iterable[ImageEntry], labels_of: Callable[[Path], ImageLabels],
@@ -81,7 +82,7 @@ def plan_queue_accept(entries: Iterable[ImageEntry], labels_of: Callable[[Path],
                       cancelled: Callable[[], bool] = lambda: False) -> QueueAccept | None:
     """What accepting the missing predictions across these images would do. Reads only, so
     it runs on a worker; None when cancelled part-way."""
-    intents, boxes, uninferred, unmapped, read_only = [], 0, 0, 0, 0
+    intents, boxes, uninferred, unmapped, read_only, negative = [], 0, 0, 0, 0, 0
     for entry in entries:
         if cancelled():
             return None
@@ -93,9 +94,12 @@ def plan_queue_accept(entries: Iterable[ImageEntry], labels_of: Callable[[Path],
         if not labels.editable:
             read_only += 1
             continue
+        if labels.negative:
+            negative += 1                       # someone decided it has no objects
+            continue
         intent, skipped = accept_image(entry.path, shown_predictions(preds, labels, cmap, dataset, conf))
         unmapped += skipped
         if intent is not None:
             intents.append(intent)
             boxes += len(intent.ops)
-    return QueueAccept(tuple(intents), boxes, uninferred, unmapped, read_only)
+    return QueueAccept(tuple(intents), boxes, uninferred, unmapped, read_only, negative)

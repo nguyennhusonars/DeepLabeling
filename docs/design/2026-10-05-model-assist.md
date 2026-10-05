@@ -122,12 +122,17 @@ keeps raw model ids and translates on read
 ### Accepting
 
 - **Missing** means a prediction above the threshold, with a mapped class, that no
-  existing label overlaps at IoU ≥ 0.5, of any class.
+  existing label overlaps at IoU ≥ 0.5, of any class, and that speaks for its place: of
+  predictions overlapping each other at IoU ≥ 0.5, only the most confident does, covered
+  by a label or not ([why](../knowledge/matching.md#candidates-and-the-deciding-prediction)).
+  A box at the frame's edge is clipped into the image, so the write path takes it.
 - **Double-click a prediction** to accept it as a label of its mapped class, even one an
   existing label overlaps: the user chose that box.
 - **`A`** accepts every missing prediction on the image on screen, as one edit.
 - **Accept missing boxes in this queue…** (the model chip's menu) first shows what it will
-  do: *N boxes on M images; K images are not inferred yet and are skipped*. It is then
+  do: *N boxes on M images; K images are not inferred yet and are skipped*. It skips
+  negative samples too, an empty label file being someone's decision that the image has
+  no objects, and read-only label files, and counts both. It is then
   **one edit across every image it touches**, undone as one, and it marks nothing
   reviewed.
 - **It is written in chunks on the GUI thread's write path**, as every edit is, so the
@@ -139,8 +144,13 @@ keeps raw model ids and translates on read
 - **The core gains `Editor.apply_many`**, which applies a list of intents as one edit,
   marking nothing. Every file is written atomically. If a write fails partway, the files
   already written get their before-bytes back and nothing is recorded, so a failed accept
-  leaves no half. Undo is slice 1's: refused as a whole if any file changed since
+  leaves no half. A file that cannot be put back either (the disk still full) stays
+  recorded as an edit, so undo puts it back once the cause is gone; it is never dropped.
+  Undo is slice 1's: refused as a whole if any file changed since
   ([History](2026-10-04-app-foundation.md#history)).
+- **Undo and redo of a queue accept are written in chunks too**, behind the same dialog:
+  45k files undone at once would freeze the window as long as writing them at once.
+  `LabelStore.restore` and `History` gain a chunked form in plan 2b.
 - An accept that skips unmapped predictions says how many it skipped.
 
 ### A dataset pass

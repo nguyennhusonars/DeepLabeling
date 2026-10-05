@@ -134,3 +134,13 @@ def test_a_batch_the_model_fails_on_is_retried_image_by_image(predictor, tmp_pat
     out = predictor.predict([tmp_path / "a.jpg", tmp_path / "poison.jpg", tmp_path / "b.jpg"])
     assert out[0] == CAR and out[2] == CAR
     assert out[1] == Failure("RuntimeError: CUDA out of memory")
+
+
+def test_a_box_at_the_frame_edge_stays_inside_the_image_and_is_writable():
+    from deeplabeling.core.edits import AddBox, materialize
+
+    # a real best.pt box: rounded field by field, its left edge came out at -5e-7
+    [pred] = predictions_from(Result((0.0, [0.042312, 0.29193, 0.084625, 0.240948], 0.9)))
+    cx, cy, w, h = pred.box
+    assert cx - w / 2 >= 0 and cx + w / 2 <= 1
+    materialize(None, (AddBox(0, pred.box),), class_ok=lambda c: True)    # not refused

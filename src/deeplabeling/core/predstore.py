@@ -55,13 +55,19 @@ class PredictionStore:
         self._all: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
         try:
-            self._connection()
-        except sqlite3.DatabaseError as e:
+            try:
+                self._connection()
+            except sqlite3.OperationalError:
+                raise                               # locked, full, unreadable: not corrupt
+            except sqlite3.DatabaseError as e:      # "file is not a database"
+                self._close_all()
+                self.warning, writable = set_aside(self.path, e)
+                if not writable:
+                    raise OSError(self.warning) from e
+                self._connection()
+        except sqlite3.OperationalError as e:       # the open says why, as for any OSError
             self._close_all()
-            self.warning, writable = set_aside(self.path, e)
-            if not writable:                        # the open says why, as for any OSError
-                raise OSError(self.warning) from e
-            self._connection()
+            raise OSError(f"{self.path.name}: {e}") from e
 
     def _connection(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)

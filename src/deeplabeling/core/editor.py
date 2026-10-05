@@ -79,6 +79,7 @@ class EditBatch:
         self._editor, self._description = editor, description
         self._changes: dict[Path, FileChange] = {}      # by label file: first before, last after
         self._images: dict[Path, None] = {}
+        self._image_of: dict[Path, Path] = {}           # label file -> its image
         self._spent = False
 
     def apply(self, intents: Iterable[Intent]) -> None:
@@ -91,6 +92,7 @@ class EditBatch:
                 if edit is None:
                     continue
                 for change in edit.changes:
+                    self._image_of[change.path] = edit.images[0]
                     first = self._changes.get(change.path)
                     self._changes[change.path] = FileChange(
                         change.path, change.before if first is None else first.before, change.after)
@@ -104,15 +106,26 @@ class EditBatch:
             self._editor._labels_changed(tuple(touched))
 
     def _roll_back(self, cause: Refused) -> None:
+        """Put back every file written, one by one: files this batch created go first,
+        which frees space on a full disk. What cannot be put back is recorded as an edit,
+        so undo can retry it once the cause is gone; it is never dropped."""
         written = self._edit()
-        if written is not None:
+        if written is None:
+            raise cause
+        store, kept = self._editor.store, []
+        for change in sorted(written.changes, key=lambda c: c.before is not None):
             try:
-                self._editor.store.restore(written, undo=True)
-            except Refused as e:
-                raise Refused(f"{cause}; putting back what was written failed too: {e}") from cause
-            finally:
-                self._editor._labels_changed(written.images)
-        raise cause
+                store.restore(Edit((change,), (self._image_of[change.path],), self._description), undo=True)
+            except Refused:
+                kept.append(change)
+        images = tuple(self._images)
+        self._editor._labels_changed(images)
+        if not kept:
+            raise cause
+        self._editor.history.push(Edit(tuple(kept), images, self._description))
+        self._editor._history_changed()
+        raise Refused(f"{cause}; {len(kept)} file(s) could not be put back and stay as written: "
+                      "undo puts them back once that is fixed") from cause
 
     def _edit(self) -> Edit | None:
         if not self._changes:
