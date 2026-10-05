@@ -28,6 +28,7 @@ WINDOW_GEOMETRY = define("window.geometry", "global", "", lambda v: isinstance(v
 WINDOW_STATE = define("window.state", "global", "", lambda v: isinstance(v, str))
 SHOW_LABELS = define("view.labels", "global", True, lambda v: isinstance(v, bool))
 SHOW_CAPTIONS = define("view.captions", "global", True, lambda v: isinstance(v, bool))
+SHOW_PREDICTIONS = define("view.predictions", "global", True, lambda v: isinstance(v, bool))
 SHOW_CROSSHAIR = define("view.crosshair", "global", False, lambda v: isinstance(v, bool))
 SHOW_GRID = define("view.queue_grid", "global", False, lambda v: isinstance(v, bool))
 #: The queue panel's width in each view: the grid widens it, the list takes its own back.

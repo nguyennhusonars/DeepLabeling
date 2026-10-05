@@ -146,8 +146,11 @@ class Canvas(QGraphicsView):
         self.scene().setSceneRect(QRectF(0, 0, image.width(), image.height()))
         self.fit()
 
-    def set_boxes(self, views: list[BoxView], selected=()) -> None:
+    def set_boxes(self, views: list[BoxView], selected=(), predictions: list[PredictionView] | None = None) -> None:
+        """The labels, and the predictions when given (None keeps them): drawn once."""
         self._views, self._selected = list(views), frozenset(selected)
+        if predictions is not None:
+            self._predictions = list(predictions)
         self._redraw()
 
     def set_selected(self, indices) -> None:

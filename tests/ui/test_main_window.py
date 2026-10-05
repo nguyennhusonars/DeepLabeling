@@ -105,9 +105,9 @@ def test_layers_toggle_from_their_keys_and_persist(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_L)
     assert not window.canvas.show_labels and window.canvas.caption_items() == []
     assert window.session.settings.get(SHOW_LABELS) is False
-    assert window.state_bar.layers.full_text == "Layers: captions"
+    assert window.state_bar.layers.full_text == "Layers: captions, predictions"
     qtbot.keyClick(window, Qt.Key_T)
-    assert window.state_bar.layers.full_text == "Layers: none"
+    assert window.state_bar.layers.full_text == "Layers: predictions"
     window.close()
     again = start(qtbot, [str(ds.yaml)])
     assert not again.actions["toggle_labels"].isChecked() and not again.canvas.show_labels
@@ -205,4 +205,4 @@ def test_a_closed_panel_can_be_shown_again(qtbot, window):
     action = next(a for a in window.panels_menu.actions() if a.text() == "Queue")
     action.trigger()
     qtbot.waitUntil(window.queue_dock.isVisible)
-    assert window.state_bar.layers.full_text == "Layers: labels, captions"
+    assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions"

@@ -13,7 +13,7 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QVBoxLayout, QWidget
 
 from ..core.workspace import CLASS_COLORS
-from .boxes import box_views
+from .boxes import box_views, prediction_views
 from .canvas import Canvas
 from .classes import DEFAULT_HOTKEYS
 from .editing import Editing
@@ -23,6 +23,7 @@ from .notices import NoticeStrip
 from .queue_panel import QueuePanel
 from .session import Session
 from .settings_ui import (QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_GRID,
+                          SHOW_PREDICTIONS,
                           SHOW_LABELS, WINDOW_GEOMETRY, WINDOW_STATE, bind_toggle)
 from .state_bar import StateBar
 
@@ -83,10 +84,11 @@ class MainWindow(QMainWindow):
             "escape": self.editing.escape,
             "copy": self.editing.copy,
             "paste": self.editing.paste,
+            "accept_missing": self.editing.accept_missing,
         })
         layers = self.state_bar.layers.menu()
         for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS),
-                             ("toggle_crosshair", SHOW_CROSSHAIR)):
+                             ("toggle_predictions", SHOW_PREDICTIONS), ("toggle_crosshair", SHOW_CROSSHAIR)):
             bind_toggle(self.actions[key], session.settings, setting, self._layers_changed)
             layers.addAction(self.actions[key])
         bind_toggle(self.actions["toggle_grid"], session.settings, SHOW_GRID, self._grid_changed)
@@ -108,6 +110,9 @@ class MainWindow(QMainWindow):
         session.notice.connect(lambda level, text, image: self.notices.add(level, text, image))
         session.standing.connect(lambda key, text: self.notices.add("warning", text, key=key))
         session.status.connect(lambda text: self.statusBar().showMessage(text, 4000))
+        session.model.changed.connect(self._predictions_changed)
+        session.model.ready.connect(self._image_predicted)
+        self.canvas.predictionPicked.connect(self.editing.accept_prediction)
         self._restore_layout()
         self._show_grid(self.actions["toggle_grid"].isChecked())
         self.show_current()
@@ -159,7 +164,29 @@ class MainWindow(QMainWindow):
         self.editing.show(labels)
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
-                              selected=self.editing.selection.indices(labels))
+                              selected=self.editing.selection.indices(labels),
+                              predictions=self._prediction_views(item))
+
+    def _prediction_views(self, item):
+        """The predictions for the item on screen, as the canvas draws them; Editing keeps
+        the same list, so what is accepted is what is drawn."""
+        ws, model = self.session.workspace, self.session.model
+        shown = model.shown(item.entry)
+        self.editing.show_predictions(item.entry.path, shown)
+        return prediction_views(shown or [], ws.dataset, self.canvas.image_size,
+                                ws.root_settings.get(CLASS_COLORS), model.names)
+
+    def _predictions_changed(self) -> None:
+        """The model, its threshold or its class map changed: redraw the predictions alone."""
+        item = self.session.current()
+        if item is not None and self.canvas.image_size is not None and self._shown == item.entry.path:
+            self.canvas.set_predictions(self._prediction_views(item))
+        self._update_status()
+
+    def _image_predicted(self, path) -> None:
+        item = self.session.current()
+        if item is not None and item.entry.path == path:
+            self._predictions_changed()
 
     def _image_event(self, path) -> None:
         item = self.session.current()
@@ -185,7 +212,8 @@ class MainWindow(QMainWindow):
         labels = self.actions["toggle_labels"].isChecked()
         if not labels:
             self.editing.selection.clear()          # hidden boxes are not acted on
-        self.canvas.set_layers(labels=labels, captions=self.actions["toggle_captions"].isChecked())
+        self.canvas.set_layers(labels=labels, captions=self.actions["toggle_captions"].isChecked(),
+                               predictions=self.actions["toggle_predictions"].isChecked())
         self.canvas.set_crosshair(self.actions["toggle_crosshair"].isChecked())
         self.session.saver.schedule()
         self.state_bar.refresh()

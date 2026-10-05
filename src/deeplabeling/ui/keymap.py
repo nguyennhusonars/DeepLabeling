@@ -54,6 +54,8 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("mark_page", "Mark page: mark every tile in view reviewed (in the grid)", ()),
     ActionSpec("go_to", "Go to an item by number or name", ("Ctrl+G",)),
     ActionSpec("help", "Shortcut help", ("?",)),
+    ActionSpec("toggle_predictions", "Predictions", ("P",), checkable=True),
+    ActionSpec("accept_missing", "Accept the missing predictions on this image", ("A",)),
 )
 
 
