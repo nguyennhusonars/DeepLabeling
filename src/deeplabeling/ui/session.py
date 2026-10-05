@@ -23,7 +23,7 @@ from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
 from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
 from .classes import assign_classes
-from .images import ImageCache
+from .images import THUMB_BYTES, ImageCache, decode_thumb
 from .settings_ui import Saver, global_settings, remember_source
 from .workers import Jobs
 
@@ -66,6 +66,7 @@ class Session(QObject):
         self.queue: Queue | None = None
         self.io = Jobs(2)
         self.images = ImageCache(Jobs(2), parent=self)
+        self.thumbs = ImageCache(Jobs(2), THUMB_BYTES, decode=decode_thumb, parent=self)
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
@@ -137,6 +138,7 @@ class Session(QObject):
             return
         self.io.cancel_all()
         self.images.clear()
+        self.thumbs.clear()
         self.io.wait(2000)
         self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
         self._follow = self._seen = self._keys = None
