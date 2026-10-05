@@ -48,16 +48,15 @@ def delete(image, labels: ImageLabels, indices: Iterable[int]) -> Intent | None:
 
 
 def move(image, labels: ImageLabels, indices: Iterable[int], dx: float, dy: float) -> Intent | None:
-    """Shift boxes by (dx, dy), normalised. Each keeps its size and stays inside the image."""
+    """Shift boxes by (dx, dy), normalised. They keep their sizes and move together: the
+    shift is cut where the first of them would leave the image."""
     rows = _rows(labels, indices)
     if not rows or (dx == 0 and dy == 0):
         return None
-    ops = []
-    for i in rows:
-        cx, cy, w, h = labels.lines[i].bbox
-        nx = min(max(cx + dx, w / 2), 1 - w / 2)
-        ny = min(max(cy + dy, h / 2), 1 - h / 2)
-        ops.append(SetBox(labels.ref(i), (nx, ny, w, h)))
+    boxes = [labels.lines[i].bbox for i in rows]
+    dx = min(max(dx, max(w / 2 - cx for cx, _, w, _ in boxes)), min(1 - w / 2 - cx for cx, _, w, _ in boxes))
+    dy = min(max(dy, max(h / 2 - cy for _, cy, _, h in boxes)), min(1 - h / 2 - cy for _, cy, _, h in boxes))
+    ops = [SetBox(labels.ref(i), (cx + dx, cy + dy, w, h)) for i, (cx, cy, w, h) in zip(rows, boxes)]
     return Intent(Path(image), tuple(ops), f"move {_plural(len(rows), 'box')}")
 
 

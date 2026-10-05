@@ -362,3 +362,33 @@ def test_a_small_selected_box_moves_from_its_middle_and_resizes_from_a_corner(ca
     drag(canvas, (103, 53), (113, 63))
     drag(canvas, (106, 56), (116, 66))
     assert [s[0] for s in seen] == ["moved", "resized"]
+
+
+def test_a_drag_wholly_outside_the_image_draws_nothing(canvas):
+    canvas.set_image(grey_image())                          # grey margins above and below it
+    seen = record(canvas)
+    drag(canvas, (20, -20), (80, -5))
+    assert seen == []
+
+
+def test_a_click_on_a_handle_keeps_the_selection(canvas):
+    canvas.set_image(grey_image())
+    canvas.set_boxes([RED], selected=[0])
+    seen = record(canvas)
+    at = vp(canvas, 150, 75) + QPoint(4, 4)                 # the handle's outer half, past the box
+    mouse(canvas, QEvent.MouseButtonPress, at)
+    mouse(canvas, QEvent.MouseButtonRelease, at)
+    assert seen == []
+
+
+def test_boxes_moved_against_an_edge_stop_there_together(canvas):
+    canvas.set_image(grey_image())
+    near_edge = BoxView(0, (150, 25, 180, 50), (), "#ff0000", "car", True, False)
+    inner = BoxView(1, (100, 25, 120, 50), (), "#ff0000", "car", True, False)
+    canvas.set_boxes([near_edge, inner], selected=[0, 1])
+    seen = record(canvas)
+    drag(canvas, (110, 40), (170, 40), release=False)       # 60 px; the first box has 20
+    assert any(map(is_red, near(canvas, 140, 40))) and not any(map(is_red, near(canvas, 210, 40)))
+    mouse(canvas, QEvent.MouseButtonRelease, vp(canvas, 170, 40))
+    [(kind, delta)] = seen
+    assert kind == "moved" and delta == pytest.approx((20, 0), abs=1)

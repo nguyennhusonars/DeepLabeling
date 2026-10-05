@@ -122,3 +122,9 @@ def test_changed_fires_only_when_the_selection_changes(qtbot, store, ds):
     selection.clear()
     selection.clear()
     assert seen == [1, 1]
+
+
+def test_boxes_moved_together_stop_together_at_the_edge(store, ds):
+    img = ds.img("camA/0001.jpg")                           # person cx 0.5 w 0.2; car cx 0.25 w 0.1
+    intent = actions.move(img, store.get(img), [0, 1], 0.6, 0.0)
+    assert [op.bbox[0] for op in intent.ops] == pytest.approx([0.9, 0.65])
