@@ -42,6 +42,14 @@ Wanted = tuple[str, Path, Stamp]   #: (dataset-relative path, file, stamp)
 _FINISHING: set = set()
 
 
+def threads_running() -> bool:
+    """Whether a thread let go of is still running. The process must then end without
+    destroying it (os._exit), or Qt aborts it."""
+    for done in [w for w in _FINISHING if w.isFinished()]:
+        _FINISHING.discard(done)
+    return bool(_FINISHING)
+
+
 class _Worker(QThread):
     """The thread that owns the predictor. Control jobs (load, unload, stop) go first, then
     the images wanted on screen, in order."""
@@ -69,8 +77,12 @@ class _Worker(QThread):
         self._put(("unload",))
 
     def stop(self) -> None:
+        """Stop after the job in hand: a load queued but not started is dropped."""
         self.want(None, [])
-        self._put(("stop",))
+        with self._cond:
+            self._control.clear()
+            self._control.append(("stop",))
+            self._cond.notify()
 
     def want(self, store: PredictionStore | None, items: list[Wanted]) -> None:
         """Replace the images wanted on screen: the first is the one shown."""
@@ -103,7 +115,10 @@ class _Worker(QThread):
                 else:
                     self._load(*job[1:])
             elif store is not None:
-                self._predict(store, *item)
+                try:
+                    self._predict(store, *item)
+                except Exception as e:                # whatever the model raises: that image fails
+                    self.failed.emit(item[1], str(e))
 
     def _close(self) -> None:
         if self._predictor is not None:
@@ -131,7 +146,11 @@ class _Worker(QThread):
         if isinstance(found, Failure):
             self.failed.emit(path, found.why)
             return
-        store.put(key, rel, stamp, found)
+        try:
+            store.put(key, rel, stamp, found)
+        except Exception as e:                        # the disk full, the store broken
+            self.failed.emit(path, f"its predictions could not be stored: {e}")
+            return
         self.ready.emit(path)
 
 
@@ -258,7 +277,7 @@ class ModelSession(QObject):
 
     def set_class_map(self, cmap: ClassMap) -> None:
         self.class_map = cmap
-        save_class_map(self.session.workspace.root_settings, cmap)
+        save_class_map(self.session.workspace.root_settings, cmap, self.session.workspace.dataset.names)
         self.session.saver.schedule()
         self.changed.emit()
 

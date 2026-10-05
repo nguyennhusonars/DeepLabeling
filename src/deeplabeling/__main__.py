@@ -8,6 +8,7 @@ is given, or the open dialog when there is no last dataset or it is gone.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from .ui.main_window import MainWindow
+from .ui.model import threads_running
 from .ui.prompter import QtPrompter
 from .ui.session import Session
 from .ui.settings_ui import LAST_SOURCE
@@ -52,7 +54,14 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = launch(sys.argv[1:] if argv is None else argv)
     window.show()
-    return app.exec()
+    code = app.exec()
+    if threads_running():
+        # A model thread still loading or predicting after closing waited SHUTDOWN_MS: the
+        # settings are saved, and destroying the thread would abort the process.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    return code
 
 
 if __name__ == "__main__":

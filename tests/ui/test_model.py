@@ -1,6 +1,7 @@
 """The model for the session: loading, the image on screen first, the store first, and a
 GUI that never waits (docs/design/2026-10-05-model-assist.md#the-inference-thread)."""
 
+import sqlite3
 import threading
 import time
 
@@ -140,3 +141,22 @@ def test_shutting_down_waits_at_most_two_seconds_for_a_prediction_in_hand(qtbot,
     session.model.shutdown()
     assert time.monotonic() - started < 3
     gate.set()
+
+
+def test_a_store_that_cannot_be_written_fails_that_image_and_the_model_goes_on(qtbot, session, weights, factory,
+                                                                               monkeypatch):
+    store, put = session.workspace.predictions, session.workspace.predictions.put
+
+    def full(model, img, stamp, preds):
+        if img.endswith("0001.jpg"):
+            raise sqlite3.OperationalError("database or disk is full")
+        put(model, img, stamp, preds)
+
+    monkeypatch.setattr(store, "put", full)
+    session.model.factory = factory
+    with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda *a: "disk is full" in a[1]) as said:
+        session.model.load(weights)
+    assert said.args[1] == ("camA/images/0001.jpg: the model could not predict "
+                            "(its predictions could not be stored: database or disk is full)")
+    session.move(1)                                          # the thread still answers
+    qtbot.waitUntil(lambda: session.model.predictions(session.current().entry) == [], timeout=5000)

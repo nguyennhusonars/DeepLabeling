@@ -69,4 +69,7 @@ Lessons from building the grid (plan 1d):
   (`tests/conftest.py::_no_real_model`), so a real weights file is never loaded.
 - **A running QThread must outlive its owner.** Qt aborts the process when one is
   destroyed while it runs: give the thread no parent, stop it with a bounded wait, and
-  keep a reference while it finishes (`src/deeplabeling/ui/model.py::ModelSession`).
+  keep a reference while it finishes (`src/deeplabeling/ui/model.py::ModelSession`). A
+  reference does not survive the interpreter's exit: one still running then ends the
+  process with `os._exit` (`src/deeplabeling/__main__.py::main`). Test it in a subprocess,
+  by its exit code (`tests/ui/test_quit.py`).

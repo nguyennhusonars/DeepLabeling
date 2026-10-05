@@ -148,3 +148,13 @@ def test_a_remembered_model_that_is_gone_is_not_loaded(qtbot, window, weights, d
     assert again.session.model.state == "none"
     assert again.state_bar.model.full_text == "Model: none · load one"
     again.close()
+
+
+def test_quitting_with_no_dataset_open_lets_the_model_go(qtbot, monkeypatch, prompter):
+    monkeypatch.setattr(model_module, "UltralyticsPredictor", fake)
+    w = start(qtbot, [], prompter)
+    menu(w)["Load a model…"].trigger()
+    qtbot.waitUntil(lambda: w.session.model.state == "ready", timeout=5000)
+    worker = w.session.model._worker
+    w.close()
+    assert w.session.model.state == "none" and worker.isFinished()

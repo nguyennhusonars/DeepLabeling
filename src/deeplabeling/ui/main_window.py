@@ -350,5 +350,6 @@ class MainWindow(QMainWindow):
         settings.set(WINDOW_GEOMETRY, bytes(self.saveGeometry().toBase64()).decode())
         settings.set(WINDOW_STATE, bytes(self.saveState().toBase64()).decode())
         self.session.close()
+        self.session.model.shutdown()               # a model loaded with no dataset open, too
         self.session.saver.flush()
         super().closeEvent(event)

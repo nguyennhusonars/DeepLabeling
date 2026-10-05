@@ -198,6 +198,9 @@ class Editing(QObject):
         current, model = self._current(), self.session.model
         if not current:
             return None
+        if not self.canvas.show_predictions:
+            self.session.status.emit("the predictions are hidden: press P to show them")
+            return None
         if model.state != "ready":
             self.session.status.emit("the model is still loading" if model.state == "loading"
                                      else "no model is loaded")

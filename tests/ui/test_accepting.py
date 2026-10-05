@@ -121,3 +121,11 @@ def test_before_the_model_has_looked_a_says_so(qtbot, window, tmp_path):
         qtbot.keyClick(window, Qt.Key_A)
     gate.set()
     assert said.args == ["the model has not looked at this image yet"]
+
+
+def test_with_the_predictions_hidden_a_accepts_nothing_and_says_why(qtbot, window, ds):
+    qtbot.keyClick(window, Qt.Key_P)
+    with qtbot.waitSignal(window.session.status) as said:
+        qtbot.keyClick(window, Qt.Key_A)
+    assert said.args == ["the predictions are hidden: press P to show them"]
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
