@@ -206,8 +206,9 @@ class QueuePanel(QWidget):
         self._want.setSingleShot(True)
         self._want.setInterval(WANT_MS)
         self._want.timeout.connect(self._want_thumbs)
-        # A resized grid re-flows into other columns, and the same scroll offset then
-        # shows other tiles: once the size settles, the current tile is brought back.
+        # A resized grid re-flows into other columns, and a narrowed list can gain a
+        # horizontal scrollbar over its bottom row: either way the same scroll offset then
+        # hides the current item, so once the size settles it is brought back.
         self._refollow = QTimer(self)
         self._refollow.setSingleShot(True)
         self._refollow.setInterval(0)
@@ -273,8 +274,7 @@ class QueuePanel(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self.grid:
-            self._refollow.start()
+        self._refollow.start()
         self._want_soon()
 
     def _want_soon(self, *_) -> None:

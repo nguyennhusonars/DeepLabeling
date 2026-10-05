@@ -119,6 +119,27 @@ def test_a_resized_grid_keeps_the_current_tile_in_view(qtbot, grid, session):
     qtbot.waitUntil(lambda: grid.view.viewport().rect().contains(tile(grid, 7)), timeout=1000)
 
 
+def test_a_narrowed_list_keeps_the_current_row_whole_in_view(qtbot, session):
+    """Back from the grid, the window narrows the panel; paths wider than the list bring a
+    horizontal scrollbar, which takes the bottom row's space."""
+    panel = QueuePanel(session)
+    qtbot.addWidget(panel)
+    panel.resize(420, 180)
+    panel.show()
+    qtbot.waitUntil(panel.isVisible)
+    session.go_to(session.queue.items[7].key)               # the bottom row in view
+    viewport = panel.view.viewport()
+
+    def whole():
+        rect = tile(panel, 7)
+        return 0 <= rect.top() and rect.bottom() < viewport.height()
+
+    assert whole()
+    panel.resize(200, 180)
+    qtbot.waitUntil(lambda: panel.view.horizontalScrollBar().isVisible())
+    qtbot.waitUntil(whole, timeout=1000)
+
+
 def test_the_current_tile_is_framed(qtbot, grid, session):
     session.move(1)
     qtbot.wait(10)
