@@ -1,7 +1,7 @@
 # Environment
 
-Owns: the Python environment, which `ultralytics` gets imported, the OpenCV and setuptools
-installs, and disk space.
+Owns: the Python environment, which `ultralytics` gets imported, the GPU, the OpenCV and
+setuptools installs, and disk space.
 
 ## Python
 
@@ -58,6 +58,22 @@ python3 -c "import importlib.util as u; print(u.find_spec('ultralytics').origin)
 
 **Rule:** import ultralytics lazily, only to load a model, and know which checkout the
 launch directory resolves to before importing it.
+
+## The GPU and the model
+
+- A GTX 1660 SUPER with 6 GB; torch 2.5.1+cu121 sees it (2026-10-05; check with
+  `nvidia-smi` and `python3 -c "import torch; print(torch.cuda.is_available())"`).
+- Measured 2026-10-05 with `runs/detect/backup/yolo26n_vehicle/weights/best.pt` on
+  pvn-vehicle's 2592×1944 frames:
+  - loading the model takes 1.1–1.7 s, and its first prediction 0.8–3.6 s more while it
+    warms up (the higher figures on the first run of the day, with nothing cached);
+  - decoding a frame takes 22 ms, which capped a pass at about 20 images/s whatever the
+    batch size;
+  - decoding each batch of 8 on 4 threads (`cv2` releases the GIL) gave 42–101 images/s.
+- Importing ultralytics from this checkout leaves `~/.config/Ultralytics/settings.json`
+  unchanged (its md5 was the same before and after; 2026-10-05).
+
+**Rule:** a pass decodes in parallel and expects the first prediction to take seconds.
 
 ## OpenCV
 

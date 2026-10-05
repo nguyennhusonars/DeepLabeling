@@ -1,6 +1,6 @@
 # DeepLabeling — slice 2: model assist
 
-**Status:** design approved 2026-10-05; this written spec awaits review; not yet planned
+**Status:** approved 2026-10-05 · plan 2a (the core) implemented; 2b (the UI) next
 **Scope:** slice 2 of [the app foundation](2026-10-04-app-foundation.md#slices): load a
 model, see its predictions beside the labels, accept them (one box, one image, or a whole
 queue), infer a whole queue ahead of time, and map the model's classes onto the dataset's.

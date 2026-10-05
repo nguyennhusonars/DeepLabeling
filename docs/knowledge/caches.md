@@ -66,6 +66,20 @@ PRIMARY KEY (model, img)
   ([environment.md](environment.md#disk)). Which models it holds:
   [datasets.md](datasets.md#models-in-the-legacy-prediction-cache).
 
+### DeepLabeling's store
+
+`src/deeplabeling/core/predstore.py::PredictionStore` keeps the legacy store's rules — a
+row per `(model, image)`, the model key, the floor, raw model ids — with three changes
+([the slice 2 spec](../design/2026-10-05-model-assist.md#the-prediction-store)):
+
+- one file per dataset root, `predictions.sqlite` beside `dataset.json`, and the image is
+  its dataset-relative path;
+- the stamp is `(size, mtime_ns)`, not the integer mtime;
+- boxes are normalised `(cls, cx, cy, w, h, conf)`, not pixels, so a read needs no image
+  size.
+
+A file that cannot be read is set aside, as `dataset.json` is, and the store starts empty.
+
 ## Reading during a dataset pass
 
 - A pass over the dataset reads the durable store without promoting each row into the
