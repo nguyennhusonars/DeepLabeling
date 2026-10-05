@@ -10,6 +10,7 @@ from pathlib import Path
 from .dataset import Dataset
 from .editor import Editor
 from .history import History
+from .predstore import STORE_NAME, PredictionStore
 from .review import ReviewMarks
 from .settings import JsonFile, Settings, define, is_str_list, is_str_map, is_str_or_none
 from .state import DatasetLock, dataset_state_dir
@@ -44,6 +45,7 @@ class Workspace:
     store: LabelStore
     history: History
     editor: Editor
+    predictions: PredictionStore
 
     @classmethod
     def open(cls, source, labels=None, *, confirm_taxonomy: ConfirmTaxonomy,
@@ -70,17 +72,18 @@ class Workspace:
             history = History(store)
             editor = Editor(store, history, review, on_labels_changed=on_labels_changed,
                             on_history_changed=on_history_changed)
+            predictions = PredictionStore(directory / STORE_NAME)
         except BaseException:
             lock.release()
             raise
         return cls(dataset, directory, lock, file, root,
                    Settings(file, "opening", ("openings", dataset.opening_key)),
-                   review, store, history, editor)
+                   review, store, history, editor, predictions)
 
     @property
     def warnings(self) -> tuple[str, ...]:
         """State files that could not be read, for the notice strip."""
-        return tuple(w for w in (self.file.warning, self.review.warning) if w)
+        return tuple(w for w in (self.file.warning, self.review.warning, self.predictions.warning) if w)
 
     def save(self) -> None:
         self.review.save()
@@ -90,4 +93,5 @@ class Workspace:
         try:
             self.save()
         finally:
+            self.predictions.close()
             self.lock.release()
