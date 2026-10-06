@@ -211,13 +211,13 @@ class Session(QObject):
         self._follow = follow
         queue = self.queue = Queue(source, follow=follow)
         queue.built_with = self._model_identity()
+        queue.waiting = source.needs_model and queue.built_with is None    # built when a model is ready
         self._arrived = set()
         ws.opening_settings.set(QUEUE_SOURCE, source.to_json())
         self.saver.schedule()
         self.queueReset.emit()
         self.cursorChanged.emit()
-        if source.needs_model and queue.built_with is None:
-            queue.waiting = True                    # built when a model is ready
+        if queue.waiting:
             if self.model.state != "loading":
                 self.notice.emit("warning", "this queue needs a model: load one", None)
             return
@@ -263,9 +263,12 @@ class Session(QObject):
             return
         waiting.discard(entry.rel)
         if queue.source.matches(entry, self.context()):
+            empty = queue.cursor is None
             row = queue.insert(QueueItem(entry.rel, entry))
             if row is not None:
                 self.itemInserted.emit(row)
+            if empty and queue.cursor is not None:
+                self._cursor_moved()                # the first image of an empty queue: shown
         self.queueGrew.emit()
 
     def context(self) -> BuildContext:

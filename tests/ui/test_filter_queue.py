@@ -147,3 +147,52 @@ def test_a_model_queue_waits_for_the_remembered_model_after_a_relaunch(qtbot, ds
     assert again.session.queue.source == UNLABELLED
     qtbot.waitUntil(lambda: again.session.queue.complete and len(again.session.queue) == 1, timeout=5000)
     again.close()
+
+
+def test_a_model_queue_says_it_waits_on_the_chip_the_panel_and_the_canvas(qtbot, ds, weights, monkeypatch):
+    import threading
+
+    import deeplabeling.ui.model as model_module
+    from drive import start
+
+    window = start(qtbot, [str(ds.yaml)])
+    window.session.set_queue(UNLABELLED)                       # no model at all
+    assert window.state_bar.queue.full_text.endswith(" · needs a model")
+    assert window.queue_panel.title.text() == "Queue · 0 · needs a model"
+    assert window.canvas.message == "This queue needs a model: load one."
+    gate = threading.Event()
+    window.session.model.factory = lambda path: (gate.wait(5), FakePredictor(path))[1]
+    window.session.model.load(weights)                         # loading: now it waits
+    assert window.state_bar.queue.full_text.endswith(" · waiting for the model")
+    assert window.queue_panel.title.text() == "Queue · 0 · waiting for the model"
+    assert window.canvas.message == "Waiting for the model…"
+    gate.set()
+    qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)
+    qtbot.waitUntil(lambda: window.canvas.message == "No images in this queue.", timeout=5000)
+    window.close()
+
+
+def test_the_first_image_to_join_an_empty_queue_is_shown(qtbot, ds, weights):
+    from drive import start
+
+    window = start(qtbot, [str(ds.yaml)])
+    session = window.session
+    load(qtbot, session, weights)
+    built(qtbot, session, UNLABELLED)
+    assert len(session.queue) == 0
+    path = ds.root / "camA/images/0004.JPG"
+    session.workspace.predictions.put(session.model.key, "camA/images/0004.JPG", image_stamp(path), [CAR])
+    session.model.ready.emit(path)
+    assert session.current() is not None and session.current().key == "camA/images/0004.JPG"
+    qtbot.waitUntil(lambda: window._shown == path, timeout=5000)
+    window.close()
+
+
+def test_on_a_model_queue_the_model_chip_counts_what_the_queue_left_out(qtbot, session, weights):
+    from deeplabeling.ui.state_bar import model_text
+
+    load(qtbot, session, weights, found={"0001.jpg": [CAR]})
+    qtbot.waitUntil(lambda: all(session.model.predictions(session.queue.items[i].entry) is not None
+                                for i in range(3)), timeout=5000)
+    built(qtbot, session, UNLABELLED)
+    assert model_text(session.model).endswith(" · 1 / 13 inferred")      # 1 in the queue, 12 left out

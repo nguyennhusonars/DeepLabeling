@@ -56,3 +56,21 @@ def test_the_queue_editor_offers_the_root_s_threshold_as_the_model_s_confidence(
     window.session.model.set_conf(0.4)
     window.edit_queue()
     assert window.prompter.asked[-1][2] == 0.4
+
+
+def test_a_shows_no_found_prediction_that_the_app_counts_as_labelled(qtbot, ds, tmp_path, monkeypatch):
+    """The queue matched at IoU 0.9; at the app's 0.5 the prediction sits on the person."""
+    on_the_person = Prediction(0, (0.52, 0.5, 0.2, 0.3), 0.2)          # IoU 0.82 with label 0
+    monkeypatch.setattr(model_module, "UltralyticsPredictor",
+                        lambda path: FakePredictor(path, found={"0001.jpg": [on_the_person]}))
+    w = start(qtbot, [str(ds.yaml)])
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    w.session.model.load(weights)
+    qtbot.waitUntil(lambda: w.session.model.predictions(w.session.current().entry) is not None, timeout=5000)
+    queue(qtbot, w, ModelDisagrees("unlabelled", 0.9, (0.1, 1.0)))
+    [view] = w.canvas._predictions
+    assert view.emphasised                                      # what the queue found is shown
+    qtbot.keyClick(w, Qt.Key_A)
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001         # but A does not stack it on the person
+    w.close()

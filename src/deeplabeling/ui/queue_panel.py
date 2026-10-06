@@ -202,7 +202,8 @@ class QueuePanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addLayout(header)
         layout.addWidget(self.view, 1)
-        for signal in (session.queueReset, session.queueGrew, session.queueDone, session.closed):
+        for signal in (session.queueReset, session.queueGrew, session.queueDone, session.closed,
+                       session.model.changed):          # a model queue waits on the model
             signal.connect(self._retitle)
         # Follow cursor moves only. Following every batch scrolled the view as each one
         # arrived, re-laying out every row so far: 5 s of a 9 s launch on pvn-vehicle.

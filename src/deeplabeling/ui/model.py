@@ -446,11 +446,13 @@ class ModelSession(QObject):
             self._worker.cancel_pass()
 
     def inferred_count(self) -> tuple[int, int] | None:
-        """How many of the queue's images the store has a row for, of how many."""
+        """How many of the queue's images the store has a row for, of how many. A model
+        queue's images left out as not inferred count too: a pass is what they wait for."""
         queue = self.session.queue
         if queue is None:
             return None
-        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items)
+        waiting = len(queue.left_out.get("not inferred", ()))
+        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items) + waiting
 
     def _pass_progress(self, walked: int, total: int) -> None:
         self.pass_walked, self.pass_total = walked, total
