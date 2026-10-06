@@ -196,3 +196,46 @@ def test_on_a_model_queue_the_model_chip_counts_what_the_queue_left_out(qtbot, s
                                 for i in range(3)), timeout=5000)
     built(qtbot, session, UNLABELLED)
     assert model_text(session.model).endswith(" · 1 / 13 inferred")      # 1 in the queue, 12 left out
+
+
+def test_closing_the_dataset_leaves_its_model_queue_alone(qtbot, ds, weights):
+    s = open_session(qtbot, ds.yaml)
+    load(qtbot, s, weights)
+    built(qtbot, s, UNLABELLED)
+    resets, notices = [], []
+    s.queueReset.connect(lambda: resets.append(1))
+    s.notice.connect(lambda level, text, image: notices.append(text))
+    s.close()
+    assert resets == [] and notices == []
+
+
+def test_a_failed_build_keeps_what_it_left_out(qtbot, session, weights):
+    from dataclasses import dataclass
+    from typing import ClassVar
+
+    from deeplabeling.core.queue import Condition
+
+    @dataclass(frozen=True)
+    class FailsLate(Condition):
+        """Passes the first nine images, then meets an unreadable disk."""
+
+        kind: ClassVar[str] = "fails-late"
+        needs_labels: ClassVar[bool] = False
+
+        def test(self, entry, ctx):
+            if entry.order >= 9:
+                raise OSError("the disk went away")
+            return True
+
+        def describe(self, dataset):
+            return "fails late"
+
+        def to_json(self):
+            return {"kind": self.kind}
+
+    load(qtbot, session, weights)
+    qtbot.waitUntil(lambda: all(session.model.predictions(session.queue.items[i].entry) is not None
+                                for i in range(3)), timeout=5000)
+    session.set_queue(ImageFilter(conditions=(ModelDisagrees("unlabelled"), FailsLate())))
+    qtbot.waitUntil(lambda: session.queue.failed is not None, timeout=5000)
+    assert len(session.queue.left_out["not inferred"]) == 6           # images 3 to 8

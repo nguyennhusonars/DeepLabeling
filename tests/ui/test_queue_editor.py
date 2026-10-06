@@ -92,6 +92,8 @@ def test_a_size_with_any_class_is_a_size_of_any_box(qtbot, dataset):
      "Model — confidence: the lower end cannot be below 0.1"),
     (lambda d: (d.model_mode.setCurrentText("either"), d.model_iou.setText("")),
      "Model — matching IoU: “” is not a number"),
+    (lambda d: (d.overlap_mode.setCurrentText("same class"), d.overlap_lo.setText("abc")),
+     "Overlapping labels — IoU: “abc” is not a number"),
 ])
 def test_ok_refuses_by_name_and_the_dialog_stays_open(qtbot, dataset, setup, why):
     dialog = editor(qtbot, dataset, ImageFilter())
@@ -130,3 +132,9 @@ def test_every_row_is_visible_inside_the_dialog_and_none_overlaps(qtbot, dataset
         assert not any(rect.intersects(r) for r in rects)
         rects.append(rect)
     assert dialog.height() <= 800
+
+
+
+def test_a_saved_value_comes_back_exactly(qtbot, dataset):
+    current = ImageFilter(conditions=(ModelDisagrees("unseen", 0.55, (0.123456789, 1.0)),))
+    assert editor(qtbot, dataset, current).filter() == current

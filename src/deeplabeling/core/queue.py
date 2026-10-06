@@ -7,6 +7,7 @@ batches. A Queue holds them on the GUI thread with one cursor, an identity key.
 
 from __future__ import annotations
 
+import bisect
 import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
@@ -492,8 +493,12 @@ class ImageFilter:
 
 
 class Queue:
-    """A queue's items in order, one cursor (an identity key), and which items no
-    longer match since the queue was built. Used on the GUI thread."""
+    """A queue's items in dataset order, one cursor (an identity key), and which items no
+    longer match since the queue was built. Used on the GUI thread.
+
+    Rows are found by bisecting the items' dataset orders, never stored: an image joining
+    a 45k-item queue after its build (a pass filling a model queue) then costs two list
+    insertions, not a re-numbering of every row after it."""
 
     def __init__(self, source: ImageFilter, *, follow: ImageEntry | None = None):
         self.source = source
@@ -506,7 +511,8 @@ class Queue:
         self.left_out: dict[str, set[str]] = {}
         self.waiting = False        #: a model condition waits for a model: nothing is built yet
         self.built_with = None      #: the model (key, class map) its build read, if any
-        self._pos: dict[str, int] = {}
+        self._order: dict[str, int] = {}    #: each item's dataset order, by key
+        self._orders: list[int] = []        #: the items' dataset orders, row by row: ascending
         self._follow = follow       #: the item the cursor was on before a rebuild
         self._moved = False
 
@@ -514,14 +520,21 @@ class Queue:
         return len(self.items)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._pos
+        return key in self._order
+
+    def _row(self, key: str) -> int:
+        return bisect.bisect_left(self._orders, self._order[key])
 
     def extend(self, batch: Iterable[QueueItem]) -> None:
         for item in batch:
-            if item.key in self._pos:
+            if item.key in self._order:
                 continue
-            self._pos[item.key] = len(self.items)
+            order = item.entry.order
+            if self._orders and order < self._orders[-1]:
+                raise ValueError(f"{item.key} arrives out of dataset order")
+            self._order[item.key] = order
             self.items.append(item)
+            self._orders.append(order)
             if self._follow is not None and not self._moved and item.key == self._follow.rel:
                 self.cursor = item.key
                 self._follow = None
@@ -531,12 +544,12 @@ class Queue:
     def insert(self, item: QueueItem) -> int | None:
         """Add an item after the build, in dataset order: an image whose predictions have
         arrived. Its row, or None when it is already there."""
-        if item.key in self._pos:
+        if item.key in self._order:
             return None
-        row = next((i for i, it in enumerate(self.items) if it.entry.order > item.entry.order), len(self.items))
+        row = bisect.bisect_right(self._orders, item.entry.order)
         self.items.insert(row, item)
-        for i in range(row, len(self.items)):
-            self._pos[self.items[i].key] = i
+        self._orders.insert(row, item.entry.order)
+        self._order[item.key] = item.entry.order
         if self.cursor is None:
             self.cursor = item.key
         return row
@@ -557,26 +570,26 @@ class Queue:
         self.finish()
 
     def current(self) -> QueueItem | None:
-        return self.items[self._pos[self.cursor]] if self.cursor is not None else None
+        return self.items[self._row(self.cursor)] if self.cursor is not None else None
 
     def position(self) -> int | None:
-        return self._pos[self.cursor] if self.cursor is not None else None
+        return self._row(self.cursor) if self.cursor is not None else None
 
     def index_of(self, key: str) -> int | None:
         """The row of the item with this key, or None when it is not in the queue."""
-        return self._pos.get(key)
+        return self._row(key) if key in self._order else None
 
     def move(self, delta: int) -> bool:
         """Step through the queue; False, and no move, at either end."""
         if self.cursor is None:
             return False
-        index = self._pos[self.cursor] + delta
+        index = self._row(self.cursor) + delta
         if not 0 <= index < len(self.items):
             return False
         return self._set(self.items[index].key)
 
     def go_to(self, key: str) -> bool:
-        return key in self._pos and self._set(key)
+        return key in self._order and self._set(key)
 
     def _set(self, key: str) -> bool:
         self.cursor = key
@@ -589,7 +602,7 @@ class Queue:
 
     def recheck(self, entry: ImageEntry, ctx: BuildContext) -> None:
         """After `entry` changed: mark its item stale while it no longer matches."""
-        if entry.rel not in self._pos:
+        if entry.rel not in self._order:
             return
         if self.source.matches(entry, ctx):
             self.stale.discard(entry.rel)

@@ -99,6 +99,7 @@ class Session(QObject):
         self.running: Chunked | None = None         # a long write under way (ui/chunked.py)
         self._running_title = ""
         self._arrived: set[Path] = set()           # predictions that came while a model queue built
+        self._closing = False                       # the model goes with the dataset: nothing to rebuild
         self.model = ModelSession(self, self)
         self.model.changed.connect(self._model_changed)
         self.model.ready.connect(self._predicted)
@@ -160,7 +161,11 @@ class Session(QObject):
         if self.running is not None:
             self.running.stop()                     # between two chunks: nothing half-written
         self.io.cancel_all()
-        self.model.release()                        # before the store it writes to closes
+        self._closing = True
+        try:
+            self.model.release()                    # before the store it writes to closes
+        finally:
+            self._closing = False
         self.images.clear()
         self.thumbs.clear()
         self.io.wait(2000)
@@ -226,7 +231,7 @@ class Session(QObject):
             lambda emit, cancelled: source.build(ctx, emit, cancelled),
             batch=lambda items: self._grew(queue, items),
             done=lambda finished: self._built(queue, finished, left_out=ctx.left_out),
-            failed=lambda why: self._build_failed(queue, why))
+            failed=lambda why: self._build_failed(queue, why, ctx.left_out))
 
     def _model_identity(self):
         """What a model queue's build depends on: the model and its class map."""
@@ -237,7 +242,7 @@ class Session(QObject):
         """A model queue is rebuilt when the model or its class map changes, and built
         once a model it waited for is ready; a threshold change leaves it as it is."""
         queue = self.queue
-        if (queue is not None and self.workspace is not None and queue.source.needs_model
+        if (not self._closing and queue is not None and self.workspace is not None and queue.source.needs_model
                 and self._model_identity() != queue.built_with):
             self.set_queue(queue.source)
 
@@ -293,9 +298,9 @@ class Session(QObject):
         if queue.cursor != before:
             self._cursor_moved()
 
-    def _build_failed(self, queue: Queue, why: str) -> None:
+    def _build_failed(self, queue: Queue, why: str, left_out=None) -> None:
         self.notice.emit("error", f"building the queue failed: {why}", None)
-        self._built(queue, True, failed=why)
+        self._built(queue, True, failed=why, left_out=left_out)
 
     def _built(self, queue: Queue, finished: bool, failed: str | None = None, left_out=None) -> None:
         if queue is not self.queue or not finished:

@@ -62,7 +62,11 @@ def _edit(text: str = "") -> QLineEdit:
 
 
 def _text(value) -> str:
-    return "" if value is None else f"{value:g}"
+    """A number as typed back: exactly the value saved, without a trailing ".0"."""
+    if value is None:
+        return ""
+    text = repr(float(value))
+    return text[:-2] if text.endswith(".0") else text
 
 
 def _number(edit: QLineEdit, name: str, *, blank: bool = False) -> float | None:
@@ -205,8 +209,8 @@ class QueueEditor(QDialog):
             conditions.append(NameContains(self.name.text().strip()))
         scope = OVERLAP_MODES[self.overlap_mode.currentText()]
         if scope is not None:
-            conditions.append(self._made("Overlapping labels", Overlap, scope, _number(self.overlap_lo, "IoU"),
-                                         _number(self.overlap_hi, "IoU")))
+            conditions.append(self._made("Overlapping labels", lambda: Overlap(
+                scope, _number(self.overlap_lo, "IoU"), _number(self.overlap_hi, "IoU"))))
         direction = MODEL_MODES[self.model_mode.currentText()]
         if direction is not None:
             conditions.append(self._made("Model", lambda: ModelDisagrees(
