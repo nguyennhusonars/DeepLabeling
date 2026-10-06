@@ -7,8 +7,10 @@ replaces `yolo_labeling` (Tkinter), kept as a frozen reference in
 **Status:** slice 1 is built: the core, the viewer, editing on the canvas and the queue
 grid. Slice 2 is built: model assist, from a model's predictions on screen to accepting
 them across a queue. Slice 3 is built: filters by box size, overlap and where the model
-disagrees. Slice 4 (Find Bad) has its core and its full frame built; its grid (plan 4c)
-is next. The design and the plans are in [docs/design/](docs/design/).
+disagrees. Slice 4 is built: Find Bad, the labels the model disagrees with as a queue,
+fixed a key at a time in the full frame or many at once in a grid of crops. Slice 5 (bulk
+reassign, statistics, crop export) is next. The design and the plans are in
+[docs/design/](docs/design/).
 
 ```sh
 ./run.sh                       # launch from this checkout; nothing to install
