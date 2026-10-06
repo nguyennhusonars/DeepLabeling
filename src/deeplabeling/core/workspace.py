@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .dataset import Dataset
+from .dismissals import Dismissals
 from .editor import Editor
 from .history import History
 from .imagesize import ImageSizes
@@ -47,6 +48,7 @@ class Workspace:
     history: History
     editor: Editor
     predictions: PredictionStore
+    dismissals: Dismissals
     sizes: ImageSizes = field(default_factory=ImageSizes)   #: its images' sizes, read from headers
 
     @classmethod
@@ -75,20 +77,23 @@ class Workspace:
             editor = Editor(store, history, review, on_labels_changed=on_labels_changed,
                             on_history_changed=on_history_changed)
             predictions = PredictionStore(directory / STORE_NAME)
+            dismissals = Dismissals(directory / "dismissals.json", dataset.root)
         except BaseException:
             lock.release()
             raise
         return cls(dataset, directory, lock, file, root,
                    Settings(file, "opening", ("openings", dataset.opening_key)),
-                   review, store, history, editor, predictions)
+                   review, store, history, editor, predictions, dismissals)
 
     @property
     def warnings(self) -> tuple[str, ...]:
         """State files that could not be read, for the notice strip."""
-        return tuple(w for w in (self.file.warning, self.review.warning, self.predictions.warning) if w)
+        return tuple(w for w in (self.file.warning, self.review.warning, self.predictions.warning,
+                                 self.dismissals.warning) if w)
 
     def save(self) -> None:
         self.review.save()
+        self.dismissals.save()
         self.file.save()
 
     def close(self) -> None:
