@@ -8,14 +8,19 @@ batches. A Queue holds them on the GUI thread with one cursor, an identity key.
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 from .dataset import Dataset, ImageEntry
+from .imagesize import ImageSizes, image_size
+from .ranges import range_error
 from .store import ImageLabels, LabelState, LabelStore
 
 LABEL_STATES = ("missing", "negative", "boxes")
+UNITS = ("px", "%")
+EPS = 1e-9          #: label files hold six decimals; a size at a range's end is inside it
 
 
 @dataclass(frozen=True)
@@ -29,9 +34,30 @@ class BuildContext:
     dataset: Dataset
     store: LabelStore
     reviewed: frozenset[str]        #: review-mark keys, snapshotted before the build
+    sizes: ImageSizes | None = None     #: the open dataset's size cache, when there is one
+    #: Images a condition could not settle ("could not be sized", "not inferred"), counted
+    #: for the queue chip. One build or recheck owns it; it is never shared across threads.
+    unsettled: Counter = field(default_factory=Counter)
 
     def labels(self, entry: ImageEntry) -> ImageLabels:
         return self.store.get(entry.path)
+
+    def size(self, entry: ImageEntry) -> tuple[int, int] | None:
+        """The image's size as shown, from its header; None when it cannot be read."""
+        return self.sizes.get(entry.path) if self.sizes is not None else image_size(entry.path)
+
+    def count(self, what: str) -> None:
+        self.unsettled[what] += 1
+
+
+@dataclass(frozen=True)
+class Seen:
+    """What a view knows of an image besides its labels, for a condition's highlight."""
+
+    size: tuple[int, int] | None = None     #: as shown: what a size in px is scaled by
+
+
+NOTHING_SEEN = Seen()
 
 
 class Condition:
@@ -40,13 +66,19 @@ class Condition:
     kind: ClassVar[str]
     needs_labels: ClassVar[bool] = True
 
+    @property
+    def cost(self) -> int:
+        """Conditions run cheapest first: 0 asks nothing of the disk, 1 reads the label
+        file, 2 an image header, 3 the prediction store."""
+        return 1 if self.needs_labels else 0
+
     def test(self, entry: ImageEntry, ctx: BuildContext) -> bool:
         raise NotImplementedError
 
     def describe(self, dataset: Dataset) -> str:
         raise NotImplementedError
 
-    def highlight(self, labels: ImageLabels, dataset: Dataset) -> frozenset[int]:
+    def highlight(self, labels: ImageLabels, dataset: Dataset, seen: Seen = NOTHING_SEEN) -> frozenset[int]:
         """Line indices of the boxes that made the condition hold."""
         return frozenset()
 
@@ -73,7 +105,7 @@ class HasClass(Condition):
     def describe(self, dataset):
         return ("has " if self.present else "lacks ") + " or ".join(self.names)
 
-    def highlight(self, labels, dataset):
+    def highlight(self, labels, dataset, seen=NOTHING_SEEN):
         if not self.present:
             return frozenset()
         ids = self._ids(dataset)
@@ -144,6 +176,76 @@ class NameContains(Condition):
         return {"kind": self.kind, "text": self.text}
 
 
+def _in(value: float, bounds: tuple[float | None, float | None]) -> bool:
+    lo, hi = bounds
+    return (lo is None or value >= lo - EPS) and (hi is None or value <= hi + EPS)
+
+
+def _bounds(bounds: tuple[float | None, float | None], unit: str) -> str:
+    lo, hi = bounds
+    sep = "" if unit == "%" else " "
+    if lo is not None and hi is not None:
+        return f"{lo:g}–{hi:g}{sep}{unit}"
+    return f"≥ {lo:g}{sep}{unit}" if lo is not None else f"≤ {hi:g}{sep}{unit}"
+
+
+@dataclass(frozen=True)
+class Boxes(Condition):
+    """A box of the chosen classes (any class, when none is chosen) whose width and
+    height are in range: both on the same box
+    (docs/design/2026-10-06-filters.md#boxes-size-on-the-same-box-as-the-class). In % the
+    label's own coordinates answer; in px the frame's size, read from its header."""
+
+    names: tuple[str, ...] = ()
+    w: tuple[float | None, float | None] = (None, None)
+    h: tuple[float | None, float | None] = (None, None)
+    unit: str = "px"
+    kind: ClassVar[str] = "boxes"
+
+    def __post_init__(self):
+        if self.unit not in UNITS:
+            raise ValueError(f"unknown size unit {self.unit!r}")
+        for name, (lo, hi) in (("width", self.w), ("height", self.h)):
+            why = range_error(lo, hi, name, hi_max=100.0 if self.unit == "%" else None, open_ends=True)
+            if why:
+                raise ValueError(why)
+
+    @property
+    def cost(self) -> int:
+        return 2 if self.unit == "px" else 1
+
+    def _matching(self, labels: ImageLabels, dataset: Dataset, size) -> frozenset[int]:
+        ids = {i for i in map(dataset.id_of, self.names) if i is not None}
+        sx, sy = size if self.unit == "px" else (100.0, 100.0)
+        return frozenset(i for i, line in labels.boxes
+                         if (not self.names or line.cls_id in ids)
+                         and _in(line.bbox[2] * sx, self.w) and _in(line.bbox[3] * sy, self.h))
+
+    def test(self, entry, ctx):
+        size = None
+        if self.unit == "px":
+            size = ctx.size(entry)
+            if size is None:
+                ctx.count("could not be sized")
+                return False
+        return bool(self._matching(ctx.labels(entry), ctx.dataset, size))
+
+    def highlight(self, labels, dataset, seen=NOTHING_SEEN):
+        if self.unit == "px" and seen.size is None:
+            return frozenset()
+        return self._matching(labels, dataset, seen.size)
+
+    def describe(self, dataset):
+        what = "a " + " or ".join(self.names) if self.names else "a box"
+        sizes = [f"{_bounds(b, self.unit)} {word}" for b, word in ((self.w, "wide"), (self.h, "high"))
+                 if b != (None, None)]
+        return f"has {what}" + (" " + ", ".join(sizes) if sizes else "")
+
+    def to_json(self):
+        return {"kind": self.kind, "names": list(self.names), "w": list(self.w), "h": list(self.h),
+                "unit": self.unit}
+
+
 def condition_from_json(data) -> Condition:
     try:
         kind = data["kind"]
@@ -155,6 +257,9 @@ def condition_from_json(data) -> Condition:
             return Reviewed(bool(data.get("value", True)))
         if kind == "name":
             return NameContains(str(data["text"]))
+        if kind == "boxes":
+            return Boxes(tuple(str(n) for n in data["names"]), tuple(data["w"]), tuple(data["h"]),
+                         str(data["unit"]))
     except (KeyError, TypeError) as e:
         raise ValueError(f"not a queue condition: {data!r}") from e
     raise ValueError(f"unknown queue condition {kind!r}")
@@ -177,13 +282,13 @@ class ImageFilter:
     def matches(self, entry: ImageEntry, ctx: BuildContext) -> bool:
         if self.splits and entry.split not in self.splits:
             return False
-        cheap_first = sorted(self.conditions, key=lambda c: c.needs_labels)
+        cheap_first = sorted(self.conditions, key=lambda c: c.cost)
         return all(c.test(entry, ctx) for c in cheap_first)
 
-    def highlight(self, labels: ImageLabels, dataset: Dataset) -> frozenset[int]:
+    def highlight(self, labels: ImageLabels, dataset: Dataset, seen: Seen = NOTHING_SEEN) -> frozenset[int]:
         found: frozenset[int] = frozenset()
         for condition in self.conditions:
-            found |= condition.highlight(labels, dataset)
+            found |= condition.highlight(labels, dataset, seen)
         return found
 
     def build(self, ctx: BuildContext, emit: Callable[[list[QueueItem]], None],
