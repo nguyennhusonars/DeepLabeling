@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from ..core.assist import Shown
 from ..core.dataset import Dataset
 from ..core.geometry import norm_to_px
-from ..core.overlap import DUPLICATES, stack_counts
+from ..core.overlap import STACKED, stack_counts
 from ..core.store import ImageLabels
 from .classes import UNKNOWN, class_color
 
@@ -31,7 +31,7 @@ def box_views(labels: ImageLabels, dataset: Dataset, size: tuple[int, int],
     and captioned `#id?`, never dropped."""
     w, h = size
     boxes = labels.boxes
-    stack = stack_counts([(line.cls_id, line.bbox) for _, line in boxes], *DUPLICATES)
+    stack = stack_counts([(line.cls_id, line.bbox) for _, line in boxes], *STACKED)
     views = []
     for pos, (index, line) in enumerate(boxes):
         cls_id = line.cls_id

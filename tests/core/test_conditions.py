@@ -9,6 +9,7 @@ from deeplabeling.core.queue import (
     BuildContext,
     ImageFilter,
     NameContains,
+    Overlap,
     Seen,
     condition_from_json,
 )
@@ -97,3 +98,36 @@ def test_a_size_survives_its_json(dataset):
 def test_an_unusable_size_is_refused(kw, why):
     with pytest.raises(ValueError, match=why):
         Boxes((), **kw)
+
+
+# bad/ok holds the gauntlet: lines 5, 6 and 10 are one class-0 box three times, line 0 is a
+# class-1 box on the same spot, and lines 1 (class 99) and 2 (class -1) are one smaller box twice.
+
+@pytest.mark.parametrize("scope, lines", [("same", {5, 6, 10}), ("different", {0, 1, 2, 5, 6, 10}),
+                                          ("any", {0, 1, 2, 5, 6, 10})])
+def test_overlapping_labels_by_scope_and_the_highlight_is_what_counted(scope, lines, ctx, dataset):
+    condition = Overlap(scope, 0.99, 1.0)
+    assert keys(condition, ctx) == ["bad/images/ok.jpg"]
+    labels = ctx.labels(dataset.entry(dataset.root / "bad/images/ok.jpg"))
+    assert condition.highlight(labels, dataset) == lines
+
+
+def test_a_range_that_excludes_identical_boxes_finds_none_of_them(ctx):
+    assert keys(Overlap("any", 0.5, 0.98), ctx) == []
+
+
+def test_an_overlap_reads_as_words_and_survives_its_json(dataset):
+    condition = Overlap("same", 0.99, 1.0)
+    assert condition.describe(dataset) == "labels overlapping, same class, IoU 0.99–1.00"
+    assert Overlap("different", 0.5, 1.0).describe(dataset) == "labels overlapping, different classes, IoU 0.50–1.00"
+    assert condition_from_json(condition.to_json()) == condition
+
+
+@pytest.mark.parametrize("args, why", [
+    (("both", 0.5, 1.0), "unknown overlap scope 'both'"),
+    (("same", 0.9, 0.5), "IoU: 0.9 is above 0.5: put the lower end first"),
+    (("same", 0.5, 1.5), "IoU: the upper end cannot be above 1"),
+])
+def test_an_unusable_overlap_is_refused(args, why):
+    with pytest.raises(ValueError, match=why):
+        Overlap(*args)

@@ -15,6 +15,7 @@ from typing import ClassVar
 
 from .dataset import Dataset, ImageEntry
 from .imagesize import ImageSizes, image_size
+from .overlap import SCOPES, stack_counts
 from .ranges import range_error
 from .store import ImageLabels, LabelState, LabelStore
 
@@ -246,6 +247,45 @@ class Boxes(Condition):
                 "unit": self.unit}
 
 
+SCOPE_WORDS = {"different": "different classes", "same": "same class", "any": "any class"}
+
+
+@dataclass(frozen=True)
+class Overlap(Condition):
+    """Some pair of labels in scope overlaps at an IoU in the range, both ends inclusive
+    (docs/design/2026-10-06-filters.md#overlap-between-labels). The test and the highlight
+    are one predicate, core/overlap.py's, which the canvas's stack counts use too."""
+
+    scope: str = "different"
+    lo: float = 0.5
+    hi: float = 1.0
+    kind: ClassVar[str] = "overlap"
+
+    def __post_init__(self):
+        if self.scope not in SCOPES:
+            raise ValueError(f"unknown overlap scope {self.scope!r}")
+        why = range_error(self.lo, self.hi, "IoU")
+        if why:
+            raise ValueError(why)
+
+    def _overlapping(self, labels: ImageLabels) -> frozenset[int]:
+        boxes = labels.boxes
+        stacked = stack_counts([(line.cls_id, line.bbox) for _, line in boxes], self.scope, self.lo, self.hi)
+        return frozenset(boxes[k][0] for k in stacked)
+
+    def test(self, entry, ctx):
+        return bool(self._overlapping(ctx.labels(entry)))
+
+    def highlight(self, labels, dataset, seen=NOTHING_SEEN):
+        return self._overlapping(labels)
+
+    def describe(self, dataset):
+        return f"labels overlapping, {SCOPE_WORDS[self.scope]}, IoU {self.lo:.2f}–{self.hi:.2f}"
+
+    def to_json(self):
+        return {"kind": self.kind, "scope": self.scope, "lo": self.lo, "hi": self.hi}
+
+
 def condition_from_json(data) -> Condition:
     try:
         kind = data["kind"]
@@ -257,6 +297,8 @@ def condition_from_json(data) -> Condition:
             return Reviewed(bool(data.get("value", True)))
         if kind == "name":
             return NameContains(str(data["text"]))
+        if kind == "overlap":
+            return Overlap(str(data["scope"]), float(data["lo"]), float(data["hi"]))
         if kind == "boxes":
             return Boxes(tuple(str(n) for n in data["names"]), tuple(data["w"]), tuple(data["h"]),
                          str(data["unit"]))
