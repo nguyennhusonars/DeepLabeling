@@ -19,6 +19,7 @@ from .boxes import box_views, prediction_views
 from .canvas import Canvas
 from .classes import DEFAULT_HOTKEYS
 from .editing import Editing
+from .findview import spotlight
 from .inspector import Inspector
 from .keymap import HelpDialog, build_actions
 from .model import RECENT_MODELS
@@ -89,6 +90,9 @@ class MainWindow(QMainWindow):
             "copy": self.editing.copy,
             "paste": self.editing.paste,
             "accept_missing": self.editing.accept_missing,
+            "take_model_class": self.editing.take_model_class,
+            "take_model_box": self.editing.take_model_box,
+            "dismiss": session.dismiss_current,
         })
         layers = self.state_bar.layers.menu()
         for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS),
@@ -155,9 +159,9 @@ class MainWindow(QMainWindow):
             image, why = session.images.get(path), session.images.error(path)
             if why is not None:
                 self._shown = None
-                self.canvas.set_image(None, f"Cannot decode {item.key}: {why}")
-                self.notices.add("error", f"{item.key}: the image cannot be decoded ({why}); "
-                                 "its labels are not edited", image=path, key=f"decode:{item.key}")
+                self.canvas.set_image(None, f"Cannot decode {item.entry.rel}: {why}")
+                self.notices.add("error", f"{item.entry.rel}: the image cannot be decoded ({why}); "
+                                 "its labels are not edited", image=path, key=f"decode:{item.entry.rel}")
             elif image is None:
                 self._shown = None
                 self.canvas.set_image(None, "Loading…")
@@ -176,6 +180,9 @@ class MainWindow(QMainWindow):
         labels = session.labels(item.entry)
         highlight = session.queue.source.highlight(labels, ws.dataset, self._seen(item))
         self.editing.show(labels)
+        lit = None if item.finding is None else spotlight(
+            item.finding, ws.dataset, self.canvas.image_size, ws.root_settings.get(CLASS_COLORS), session.model.names)
+        self.canvas.set_spotlight(*(lit or (None,)))
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels),
@@ -287,7 +294,7 @@ class MainWindow(QMainWindow):
         if item is None or session.workspace is None:
             self.status_text.setText("")
             return
-        parts = [item.key]
+        parts = [item.entry.rel]
         if self.canvas.image_size is not None and self._shown == item.entry.path:
             parts.append("{} × {}".format(*self.canvas.image_size))
         parts.append(f"item {session.queue.position() + 1:,} / {len(session.queue):,}")

@@ -33,6 +33,14 @@ HALF_STEP = 5e-7
 
 
 @dataclass(frozen=True)
+class Scanned:
+    """A build's progress, sent among its batches: images looked at, of how many."""
+
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
 class QueueItem:
     key: str
     entry: ImageEntry
@@ -533,6 +541,7 @@ class Queue:
         #: What the build could not settle, by image ("not inferred", "could not be sized").
         self.left_out: dict[str, set[str]] = {}
         self.waiting = False        #: a model condition waits for a model: nothing is built yet
+        self.scanned: Scanned | None = None     #: how far a scanning build has got
         self.built_with = None      #: the model (key, class map) its build read, if any
         self._rank: dict[str, tuple] = {}           #: each item's sort key, by key
         self._ranks: list[tuple] = []               #: the items' sort keys, row by row: ascending
@@ -577,9 +586,20 @@ class Queue:
         if self.cursor is None and self.items:
             self.cursor = self.items[0].key
 
+    @property
+    def following(self) -> bool:
+        """Whether the cursor still waits for its place from before the rebuild."""
+        return self._follow is not None and not self._moved
+
     def _is_followed(self, item: QueueItem) -> bool:
         f = self._follow
-        return item.key == f.key if isinstance(f, QueueItem) else item.entry.rel == f.rel
+        if not isinstance(f, QueueItem):
+            return item.entry.rel == f.rel
+        if item.key == f.key:
+            return True
+        # An image's item for a finding's, or a finding's for an image's: its image. Between
+        # findings only the same finding will do -- another of its image may arrive first.
+        return (item.key == item.entry.rel) != (f.key == f.entry.rel) and item.entry.rel == f.entry.rel
 
     def _comes_after(self, item: QueueItem) -> bool:
         f = self._follow
@@ -644,7 +664,8 @@ class Queue:
         return True
 
     def left(self, is_reviewed: Callable[[str], bool]) -> int:
-        return sum(1 for item in self.items if not is_reviewed(item.key))
+        """Items whose image is not reviewed: review marks are an image's."""
+        return sum(1 for item in self.items if not is_reviewed(item.entry.rel))
 
     def recheck(self, entry: ImageEntry, ctx: BuildContext) -> None:
         """After `entry` changed: mark each of its items stale while it no longer holds."""

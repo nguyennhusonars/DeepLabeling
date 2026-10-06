@@ -142,3 +142,9 @@ def test_settings_survive_their_json():
 def test_settings_that_could_never_report_are_refused_by_name(kw, why):
     with pytest.raises(ValueError, match=why):
         FindSettings(**kw)
+
+
+def test_a_finding_keeps_the_model_s_own_class_even_when_it_is_unmapped(labels, dataset, cmap):
+    far = (0.33, 0.25, 0.1, 0.1)                                 # a truck near the car: unmapped
+    [f] = judge(labels("camA/images/0001.jpg"), [P(1, PERSON, 0.9), P(3, far, 0.9)], cmap, dataset, FindSettings())
+    assert f.kind == "not an object" and f.model_cls is None and f.model_raw == 3

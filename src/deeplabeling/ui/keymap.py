@@ -56,6 +56,9 @@ ACTIONS: tuple[ActionSpec, ...] = (
     ActionSpec("help", "Shortcut help", ("?",)),
     ActionSpec("toggle_predictions", "Predictions", ("P",), checkable=True),
     ActionSpec("accept_missing", "Accept the missing predictions on this image", ("A",)),
+    ActionSpec("take_model_class", "Find Bad: the label takes the model's class", ("M",)),
+    ActionSpec("take_model_box", "Find Bad: the label takes the model's box, keeping its class", ("B",)),
+    ActionSpec("dismiss", "Find Bad: dismiss the finding, or take the dismissal back", ("D",)),
 )
 
 

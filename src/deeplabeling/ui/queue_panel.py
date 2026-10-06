@@ -45,8 +45,8 @@ def tile_thumb_rect(cell: QRect, thumb: QSize) -> QRect:
 
 def tile_text(session: Session, item: QueueItem, labels=None) -> str:
     """A tile's caption: the reviewed tick, the file name and the badge."""
-    tick = "✓ " if session.workspace.review.is_marked(item.key) else ""
-    return f"{tick}{Path(item.key).name} · {session.badge(item, labels)}"
+    tick = "✓ " if session.workspace.review.is_marked(item.entry.rel) else ""
+    return f"{tick}{Path(item.entry.rel).name} · {session.badge(item, labels)}"
 
 
 class QueueModel(QAbstractListModel):

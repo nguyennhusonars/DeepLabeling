@@ -1,6 +1,8 @@
 """The queue editor: splits and conditions for slice 1's one source, ImageFilter
 (docs/design/2026-10-04-app-foundation.md#queue), with slice 3's box size, overlap and
-model rows (docs/design/2026-10-06-filters.md#the-queue-editor). It is seeded from the
+model rows (docs/design/2026-10-06-filters.md#the-queue-editor), and slice 4's second
+source, Findings, whose scope is those rows (docs/design/2026-10-06-find-bad.md#the-queue-editor).
+It is seeded from the
 queue in force, so it never shows a filter the queue is not using (CLAUDE.md landmine 7).
 A value it cannot use is refused when OK is pressed, by row and field, and the dialog stays
 open with what was typed: never swapped, never clamped."""
@@ -26,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.dataset import Dataset
+from ..core.findings import FindSettings, Findings
 from ..core.queue import (
     UNITS,
     Boxes,
@@ -44,6 +47,7 @@ REVIEW_MODES = ("any", "reviewed", "not reviewed")
 OVERLAP_MODES = {"off": None, "different classes": "different", "same class": "same", "any class": "any"}
 MODEL_MODES = {"off": None, "labels the model does not see": "unseen",
                "predictions nobody labelled": "unlabelled", "either": "either"}
+SOURCES = ("Images", "Findings")
 
 
 def _row(*widgets) -> QWidget:
@@ -84,9 +88,11 @@ def _number(edit: QLineEdit, name: str, *, blank: bool = False) -> float | None:
 
 
 class QueueEditor(QDialog):
-    def __init__(self, dataset: Dataset, current: ImageFilter, parent=None, *, conf: float = 0.25):
+    def __init__(self, dataset: Dataset, current: ImageFilter | Findings, parent=None, *, conf: float = 0.25):
         super().__init__(parent)
         self.setWindowTitle("Queue")
+        self.source_kind = QComboBox()
+        self.source_kind.addItems(SOURCES)
         self.splits = {name: QCheckBox(name) for name in dataset.splits}
         split_row = QWidget()
         row = QHBoxLayout(split_row)
@@ -119,8 +125,10 @@ class QueueEditor(QDialog):
         self.error.setStyleSheet("color: #e05252;")
         self.error.setWordWrap(True)
         self.error.hide()
-        self.chosen: ImageFilter | None = None      #: what OK took
+        self.chosen: ImageFilter | Findings | None = None      #: what OK took
+        self.find_rows = self._find_rows()
         form = QFormLayout()
+        form.addRow("Source", self.source_kind)
         form.addRow("Splits", split_row)
         form.addRow("Classes", self.class_mode)
         form.addRow("", self.classes)
@@ -139,9 +147,45 @@ class QueueEditor(QDialog):
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self.find_rows)
         layout.addWidget(self.error)
         layout.addWidget(buttons)
-        self._seed(current)
+        self.source_kind.currentTextChanged.connect(lambda kind: self.find_rows.setVisible(kind == "Findings"))
+        if isinstance(current, Findings):
+            self.source_kind.setCurrentText("Findings")
+            self._seed(current.scope)
+            self._seed_settings(current.settings)
+        else:
+            self._seed(current)
+            self._seed_settings(FindSettings())
+        self.find_rows.setVisible(self.source_kind.currentText() == "Findings")
+
+    def _find_rows(self) -> QWidget:
+        """Find Bad's settings: shown for a Findings queue, whose scope is the rows above."""
+        self.find_floor, self.find_iou, self.find_ceiling = _edit(), _edit(), _edit()
+        self.find_band_lo, self.find_band_hi, self.find_cutoff = _edit(), _edit(), _edit()
+        self.find_band_hi.setPlaceholderText("matching IoU")
+        self.find_wrong, self.find_not_object, self.find_weak = (
+            QCheckBox("wrong class"), QCheckBox("not an object"), QCheckBox("weakly seen"))
+        rows = QWidget()
+        form = QFormLayout(rows)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.addRow("Find Bad", _row(QLabel("confidence floor"), self.find_floor,
+                                     QLabel("matching IoU"), self.find_iou))
+        form.addRow("", _row(self.find_wrong, QLabel("up to conf"), self.find_ceiling))
+        form.addRow("", _row(self.find_not_object, QLabel("nearest IoU"), self.find_band_lo,
+                             QLabel("–"), self.find_band_hi))
+        form.addRow("", _row(self.find_weak, QLabel("below conf"), self.find_cutoff))
+        return rows
+
+    def _seed_settings(self, settings: FindSettings) -> None:
+        for edit, value in ((self.find_floor, settings.floor), (self.find_iou, settings.match_iou),
+                            (self.find_ceiling, settings.ceiling), (self.find_band_lo, settings.band[0]),
+                            (self.find_band_hi, settings.band[1]), (self.find_cutoff, settings.cutoff)):
+            edit.setText(_text(value))
+        self.find_wrong.setChecked(settings.wrong_class)
+        self.find_not_object.setChecked(settings.not_object)
+        self.find_weak.setChecked(settings.weak)
 
     def _seed(self, current: ImageFilter) -> None:
         for name, box in self.splits.items():
@@ -177,13 +221,35 @@ class QueueEditor(QDialog):
     def accept(self) -> None:
         """OK: take the queue the rows describe, or say why not and stay open."""
         try:
-            self.chosen = self.filter()
+            self.chosen = self.source()
         except ValueError as e:
             self.error.setText(str(e))
             self.error.show()
             return
         self.error.hide()
         super().accept()
+
+    def source(self) -> ImageFilter | Findings:
+        """The queue the dialog describes: its image filter, or the findings in it."""
+        if self.source_kind.currentText() == "Images":
+            return self.filter()
+        return Findings(self.filter(), self.settings())
+
+    def settings(self) -> FindSettings:
+        """Find Bad's settings; ValueError naming the field when they cannot be used."""
+        try:
+            settings = FindSettings(
+                _number(self.find_floor, "confidence floor"), _number(self.find_iou, "matching IoU"),
+                self.find_wrong.isChecked(), _number(self.find_ceiling, "wrong-class ceiling"),
+                self.find_not_object.isChecked(),
+                (_number(self.find_band_lo, "not-an-object band"),
+                 _number(self.find_band_hi, "not-an-object band", blank=True)),
+                self.find_weak.isChecked(), _number(self.find_cutoff, "weak cutoff"))
+        except ValueError as e:
+            raise ValueError(f"Find Bad — {e}") from e
+        if not settings.kinds:
+            raise ValueError("Find Bad — choose at least one kind of finding")
+        return settings
 
     def filter(self) -> ImageFilter:
         """The queue the dialog describes. All splits checked means every split. ValueError,

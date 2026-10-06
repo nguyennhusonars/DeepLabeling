@@ -15,8 +15,9 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
 
 from ..core.assist import Shown, accept_image, accept_one
-from ..core.edits import Intent
+from ..core.edits import Intent, SetBox, SetClass
 from ..core.geometry import px_to_norm
+from ..core.labelio import locate_line
 from ..core.store import ImageLabels
 from ..core.workspace import ACTIVE_CLASS, CLASS_COLORS, CLASS_HOTKEYS
 from . import actions
@@ -47,13 +48,32 @@ class Editing(QObject):
         canvas.moved.connect(self.move)
         canvas.resized.connect(self.resize)
         self.selection.changed.connect(self._selection_changed)
-        session.cursorChanged.connect(self.selection.clear)
+        session.cursorChanged.connect(self._cursor_changed)
         session.opened.connect(self._active_changed)
         # Before the window and the inspector redraw for an edit, the edit's selection is
         # set, so the canvas is drawn once with it: Editing connects ahead of them.
         session.labelsChanged.connect(self._labels_changed)
 
     # -- the image being edited ----------------------------------------------------------
+
+    def _cursor_changed(self) -> None:
+        """A new item: a finding arrives with its label selected; anything else with none."""
+        self.selection.clear()
+        item = self.session.current()
+        if item is None or item.focus is None or self.session.workspace is None:
+            return
+        labels = self.session.labels(item.entry)
+        index = locate_line(labels.lines, item.focus.cls_id, item.focus.bbox, item.focus.index)
+        if index is not None:
+            self.selection.select(labels, [index])
+
+    def _on_finding(self, labels: ImageLabels, indices) -> bool:
+        """Whether these lines include the current finding's: fixing it moves on."""
+        item = self.session.current()
+        if item is None or item.focus is None:
+            return False
+        f = item.focus
+        return locate_line(labels.lines, f.cls_id, f.bbox, f.index) in set(indices)
 
     def show(self, labels: ImageLabels) -> None:
         """The labels the canvas now draws. The file can change before the canvas is
@@ -141,7 +161,9 @@ class Editing(QObject):
         indices = self.selected()
         if current and indices:
             image, labels = current
-            self._apply(actions.reclassify(image, labels, indices, info.cls_id), select=indices)
+            on_finding = self._on_finding(labels, indices)
+            if self._apply(actions.reclassify(image, labels, indices, info.cls_id), select=indices) and on_finding:
+                self.session.move(1)
         elif self.session.workspace is not None:
             self.set_active(info)
 
@@ -242,13 +264,52 @@ class Editing(QObject):
             return
         self._apply(intent, select=_last(1))
 
+    # -- Find Bad's keys (docs/design/2026-10-06-find-bad.md#keys) ----------------------------
+
+    def _finding(self):
+        """The finding on screen with its label shown, or None."""
+        item, current = self.session.current(), self._current()
+        if item is None or item.finding is None or not current:
+            return None
+        return item
+
+    def take_model_class(self) -> None:
+        """M: the label becomes the class the model gives it; then the next finding."""
+        item = self._finding()
+        if item is None:
+            return
+        if item.finding.model_cls is None or item.finding.kind == "not an object":
+            self.session.status.emit("the model has no class for it")
+            return
+        if item.finding.model_cls == item.focus.cls_id:         # weakly seen, as what it is
+            self.session.status.emit("the label already has the model's class: D dismisses the finding")
+            return
+        intent = Intent(item.entry.path, (SetClass(item.focus, item.finding.model_cls),), "take the model's class")
+        if self._apply(intent, select=[]):
+            self.session.move(1)
+
+    def take_model_box(self) -> None:
+        """B: the label takes the model's box, keeping its class; then the next finding."""
+        item = self._finding()
+        if item is None:
+            return
+        box = item.finding.model_box and actions.clamp_box(item.finding.model_box)
+        if box is None:
+            self.session.status.emit("this finding has no model box")
+            return
+        if self._apply(Intent(item.entry.path, (SetBox(item.focus, box),), "take the model's box"), select=[]):
+            self.session.move(1)
+
     # -- the editing keys -----------------------------------------------------------------
 
     def delete(self) -> None:
         current = self._current()
         if current:
             image, labels = current
-            self._apply(actions.delete(image, labels, self.selection.indices(labels)), select=[])
+            indices = self.selection.indices(labels)
+            on_finding = self._on_finding(labels, indices)
+            if self._apply(actions.delete(image, labels, indices), select=[]) and on_finding:
+                self.session.move(1)
 
     def select_step(self, step: int) -> None:
         """Select the next (+1) or previous (-1) box after the selection, wrapping round."""
