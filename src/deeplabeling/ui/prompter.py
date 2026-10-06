@@ -115,3 +115,8 @@ class QtPrompter:
 
     def progress(self, title: str, total: int) -> Progress:
         return Progress(QProgressDialog(title, "Cancel", 0, total, self.parent))
+
+    def confirm_queue_accept(self, text: str) -> bool:
+        answer = QMessageBox.question(self.parent, "Accept missing boxes in this queue", text,
+                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        return answer == QMessageBox.Yes

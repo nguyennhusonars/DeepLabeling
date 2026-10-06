@@ -46,6 +46,8 @@ class Prompter(Protocol):
 
     def progress(self, title: str, total: int): ...
 
+    def confirm_queue_accept(self, text: str) -> bool: ...
+
 
 class Session(QObject):
     opened = Signal()

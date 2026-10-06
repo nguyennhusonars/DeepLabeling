@@ -158,3 +158,13 @@ def test_quitting_with_no_dataset_open_lets_the_model_go(qtbot, monkeypatch, pro
     worker = w.session.model._worker
     w.close()
     assert w.session.model.state == "none" and worker.isFinished()
+
+
+def test_the_queue_accept_waits_for_a_model_and_runs_from_the_menu(qtbot, window, ds):
+    assert not menu(window)["Accept missing boxes in this queue…"].isEnabled()
+    load(qtbot, window)
+    with qtbot.waitSignal(window.session.status, timeout=5000,
+                          check_params_cb=lambda text: text.startswith("accepted")) as said:
+        menu(window)["Accept missing boxes in this queue…"].trigger()
+    assert said.args == ["accepted 1 box on 1 image"]
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + "1 0.800000 0.800000 0.100000 0.100000\n"

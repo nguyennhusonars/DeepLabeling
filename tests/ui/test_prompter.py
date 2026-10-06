@@ -59,3 +59,22 @@ def test_the_progress_dialog_is_modal_visible_and_cancels(qtbot):
     assert progress.cancelled()
     progress.close()
     qtbot.waitUntil(lambda: not parent.findChildren(QProgressDialog))
+
+
+def test_the_queue_accept_is_confirmed_with_yes_and_declined_otherwise(qtbot):
+    from PySide6.QtWidgets import QMessageBox
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    prompter = QtPrompter(parent)
+    def press_yes():
+        box = QApplication.activeModalWidget()
+        if box is None:
+            QTimer.singleShot(10, press_yes)                 # not shown yet
+        else:
+            box.button(QMessageBox.Yes).click()
+
+    QTimer.singleShot(0, press_yes)
+    assert prompter.confirm_queue_accept("Accept 1 box on 1 image?") is True
+    answer_with_cancel()
+    assert prompter.confirm_queue_accept("Accept 1 box on 1 image?") is False
