@@ -77,10 +77,10 @@ class QtPrompter:
     def choose_folder(self, title: str) -> str | None:
         return QFileDialog.getExistingDirectory(self.parent, title) or None
 
-    def edit_queue(self, dataset: Dataset, current: ImageFilter) -> ImageFilter | None:
-        dialog = QueueEditor(dataset, current, self.parent)
+    def edit_queue(self, dataset: Dataset, current: ImageFilter, conf: float = 0.25) -> ImageFilter | None:
+        dialog = QueueEditor(dataset, current, self.parent, conf=conf)
         try:
-            return dialog.filter() if dialog.exec() == QDialog.Accepted else None
+            return dialog.chosen if dialog.exec() == QDialog.Accepted else None
         finally:
             dialog.deleteLater()                    # a child of the window until deleted
 

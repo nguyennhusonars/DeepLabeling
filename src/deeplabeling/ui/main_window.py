@@ -351,7 +351,7 @@ class MainWindow(QMainWindow):
         if self.session.queue is None:
             return
         current = self.session.queue.source
-        chosen = self.prompter.edit_queue(self.session.workspace.dataset, current)
+        chosen = self.prompter.edit_queue(self.session.workspace.dataset, current, self.session.model.conf)
         if chosen is not None:                      # the same filter again is a refresh
             self.session.set_queue(chosen)
 

@@ -49,3 +49,10 @@ def test_an_emphasised_prediction_can_be_accepted_with_a_double_click(qtbot, win
     queue(qtbot, window, ModelDisagrees("unlabelled", conf=(0.1, 1.0)))
     qtbot.mouseDClick(window.canvas.viewport(), Qt.LeftButton, pos=vp(window.canvas, 51.2, 38.4))
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + "1 0.800000 0.800000 0.100000 0.100000\n"
+
+
+
+def test_the_queue_editor_offers_the_root_s_threshold_as_the_model_s_confidence(qtbot, window):
+    window.session.model.set_conf(0.4)
+    window.edit_queue()
+    assert window.prompter.asked[-1][2] == 0.4
