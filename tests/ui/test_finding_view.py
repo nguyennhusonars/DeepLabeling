@@ -109,3 +109,15 @@ def test_an_edit_beside_the_finding_redraws_once_and_keeps_the_spotlight(qtbot, 
     monkeypatch.setattr(window.canvas, "_redraw", lambda: (redraws.append(1), redraw()))
     editing.choose_class(next(i for i in editing.classes() if i.name == "bus_m"))
     assert len(redraws) == 1 and window.canvas.spotlight == lit
+
+
+def test_the_queue_editor_opens_a_findings_queue_and_is_offered_it_back(qtbot, window):
+    session = window.session
+    session.set_queue(session.queue.source.scope)
+    qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
+    window.prompter.queue = Findings()
+    window.edit_queue()
+    qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
+    assert [item.key for item in session.queue.items] == FOUND
+    window.edit_queue()
+    assert window.prompter.asked[-1][1] == Findings()
