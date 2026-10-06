@@ -21,6 +21,7 @@ from .inspector import Inspector
 from .keymap import HelpDialog, build_actions
 from .model import RECENT_MODELS
 from .notices import NoticeStrip
+from .queue_accept import accept_queue
 from .queue_panel import QueuePanel
 from .session import Session
 from .settings_ui import (QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_GRID,
@@ -284,6 +285,17 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction("Threshold…", self.ask_threshold).setEnabled(ws is not None)
         menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
+        menu.addSeparator()
+        queue = self.session.queue
+        whole = model.state == "ready" and queue is not None and queue.complete
+        if model.passing:
+            menu.addAction("Cancel inferring", model.cancel_pass)
+        else:
+            menu.addAction("Infer this queue", model.infer_queue).setEnabled(whole)
+        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(whole)
+
+    def accept_queue(self) -> None:
+        accept_queue(self.session)
 
     def load_model(self) -> None:
         path = self.prompter.choose_weights()

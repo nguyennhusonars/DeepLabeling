@@ -1,7 +1,7 @@
 # DeepLabeling — slice 2: model assist
 
-**Status:** approved 2026-10-05 · plans 2a (the core) and 2b (the UI on screen) implemented;
-2c (the dataset pass and the queue accept) next
+**Status:** approved 2026-10-05 · implemented: plans 2a (the core), 2b (the UI on screen) and
+2c (the dataset pass and the queue accept)
 **Scope:** slice 2 of [the app foundation](2026-10-04-app-foundation.md#slices): load a
 model, see its predictions beside the labels, accept them (one box, one image, or a whole
 queue), infer a whole queue ahead of time, and map the model's classes onto the dataset's.
@@ -151,7 +151,9 @@ keeps raw model ids and translates on read
   ([History](2026-10-04-app-foundation.md#history)).
 - **Undo and redo of a queue accept are written in chunks too**, behind the same dialog:
   45k files undone at once would freeze the window as long as writing them at once.
-  `LabelStore.restore` and `History` gain a chunked form in plan 2c.
+  Every file is checked first, as slice 1 does, then written a chunk at a time. Stopped
+  part-way, by a cancel or a failed write, what was written becomes an edit of its own and
+  the rest stays in the history: both stay undoable, and nothing is lost.
 - An accept that skips unmapped predictions says how many it skipped.
 
 ### A dataset pass
@@ -218,13 +220,25 @@ A **Predictions** line: `5 (2 missing)`, `not inferred yet`, `loading`, or `no m
 Measured on `data_13class.yaml`, on this machine. A missed target is recorded with its
 measured value, not quietly dropped.
 
-| Action | Target |
-|---|---|
-| predictions for the image on screen, already in the store | ≤ 50 ms |
-| predictions for the image on screen, not in the store | ≤ 500 ms after it is shown |
-| paging while a pass runs | ≤ 100 ms, as without one: the test of the in-app thread |
-| a dataset pass | ≥ 20 images/s |
-| the store | ≤ 2 KB per image (the legacy store: 209 MB for 201,301 rows, about 1 KB) |
+| Action | Target | Measured 2026-10-06 |
+|---|---|---|
+| predictions for the image on screen, already in the store | ≤ 50 ms | 2 ms, read, matched and drawn, the worst of 10 |
+| predictions for the image on screen, not in the store | ≤ 500 ms after it is shown | 441 ms, the worst of 10 (median 50 ms) |
+| paging while a pass runs | ≤ 100 ms, as without one: the test of the in-app thread | **missed once:** 106 ms, one page of 60 (median 3 ms) |
+| a dataset pass | ≥ 20 images/s | 119–131 images/s over 30 s |
+| the store | ≤ 2 KB per image (the legacy store: 209 MB for 201,301 rows, about 1 KB) | 1,596–1,750 bytes |
+
+- Three runs with `runs/detect/backup/yolo26n_vehicle/weights/best.pt` on the GTX 1660
+  SUPER; each figure is the worst of the three.
+- The one slow page came in the first run, as in the plan's scratch runs (121 ms): the
+  other two runs' worst pages were 6 and 8 ms. A first run with cold caches is the likely
+  cause, the GUI thread reading a label file while the pass reads frames; it is not
+  confirmed.
+- Reproduce, read-only (app state, the store included, goes to a temporary folder):
+
+```sh
+/home/sonnn/miniconda3/bin/python3 tools/measure_assist.py /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_13class.yaml /home/sonnn/Documents/ultralytics/runs/detect/backup/yolo26n_vehicle/weights/best.pt --pass-seconds 30
+```
 
 ## Testing
 

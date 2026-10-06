@@ -22,6 +22,8 @@ from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
 from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
+from . import chunked
+from .chunked import Chunked
 from .classes import assign_classes
 from .images import THUMB_BYTES, ImageCache, decode_thumb
 from .model import ModelSession
@@ -41,6 +43,10 @@ class Prompter(Protocol):
                          source: str, names: tuple[str, ...]) -> bool: ...
 
     def error(self, title: str, text: str) -> None: ...
+
+    def progress(self, title: str, total: int): ...
+
+    def confirm_queue_accept(self, text: str) -> bool: ...
 
 
 class Session(QObject):
@@ -82,6 +88,8 @@ class Session(QObject):
         self._watch.setInterval(WATCH_MS)
         self._watch.timeout.connect(self.check_current)
         self._watch.start()
+        self.running: Chunked | None = None         # a long write under way (ui/chunked.py)
+        self._running_title = ""
         self.model = ModelSession(self, self)
 
     # -- opening and closing -----------------------------------------------
@@ -138,6 +146,8 @@ class Session(QObject):
         ws = self.workspace
         if ws is None:
             return
+        if self.running is not None:
+            self.running.stop()                     # between two chunks: nothing half-written
         self.io.cancel_all()
         self.model.release()                        # before the store it writes to closes
         self.images.clear()
@@ -390,6 +400,8 @@ class Session(QObject):
     def apply(self, intent: Intent) -> Edit | None:
         """Every label change goes through here; a refusal becomes a notice."""
         ws = self._require()
+        if self._busy():
+            return None
         rel = ws.dataset.entry(intent.image).rel
         why = self.images.error(intent.image)
         if why is not None:
@@ -422,8 +434,28 @@ class Session(QObject):
     def redo(self) -> None:
         self._step(undo=False)
 
+    def _busy(self) -> bool:
+        """While a long write runs, nothing else edits; a key that would says so."""
+        if self.running is None:
+            return False
+        self.status.emit(f"wait: {self._running_title[0].lower()}{self._running_title[1:]} is under way")
+        return True
+
+    def run_chunked(self, title: str, total: int, step, end) -> None:
+        """Run `step` a chunk per event-loop turn behind a progress dialog (ui/chunked.py)."""
+        progress = self.prompter.progress(title, total)
+
+        def ended(cancelled, error):
+            self.running = None
+            end(progress, cancelled, error)
+
+        self._running_title = title
+        self.running = Chunked(progress, lambda: step(progress), ended, self)
+
     def _step(self, *, undo: bool) -> None:
         ws = self.workspace
+        if self._busy():
+            return
         edit = None if ws is None else ws.history.peek_undo() if undo else ws.history.peek_redo()
         if edit is None:
             self.status.emit("nothing to undo" if undo else "nothing to redo")
@@ -433,12 +465,47 @@ class Session(QObject):
         current = self.current()
         if self.queue is not None and rel in self.queue and (current is None or current.key != rel):
             self.go_to(rel)                         # the change happens in view
+        if len(edit.changes) > chunked.CHUNK:
+            self._restore_in_chunks(edit, undo)
+            return
         try:
             (ws.editor.undo if undo else ws.editor.redo)()
         except Refused as e:
             self.notice.emit("error", str(e), image)
             return
         self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {rel}")
+
+    def _restore_in_chunks(self, edit: Edit, undo: bool) -> None:
+        """Undo (or redo) an edit across many images: every file checked, then written, a
+        chunk at a time. Stopped part-way, what was written stays an edit of its own."""
+        restoring = self._require().editor.restoring(undo=undo)
+        verb, past = ("undo", "undone") if undo else ("redo", "redone")
+
+        def step(progress) -> bool:
+            if restoring.checked < restoring.total:
+                restoring.check(chunked.CHUNK)
+            else:
+                restoring.write(chunked.CHUNK)
+            progress.set(restoring.checked + restoring.written)
+            return restoring.written < restoring.total
+
+        def end(progress, cancelled, error) -> None:
+            n, w = restoring.total, restoring.written
+            if error is None and not cancelled:
+                restoring.finish()
+                self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {n:,} files")
+            elif error is not None and restoring.checked < n:
+                self.notice.emit("error", str(error), None)     # a file changed since: dropped
+            elif error is not None:
+                restoring.stop()
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}. {w:,} of {n:,} "
+                                 f"files were {past}; the rest is still in the history: {verb} again", None)
+            else:
+                restoring.stop()
+                self.status.emit(f"{verb} stopped: {w:,} of {n:,} files {past}; the rest is still in the history"
+                                 if w else f"{verb} stopped before anything was written")
+
+        self.run_chunked(f"{'Undoing' if undo else 'Redoing'} {edit.description}", 2 * restoring.total, step, end)
 
     def _recheck(self, images) -> None:
         if self.workspace is None:

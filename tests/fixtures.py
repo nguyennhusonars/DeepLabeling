@@ -217,15 +217,36 @@ def assert_only_changed(before: dict[str, str], after: dict[str, str], expected:
     assert not problems, "; ".join(problems)
 
 
+class FakeProgress:
+    """A progress dialog that records its values and is cancelled at `cancel_at`."""
+
+    def __init__(self, title, total, cancel_at=None):
+        self.title, self.total, self.cancel_at = title, total, cancel_at
+        self.values: list[int] = []
+        self.closed = False
+
+    def set(self, value):
+        self.values.append(value)
+
+    def cancelled(self):
+        return self.cancel_at is not None and bool(self.values) and self.values[-1] >= self.cancel_at
+
+    def close(self):
+        self.closed = True
+
+
 class FakePrompter:
     """Answers the UI's dialogs from preset values and records what was asked."""
 
     def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None,
-                 weights=None, threshold=None, class_map=None):
+                 weights=None, threshold=None, class_map=None, cancel_at=None, accept_queue=True):
         self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
         self.class_name = class_name
         self.weights, self.threshold = weights, threshold
         self.class_map = class_map          #: {model class name: dataset class name or None}
+        self.cancel_at = cancel_at          #: a progress is cancelled once it reaches this ({title: n}, or n)
+        self.progresses: list[FakeProgress] = []
+        self.accept_queue = accept_queue    #: the answer to the queue accept's confirmation
         self.folders = list(folders)
         self.errors: list[tuple[str, str]] = []
         self.asked: list[tuple] = []
@@ -264,6 +285,15 @@ class FakePrompter:
     def ask_threshold(self, current):
         self.asked.append(("threshold", current))
         return self.threshold
+
+    def confirm_queue_accept(self, text):
+        self.asked.append(("queue accept", text))
+        return self.accept_queue
+
+    def progress(self, title, total):
+        at = self.cancel_at.get(title) if isinstance(self.cancel_at, dict) else self.cancel_at
+        self.progresses.append(FakeProgress(title, total, at))
+        return self.progresses[-1]
 
     def edit_class_map(self, cmap, dataset_names):
         self.asked.append(("class map", cmap.model_names, tuple(dataset_names)))

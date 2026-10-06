@@ -84,3 +84,25 @@ class History:
                           "It is still in the history; try again.") from e
         self._undo.append(self._redo.pop())
         return edit
+
+    # -- an edit undone or redone in chunks (editor.py::Restoring) ------------------------
+
+    def drop(self, edit: Edit, *, undo: bool) -> None:
+        """Forget `edit`, the last on the undo (or redo) list: it can never succeed."""
+        stack = self._undo if undo else self._redo
+        assert stack and stack[-1] is edit
+        stack.pop()
+        self._bytes -= edit.nbytes
+
+    def move(self, edit: Edit, *, undo: bool) -> None:
+        """`edit` was undone (or redone) whole: on to the other list."""
+        (self._undo if undo else self._redo).pop()
+        (self._redo if undo else self._undo).append(edit)
+
+    def split(self, edit: Edit, *, undo: bool, done: Edit, rest: Edit) -> None:
+        """`edit` was undone (or redone) part-way: `done` goes on to the other list and
+        `rest` stays where `edit` was."""
+        stack = self._undo if undo else self._redo
+        assert stack and stack[-1] is edit
+        stack[-1] = rest
+        (self._redo if undo else self._undo).append(done)

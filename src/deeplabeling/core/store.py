@@ -210,10 +210,7 @@ class LabelStore:
         created, and only while it still holds exactly what the edit wrote.
         """
         self._check_thread()
-        for change in edit.changes:
-            expected = change.after if undo else change.before
-            if _read_or_none(change.path) != expected:
-                raise Conflict(f"{change.path.name} has changed since, so it is left as it is")
+        self.check(edit.changes, undo=undo)
         for change in edit.changes:
             target = change.before if undo else change.after
             if target is None:
@@ -227,6 +224,14 @@ class LabelStore:
                 self._write(change.path, target)
         for image in edit.images:
             self._load(self.dataset.entry(image), notify=False)
+
+    def check(self, changes, *, undo: bool) -> None:
+        """Conflict if any file no longer holds what its change left (undo) or found
+        (redo). Reads only."""
+        for change in changes:
+            expected = change.after if undo else change.before
+            if _read_or_none(change.path) != expected:
+                raise Conflict(f"{change.path.name} has changed since, so it is left as it is")
 
     def _write(self, path: Path, data: bytes) -> None:
         try:

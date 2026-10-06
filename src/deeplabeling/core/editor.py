@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .edits import Edit, FileChange, Intent, Refused
+from .edits import Conflict, Edit, FileChange, Intent, Refused
 from .history import History
 from .review import ReviewMarks
 from .store import LabelStore
@@ -47,6 +47,11 @@ class Editor:
         batch = self.batch(description)
         batch.apply(intents)
         return batch.finish()
+
+    def restoring(self, *, undo: bool) -> Restoring | None:
+        """The last edit (or the last undone), to undo (or redo) a chunk at a time."""
+        edit = self.history.peek_undo() if undo else self.history.peek_redo()
+        return None if edit is None else Restoring(self, edit, undo)
 
     def undo(self) -> Edit | None:
         try:
@@ -142,3 +147,81 @@ class EditBatch:
             self._editor.history.push(edit)
             self._editor._history_changed()
         return edit
+
+
+class Restoring:
+    """Undo (or redo) of one edit a chunk of files at a time, for an edit too big to write
+    at once without freezing the window (docs/design/2026-10-05-model-assist.md#accepting).
+
+    Every file is checked before any is written, as LabelStore.restore does: an edit any
+    file of which has changed since is refused whole, and dropped. Then the files are
+    written a chunk at a time, each on its own, so a refusal stops at the file it names.
+    Stopped part-way -- cancelled, or a write refused -- what was written becomes an edit
+    of its own on the other list and the rest stays where it was: both stay undoable, and
+    nothing is lost.
+    """
+
+    def __init__(self, editor: Editor, edit: Edit, undo: bool):
+        self._editor, self.edit, self.undo = editor, edit, undo
+        self._changes = list(edit.changes)
+        self.checked = self.written = 0
+        self._images: dict[Path, list[Path]] = {}       # label file -> its images in the edit
+        for image in edit.images:
+            self._images.setdefault(editor.store.dataset.entry(image).label_path, []).append(image)
+
+    @property
+    def total(self) -> int:
+        return len(self._changes)
+
+    def _verb(self) -> str:
+        return "undo" if self.undo else "redo"
+
+    def check(self, n: int) -> None:
+        """Check the next `n` files. A file changed since: the edit is dropped, Refused."""
+        chunk = self._changes[self.checked:self.checked + n]
+        try:
+            self._editor.store.check(chunk, undo=self.undo)
+        except Conflict as e:
+            self._editor.history.drop(self.edit, undo=self.undo)
+            self._editor._history_changed()
+            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e}. "
+                          "It has been dropped from the history.") from e
+        self.checked += len(chunk)
+
+    def write(self, n: int) -> tuple[Path, ...]:
+        """Write the next `n` files, every one checked; the images they belong to. A
+        refusal stops at the file it names: stop() then keeps what was written."""
+        assert self.checked == self.total, "every file is checked first"
+        images: list[Path] = []
+        try:
+            for change in self._changes[self.written:self.written + n]:
+                mine = tuple(self._images.get(change.path, ()))
+                self._editor.store.restore(Edit((change,), mine, self.edit.description), undo=self.undo)
+                self.written += 1
+                images.extend(mine)
+        finally:
+            if images:
+                self._editor._labels_changed(tuple(images))
+        return tuple(images)
+
+    def finish(self) -> None:
+        """Every file written: the edit moves to the other list."""
+        assert self.written == self.total
+        self._editor.history.move(self.edit, undo=self.undo)
+        self._editor._history_changed()
+
+    def stop(self) -> None:
+        """Stop part-way: what was written goes to the other list, the rest stays."""
+        if not self.written:
+            return
+        if self.written == self.total:
+            self.finish()
+            return
+        done, rest = self._changes[:self.written], self._changes[self.written:]
+        self._editor.history.split(self.edit, undo=self.undo, done=self._part(done), rest=self._part(rest))
+        self._editor._history_changed()
+
+    def _part(self, changes: list[FileChange]) -> Edit:
+        paths = {change.path for change in changes}
+        images = tuple(i for i in self.edit.images if self._editor.store.dataset.entry(i).label_path in paths)
+        return Edit(tuple(changes), images, self.edit.description)

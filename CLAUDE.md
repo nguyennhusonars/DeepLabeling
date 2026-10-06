@@ -5,8 +5,8 @@ replaces `yolo_labeling` (Tkinter), kept as a frozen reference in
 [legacy/](legacy/README.md) — never imported, never edited.
 
 **Status:** slice 1 is built: the core, the viewer, editing on the canvas and the queue
-grid. Slice 2 (model assist) has its core and its on-screen UI built; the dataset pass and
-the queue accept (plan 2c) are next. The design and the plans are in [docs/design/](docs/design/).
+grid. Slice 2 is built: model assist, from a model's predictions on screen to accepting
+them across a queue. The design and the plans are in [docs/design/](docs/design/).
 
 ```sh
 ./run.sh                       # launch from this checkout; nothing to install
