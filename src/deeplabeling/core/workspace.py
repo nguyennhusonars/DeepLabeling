@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .dataset import Dataset
 from .editor import Editor
 from .history import History
+from .imagesize import ImageSizes
 from .predstore import STORE_NAME, PredictionStore
 from .review import ReviewMarks
 from .settings import JsonFile, Settings, define, is_str_list, is_str_map, is_str_or_none
@@ -46,6 +47,7 @@ class Workspace:
     history: History
     editor: Editor
     predictions: PredictionStore
+    sizes: ImageSizes = field(default_factory=ImageSizes)   #: its images' sizes, read from headers
 
     @classmethod
     def open(cls, source, labels=None, *, confirm_taxonomy: ConfirmTaxonomy,
