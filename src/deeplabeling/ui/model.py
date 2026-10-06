@@ -433,7 +433,10 @@ class ModelSession(QObject):
         queue = session.queue
         if self.state != "ready" or ws is None or queue is None or not queue.complete or self.passing:
             return
-        items = [(item.entry.rel, item.entry.path) for item in queue.items]
+        # A model queue also needs the images it left out as not inferred: inferred, they
+        # can join it (docs/design/2026-10-06-filters.md#building-and-keeping-current).
+        waiting = queue.left_out.get("not inferred", set())
+        items = [(e.rel, e.path) for e in ws.dataset.images if e.rel in queue or e.rel in waiting]
         self.passing, self.pass_walked, self.pass_total = True, 0, len(items)
         self._worker.start_pass(ws.predictions, items)
         self.changed.emit()

@@ -504,6 +504,8 @@ class Queue:
         self.failed: str | None = None      #: why the build stopped early, if it failed
         #: What the build could not settle, by image ("not inferred", "could not be sized").
         self.left_out: dict[str, set[str]] = {}
+        self.waiting = False        #: a model condition waits for a model: nothing is built yet
+        self.built_with = None      #: the model (key, class map) its build read, if any
         self._pos: dict[str, int] = {}
         self._follow = follow       #: the item the cursor was on before a rebuild
         self._moved = False
@@ -525,6 +527,19 @@ class Queue:
                 self._follow = None
         if self.cursor is None and self.items:
             self.cursor = self.items[0].key
+
+    def insert(self, item: QueueItem) -> int | None:
+        """Add an item after the build, in dataset order: an image whose predictions have
+        arrived. Its row, or None when it is already there."""
+        if item.key in self._pos:
+            return None
+        row = next((i for i, it in enumerate(self.items) if it.entry.order > item.entry.order), len(self.items))
+        self.items.insert(row, item)
+        for i in range(row, len(self.items)):
+            self._pos[self.items[i].key] = i
+        if self.cursor is None:
+            self.cursor = item.key
+        return row
 
     def finish(self) -> None:
         """The build is done. A cursor still waiting for its old item takes the first

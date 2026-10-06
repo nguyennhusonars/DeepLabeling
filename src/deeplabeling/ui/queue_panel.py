@@ -57,6 +57,7 @@ class QueueModel(QAbstractListModel):
         session.queueReset.connect(self._reset)
         session.closed.connect(self._reset)
         session.queueGrew.connect(self._grew)
+        session.itemInserted.connect(self._inserted)
         session.itemsChanged.connect(self._changed)
         self._reset()                               # a queue may already be built
 
@@ -88,6 +89,11 @@ class QueueModel(QAbstractListModel):
             self.beginInsertRows(QModelIndex(), self._rows, n - 1)
             self._rows = n
             self.endInsertRows()
+
+    def _inserted(self, row: int) -> None:
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._rows += 1
+        self.endInsertRows()
 
     def _changed(self, keys) -> None:
         queue = self._session.queue
