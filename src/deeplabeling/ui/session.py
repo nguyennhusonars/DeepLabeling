@@ -16,6 +16,7 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from ..core.crops import crop_rect
 from ..core.dataset import DatasetError, ImageEntry
 from ..core.edits import CreateEmpty, Edit, Intent, Refused
 from ..core.findings import KINDS, Findings
@@ -28,7 +29,7 @@ from . import chunked
 from .chunked import Chunked
 from .classes import assign_classes
 from .findview import finding_text
-from .images import THUMB_BYTES, ImageCache, decode_thumb
+from .images import THUMB_BYTES, Crop, ImageCache, decode_thumb, decode_tile
 from .model import ModelSession
 from .settings_ui import Saver, global_settings, remember_source
 from .workers import Jobs
@@ -85,6 +86,7 @@ class Session(QObject):
         self.io = Jobs(2)
         self.images = ImageCache(Jobs(2), parent=self)
         self.thumbs = ImageCache(Jobs(2), THUMB_BYTES, decode=decode_thumb, parent=self)
+        self.crops = ImageCache(Jobs(2), THUMB_BYTES, decode=decode_tile, parent=self, key=Crop.of)
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
@@ -171,6 +173,7 @@ class Session(QObject):
             self._closing = False
         self.images.clear()
         self.thumbs.clear()
+        self.crops.clear()
         self.io.wait(2000)
         self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
         self._follow = self._seen = self._keys = None
@@ -469,6 +472,16 @@ class Session(QObject):
         else:
             self.status.emit("the dismissal is taken back")
 
+    def crop_of(self, item: QueueItem) -> Crop | None:
+        """The crop a finding's tile shows; None for an image item, or when the image's
+        header cannot be read -- its crop could not be decoded either."""
+        f = item.finding
+        if f is None:
+            return None
+        size = self._require().sizes.get(item.entry.path)
+        rect = None if size is None else crop_rect(f.label_box, f.model_box, *size)
+        return None if rect is None else Crop(item.entry.path, rect)
+
     def describe_item(self, item: QueueItem) -> str:
         tick = "✓" if self._require().review.is_marked(item.entry.rel) else "·"
         return f"{tick} {item.entry.rel}  —  {self.badge(item)}"
@@ -551,6 +564,18 @@ class Session(QObject):
         if edit is not None:
             self._review_changed([rel])
         return edit
+
+    def apply_many(self, intents: list[Intent], description: str) -> Edit | None:
+        """Changes to many images as one edit that marks nothing: a grid action on
+        several findings. None when refused, which a notice says."""
+        ws = self._require()
+        if self._busy():
+            return None
+        try:
+            return ws.editor.apply_many(intents, description)
+        except Refused as e:
+            self.notice.emit("error", f"{description}: {e}", None)
+            return None
 
     def mark_negative(self) -> None:
         item = self.current()

@@ -1,5 +1,6 @@
 """The queue panel (docs/design/2026-10-04-app-foundation.md#window): the queue as a
-virtualised list, or as a grid of thumbnails with their label boxes drawn on them. One
+virtualised list, or as a grid of thumbnails with their label boxes drawn on them -- or, for
+findings, of their crops (docs/design/2026-10-06-find-bad.md#the-grid). One
 view shows both, so there is one selection, and it mirrors the session's cursor -- there
 is no second notion of the current item."""
 
@@ -7,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import (QAbstractListModel, QItemSelectionModel, QModelIndex, QPoint, QPointF, QRect, QRectF,
+                            QSize, Qt, QTimer)
 from PySide6.QtGui import QColor, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -21,14 +23,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.findings import Findings
+from ..core.geometry import norm_to_px
 from ..core.queue import QueueItem
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views
-from .images import THUMB_PX
+from .findview import finding_caption, label_color, spotlight
+from .images import TILE_PICTURE
 from .session import Session
 
 TILE = QSize(176, 150)                      #: one grid cell
-THUMB_AREA = QRect(8, 6, THUMB_PX, 120)     #: where a cell's thumbnail goes, within it
+THUMB_AREA = QRect(8, 6, *TILE_PICTURE)     #: where a cell's thumbnail goes, within it
 TILE_BG, TILE_TEXT, TILE_CURRENT = "#3a3a3a", "#e0e0e0", "#4a90d9"
 WANT_MS = 30                                #: thumbnails are wanted this long after a scroll
 REFOLLOW_MS = 120                           #: a resize is settled when none came for this long
@@ -44,8 +49,13 @@ def tile_thumb_rect(cell: QRect, thumb: QSize) -> QRect:
 
 
 def tile_text(session: Session, item: QueueItem, labels=None) -> str:
-    """A tile's caption: the reviewed tick, the file name and the badge."""
+    """A tile's caption: the reviewed tick, then the file name and the badge -- or, on a
+    finding's crop, what the label is and what the model calls it, and whether it is
+    fixed or dismissed."""
     tick = "✓ " if session.workspace.review.is_marked(item.entry.rel) else ""
+    if item.finding is not None:
+        state = session.finding_state(item)
+        return f"{tick}{finding_caption(item.finding, session.workspace.dataset)}" + (f" · {state}" if state else "")
     return f"{tick}{Path(item.entry.rel).name} · {session.badge(item, labels)}"
 
 
@@ -130,15 +140,20 @@ class TileDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor(TILE_CURRENT), 3))
             painter.drawRect(cell.adjusted(3, 3, -4, -4))
         painter.setPen(QColor(TILE_TEXT))
-        thumb = session.thumbs.get(item.entry.path)
-        if thumb is None:
-            why = session.thumbs.error(item.entry.path)
+        crop = session.crop_of(item)
+        cache, key = (session.thumbs, item.entry.path) if item.finding is None else (session.crops, crop)
+        picture = None if key is None else cache.get(key)
+        if picture is None:
+            why = key is None or cache.error(key)
             painter.drawText(THUMB_AREA.translated(cell.topLeft()), Qt.AlignCenter,
                              "cannot decode" if why else "…")
         else:
-            target = tile_thumb_rect(cell, thumb.size())
-            painter.drawImage(target, thumb)
-            self._draw_boxes(painter, labels, target)
+            target = tile_thumb_rect(cell, picture.size())
+            painter.drawImage(target, picture)
+            if item.finding is None:
+                self._draw_boxes(painter, labels, target)
+            else:
+                self._draw_finding(painter, item, crop.rect, target)
         caption = QRect(cell.x() + 8, cell.y() + THUMB_AREA.bottom() + 4, cell.width() - 16,
                         cell.height() - THUMB_AREA.bottom() - 8)
         painter.setPen(QColor(TILE_TEXT))
@@ -165,6 +180,34 @@ class TileDelegate(QStyledItemDelegate):
             else:
                 x1, y1, x2, y2 = view.rect
                 painter.drawRect(QRectF(target.x() + x1, target.y() + y1, x2 - x1, y2 - y1))
+        painter.restore()
+
+
+    def _draw_finding(self, painter, item, rect, target: QRect) -> None:
+        """The label in its class colour and the model's box dashed, as the spotlight draws
+        them, mapped from the crop `rect` (pixels of the image as shown) onto `target`."""
+        session, ws, f = self._session, self._session.workspace, item.finding
+        size = ws.sizes.get(item.entry.path)
+        if size is None:
+            return
+        colors = ws.root_settings.get(CLASS_COLORS)
+        scale = target.width() / (rect[2] - rect[0])
+
+        def on_tile(r) -> QRectF:
+            return QRectF(target.x() + (r[0] - rect[0]) * scale, target.y() + (r[1] - rect[1]) * scale,
+                          (r[2] - r[0]) * scale, (r[3] - r[1]) * scale)
+
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setClipRect(target)
+        painter.setPen(QPen(QColor(label_color(f, ws.dataset, colors)), 2))
+        painter.drawRect(on_tile(norm_to_px(f.label_box, *size)))
+        lit = spotlight(f, ws.dataset, size, colors, session.model.names)
+        if lit is not None and lit[1] is not None:
+            pen = QPen(QColor(lit[1].color), 2)
+            pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(on_tile(lit[1].rect))
         painter.restore()
 
 
@@ -226,6 +269,9 @@ class QueuePanel(QWidget):
         session.queueGrew.connect(self._want_soon)
         session.thumbs.ready.connect(self._thumb_arrived)
         session.thumbs.failed.connect(self._thumb_arrived)
+        session.crops.ready.connect(self._crop_arrived)
+        session.crops.failed.connect(self._crop_arrived)
+        session.queueReset.connect(self._suit_source)
         self._retitle()
         self._follow()
 
@@ -240,7 +286,7 @@ class QueuePanel(QWidget):
         view.setResizeMode(QListView.Adjust if on else QListView.Fixed)
         view.setGridSize(TILE if on else QSize())
         view.setItemDelegate(self._tiles if on else self._rows)
-        self.mark_button.setVisible(on)
+        self._suit_source()
         self._relayout()
         self._want_soon()
 
@@ -276,10 +322,45 @@ class QueuePanel(QWidget):
             return []
         return [queue.items[row].key for row in self._visible_rows(partial) if row < len(queue)]
 
+    def _on_crops(self) -> bool:
+        queue = self._session.queue
+        return queue is not None and isinstance(queue.source, Findings)
+
+    def _suit_source(self) -> None:
+        """A grid of crops selects several tiles (Ctrl- or Shift-click), and offers no mark
+        page: its tiles are not whole images."""
+        crops = self.grid and self._on_crops()
+        self.mark_button.setVisible(self.grid and not crops)
+        if not crops:
+            self.keep_only_current()                # a list keeps no tiles selected for later
+        self.view.setSelectionMode(QAbstractItemView.ExtendedSelection if crops else QAbstractItemView.SingleSelection)
+
+    def keep_only_current(self) -> None:
+        """Let the selected tiles go but the current one: the full frame is being worked on,
+        and a key must act on what it shows."""
+        queue = self._session.queue
+        row = queue.position() if queue is not None else None
+        if row is None or row >= self.model.rowCount():
+            self.view.clearSelection()
+        else:
+            self.view.selectionModel().select(self.model.index(row), QItemSelectionModel.ClearAndSelect)
+
+    def selected_findings(self) -> list[QueueItem]:
+        """The findings selected in a grid of crops, in queue order: what a key acts on
+        when there are several."""
+        queue = self._session.queue
+        if not (self.grid and self._on_crops()):
+            return []
+        rows = sorted(index.row() for index in self.view.selectionModel().selectedIndexes())
+        return [queue.items[row] for row in rows if row < len(queue)]
+
     def mark_page(self) -> None:
         """Mark every tile wholly in view reviewed: what was seen, nothing more."""
         session = self._session
         if not self.grid or session.workspace is None or session.queue is None:
+            return
+        if self._on_crops():
+            session.status.emit("the tiles are crops, not whole images: nothing was marked")
             return
         whole = self.visible_keys()
         if not whole:
@@ -303,10 +384,16 @@ class QueuePanel(QWidget):
             self._want.start()
 
     def _want_thumbs(self) -> None:
-        queue = self._session.queue
+        session, queue = self._session, self._session.queue
         if self.grid and queue is not None:
-            self._session.thumbs.want([queue.items[row].entry.path
-                                       for row in self._visible_rows(partial=True) if row < len(queue)])
+            items = [queue.items[row] for row in self._visible_rows(partial=True) if row < len(queue)]
+            session.thumbs.want([item.entry.path for item in items if item.finding is None])
+            session.crops.want([crop for crop in map(session.crop_of, items) if crop is not None])
+
+    def _crop_arrived(self, crop, *_) -> None:
+        """Repaint the tiles in view: those showing this crop are among them."""
+        if self.grid:
+            self.view.viewport().update()
 
     def _thumb_arrived(self, path, *_) -> None:
         """Repaint the one tile whose thumbnail came, if it is in the queue."""

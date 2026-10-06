@@ -23,6 +23,12 @@ def _model_name(f: Finding, dataset: Dataset, model_names: tuple[str, ...]) -> s
     return f"{model_names[raw] if raw is not None and 0 <= raw < len(model_names) else raw}?"
 
 
+def label_color(f: Finding, dataset: Dataset, colors: dict[str, str]) -> str:
+    """The colour the label is drawn in: its class's, grey for an id the names lack."""
+    return class_color(f.label_cls, _name(f.label_cls, dataset), colors) if 0 <= f.label_cls < len(dataset.names) \
+        else UNKNOWN
+
+
 def finding_text(f: Finding, dataset: Dataset) -> str:
     """`wrong class: car → truck 0.82`, `not an object: bus_m (nearest 0.03)`, `weakly seen: car 0.41`."""
     label = _name(f.label_cls, dataset)
@@ -31,6 +37,15 @@ def finding_text(f: Finding, dataset: Dataset) -> str:
     if f.kind == "not an object":
         return f"not an object: {label} (nearest {1 - f.score:.2f})"
     return f"weakly seen: {label} {f.model_conf:.2f}"
+
+
+def finding_caption(f: Finding, dataset: Dataset) -> str:
+    """A crop tile's caption, short enough for it: `car → person 0.82`, `bus_m → nothing 0.97`.
+    The number is the model's confidence, or for nothing there the finding's score."""
+    label = _name(f.label_cls, dataset)
+    if f.kind == "not an object":
+        return f"{label} → nothing {f.score:.2f}"
+    return f"{label} → {_name(f.model_cls, dataset)} {f.model_conf:.2f}"
 
 
 def finding_detail(f: Finding, dataset: Dataset, model_names: tuple[str, ...]) -> str:
