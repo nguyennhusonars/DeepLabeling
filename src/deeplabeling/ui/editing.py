@@ -281,6 +281,9 @@ class Editing(QObject):
         if item.finding.model_cls is None or item.finding.kind == "not an object":
             self.session.status.emit("the model has no class for it")
             return
+        if item.finding.model_cls == item.focus.cls_id:         # weakly seen, as what it is
+            self.session.status.emit("the label already has the model's class: D dismisses the finding")
+            return
         intent = Intent(item.entry.path, (SetClass(item.focus, item.finding.model_cls),), "take the model's class")
         if self._apply(intent, select=[]):
             self.session.move(1)

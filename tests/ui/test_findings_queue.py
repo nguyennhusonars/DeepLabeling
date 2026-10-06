@@ -5,7 +5,7 @@ import pytest
 from deeplabeling.core.edits import Intent, SetClass
 from deeplabeling.core.findings import Findings
 from deeplabeling.core.queue import Scanned
-from finding_rows import FOUND, KEY, P, load, put_rows
+from finding_rows import CAR, FOUND, FOUND_TWO, KEY, PERSON, TWO, P, load, put_rows
 from fixtures import open_session
 
 
@@ -114,3 +114,64 @@ def test_without_a_model_it_waits_says_so_and_builds_when_one_is_loaded(qtbot, d
     qtbot.waitUntil(lambda: not s.queue.waiting and s.queue.complete, timeout=5000)
     assert [item.key for item in s.queue.items] == FOUND
     s.close()
+
+
+
+def test_review_marks_tick_every_finding_of_an_image_and_left_counts_findings(qtbot, session):
+    put_rows(session, TWO)
+    assert found(qtbot, session) == FOUND_TWO
+    session.go_to(FOUND_TWO[1])
+    session.toggle_reviewed()
+    assert [session.describe_item(item)[0] for item in session.queue.items] == ["·", "✓", "✓", "·"]
+    assert session.left() == 2                              # the findings left: the chip counts findings
+
+
+def test_a_relaunch_reopens_on_the_second_finding_of_an_image(qtbot, ds, weights, monkeypatch):
+    import deeplabeling.ui.model as model_module
+    from drive import start
+    from finding_rows import factory
+
+    monkeypatch.setattr(model_module, "UltralyticsPredictor", factory)
+    window = start(qtbot, [str(ds.yaml)])
+    load(qtbot, window.session, weights)
+    put_rows(window.session, TWO)
+    found(qtbot, window.session)
+    window.session.go_to(FOUND_TWO[2])
+    window.close()
+    again = start(qtbot, [str(ds.yaml)])
+    qtbot.waitUntil(lambda: again.session.queue.complete and len(again.session.queue) == 4, timeout=5000)
+    assert again.session.current().key == FOUND_TWO[2]
+    again.close()
+
+
+def test_an_image_with_a_hash_in_its_name_is_reopened_on(qtbot, ds):
+    from fixtures import make_image
+
+    make_image(ds.root / "camA/images/a#b.jpg")
+    s = open_session(qtbot, ds.yaml)
+    qtbot.waitUntil(lambda: s.queue.complete, timeout=5000)
+    s.go_to("camA/images/a#b.jpg")
+    s.close()
+    again = open_session(qtbot, ds.yaml)
+    qtbot.waitUntil(lambda: again.queue.complete, timeout=5000)
+    assert again.current().key == "camA/images/a#b.jpg"
+    again.close()
+
+
+def test_accepting_missing_boxes_in_a_findings_queue_adds_each_box_once(qtbot, session, ds):
+    from deeplabeling.ui.queue_accept import accept_queue
+    from fixtures import CAMA_0001, read_exact
+
+    far = P(1, (0.8, 0.85, 0.1, 0.1), 0.9)                 # a person nobody labelled
+    put_rows(session, {"camA/images/0001.jpg": TWO["camA/images/0001.jpg"] + [far]})
+    found(qtbot, session)
+    with qtbot.waitSignal(session.status, timeout=5000) as said:
+        accept_queue(session)
+        qtbot.waitUntil(lambda: session.running is None and said.signal_triggered, timeout=5000)
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + "0 0.800000 0.850000 0.100000 0.100000\n"
+
+
+def test_the_model_chip_counts_a_findings_queue_s_images(qtbot, session):
+    put_rows(session, TWO)
+    found(qtbot, session)
+    assert session.model.inferred_count() == (3, 12)          # 3 images with findings; 9 not inferred

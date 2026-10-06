@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 
 import deeplabeling.ui.model as model_module
 from deeplabeling.core.dismissals import Dismissals
-from deeplabeling.core.findings import Findings
+from deeplabeling.core.findings import FindSettings, Findings
 from drive import start
 from finding_rows import FOUND, PERSON, P, factory, load, put_rows
 from fixtures import CAMA_0001, read_exact
@@ -105,3 +105,13 @@ def test_m_finds_the_finding_s_line_after_a_line_above_it_is_deleted(qtbot, wind
     assert window.session.current().key == FOUND[1]          # not the finding's line: no moving on
     qtbot.keyClick(window, Qt.Key_M)
     assert read_exact(ds.lbl("camA/0001")) == "0 0.250000 0.250000 0.100000 0.100000\n"
+
+
+
+def test_m_on_a_label_that_already_has_the_model_s_class_says_so(qtbot, window):
+    window.session.set_queue(Findings(settings=FindSettings(weak=True)))
+    qtbot.waitUntil(lambda: window.session.queue.complete and window.canvas.image_size is not None, timeout=5000)
+    on(qtbot, window, "weird/images/имя пробел.jpg#0#weakly seen")         # the person, seen at 0.5
+    with qtbot.waitSignal(window.session.status) as said:
+        qtbot.keyClick(window, Qt.Key_M)
+    assert said.args == ["the label already has the model's class: D dismisses the finding"]

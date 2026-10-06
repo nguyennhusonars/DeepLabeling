@@ -205,7 +205,8 @@ class Session(QObject):
         except ValueError:
             source = ImageFilter()
         cursor = opening.get(QUEUE_CURSOR)
-        entry = self._by_rel.get(cursor.split("#")[0]) if cursor else None    # a finding's key starts with its image
+        # An image's key is its rel, which may hold a "#"; a finding's is rel#line#kind.
+        entry = (self._by_rel.get(cursor) or self._by_rel.get(cursor.rsplit("#", 2)[0])) if cursor else None
         self.set_queue(source, follow=QueueItem(cursor, entry) if entry is not None else None)
 
     def set_queue(self, source, follow: ImageEntry | QueueItem | None = None) -> None:

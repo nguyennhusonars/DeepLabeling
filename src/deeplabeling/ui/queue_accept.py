@@ -48,7 +48,8 @@ def accept_queue(session) -> None:
     if queue is None or not queue.complete:
         session.status.emit("the queue is still being built")
         return
-    entries = [item.entry for item in queue.items]
+    # Each image once: a findings queue has an item per finding, several to an image.
+    entries = list({item.entry.rel: item.entry for item in queue.items}.values())
     key, preds, cmap, conf = model.key, ws.predictions, model.class_map, model.conf
     plan, looked = QueueAccept((), 0, 0, 0, 0, 0), 0
 

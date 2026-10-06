@@ -595,9 +595,11 @@ class Queue:
         f = self._follow
         if not isinstance(f, QueueItem):
             return item.entry.rel == f.rel
-        if len(item.sort_key) != len(f.sort_key):      # from another kind of queue: its image
-            return item.entry.rel == f.entry.rel
-        return item.key == f.key
+        if item.key == f.key:
+            return True
+        # An image's item for a finding's, or a finding's for an image's: its image. Between
+        # findings only the same finding will do -- another of its image may arrive first.
+        return (item.key == item.entry.rel) != (f.key == f.entry.rel) and item.entry.rel == f.entry.rel
 
     def _comes_after(self, item: QueueItem) -> bool:
         f = self._follow

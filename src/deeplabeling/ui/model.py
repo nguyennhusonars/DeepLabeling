@@ -436,7 +436,7 @@ class ModelSession(QObject):
         # A model queue also needs the images it left out as not inferred: inferred, they
         # can join it (docs/design/2026-10-06-filters.md#building-and-keeping-current).
         waiting = queue.left_out.get("not inferred", set())
-        items = [(e.rel, e.path) for e in ws.dataset.images if e.rel in queue or e.rel in waiting]
+        items = [(e.rel, e.path) for e in ws.dataset.images if queue.has_image(e.rel) or e.rel in waiting]
         self.passing, self.pass_walked, self.pass_total = True, 0, len(items)
         self._worker.start_pass(ws.predictions, items)
         self.changed.emit()
@@ -452,7 +452,8 @@ class ModelSession(QObject):
         if queue is None:
             return None
         waiting = len(queue.left_out.get("not inferred", ()))
-        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items) + waiting
+        images = {item.entry.rel for item in queue.items}       # a findings queue: several to an image
+        return sum(1 for rel in images if rel in self._known), len(images) + waiting
 
     def _pass_progress(self, walked: int, total: int) -> None:
         self.pass_walked, self.pass_total = walked, total

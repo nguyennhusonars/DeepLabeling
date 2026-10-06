@@ -22,6 +22,10 @@ ROWS = {
     "camB/images/0001.jpg": [],                                          # the bus_m: nothing there
     "weird/images/имя пробел.jpg": [P(1, (0.5, 0.5, 0.1, 0.1), 0.5)],    # the person, seen weakly
 }
+#: camA/0001 with both its lines wrong: the person a car (0.9), the car a person (0.8).
+TWO = {"camA/images/0001.jpg": [P(1, CAR, 0.8), P(0, PERSON, 0.9)]}
+FOUND_TWO = ["camA/images/sub/0005.jpg#0#wrong class", "camA/images/0001.jpg#0#wrong class",
+             "camA/images/0001.jpg#1#wrong class", "camB/images/0001.jpg#0#not an object"]
 FOUND = ["camA/images/sub/0005.jpg#0#wrong class", "camA/images/0001.jpg#1#wrong class",
          "camB/images/0001.jpg#0#not an object"]
 
