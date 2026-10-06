@@ -111,6 +111,7 @@ class Finding:
     model_cls: int | None = None    #: the dataset class of the model's box, when mapped
     model_box: Box | None = None    #: the deciding prediction, or the nearest from NEAREST_MIN_IOU
     model_conf: float | None = None
+    model_raw: int | None = None    #: the model's own class of that box, mapped or not
 
 
 def judge(labels: ImageLabels, preds: list[Prediction], cmap: ClassMap, dataset: Dataset,
@@ -128,7 +129,7 @@ def judge(labels: ImageLabels, preds: list[Prediction], cmap: ClassMap, dataset:
             cls = cmap.translate(p.cls, dataset)
             if cls is None:
                 continue                            # inconclusive: no weaker mapped box overrules it
-            model = dict(model_cls=cls, model_box=p.box, model_conf=p.conf)
+            model = dict(model_cls=cls, model_box=p.box, model_conf=p.conf, model_raw=p.cls)
             if not agrees(cls, line.cls_id, dataset):
                 if settings.wrong_class and p.conf <= settings.ceiling:
                     found.append(Finding(kind="wrong class", score=p.conf, **base, **model))
@@ -138,7 +139,8 @@ def judge(labels: ImageLabels, preds: list[Prediction], cmap: ClassMap, dataset:
             nearest, near = max(overlaps, key=lambda o: o[1], default=(None, 0.0))
             if settings.band[0] <= near <= settings.band_hi:
                 kept = nearest if nearest is not None and near >= NEAREST_MIN_IOU else None
-                model = (dict(model_cls=cmap.translate(kept.cls, dataset), model_box=kept.box, model_conf=kept.conf)
+                model = (dict(model_cls=cmap.translate(kept.cls, dataset), model_box=kept.box, model_conf=kept.conf,
+                              model_raw=kept.cls)
                          if kept is not None else {})
                 found.append(Finding(kind="not an object", score=1 - near, **base, **model))
     return found

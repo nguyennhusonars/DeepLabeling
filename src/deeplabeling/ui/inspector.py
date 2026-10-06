@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from ..core.store import LabelState
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views
+from .findview import finding_detail
 from .session import Session
 
 #: After the active class's name in the palette.
@@ -42,7 +43,7 @@ class Inspector(QWidget):
         self._labels = None                         # what the box list shows; its rows mean these
         self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label = (
             QLabel() for _ in range(5))
-        self.predictions_label = QLabel()
+        self.predictions_label, self.finding_label = QLabel(), QLabel()
         for label in self._fields():
             label.setWordWrap(True)
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -53,6 +54,7 @@ class Inspector(QWidget):
         form.addRow("Unparsable lines", self.unparsed_label)
         form.addRow("Reviewed", self.reviewed_label)
         form.addRow("Predictions", self.predictions_label)
+        form.addRow("Finding", self.finding_label)
         self.classes = QListWidget()
         self.boxes = QListWidget()
         for widget in (self.classes, self.boxes):
@@ -83,7 +85,7 @@ class Inspector(QWidget):
     def _fields(self) -> tuple[QLabel, ...]:
         # *_label names: a field called `size` would shadow QWidget.size()
         return (self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label,
-                self.predictions_label)
+                self.predictions_label, self.finding_label)
 
     def _labels_event(self, images) -> None:
         item = self._session.current()
@@ -147,6 +149,8 @@ class Inspector(QWidget):
         marked = ws.review.marked_at(entry.rel)
         self.reviewed_label.setText(time.strftime("%Y-%m-%d %H:%M", time.localtime(marked)) if marked else "not yet")
         self.predictions_label.setText(self._predictions_text(session.model, entry))
+        self.finding_label.setText("—" if item.finding is None else
+                                   finding_detail(item.finding, ws.dataset, session.model.names))
         colors = ws.root_settings.get(CLASS_COLORS)
         counts = Counter(line.cls_id for _, line in labels.boxes)
         active = self._editing.active_class()

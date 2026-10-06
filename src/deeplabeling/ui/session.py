@@ -27,6 +27,7 @@ from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SO
 from . import chunked
 from .chunked import Chunked
 from .classes import assign_classes
+from .findview import finding_text
 from .images import THUMB_BYTES, ImageCache, decode_thumb
 from .model import ModelSession
 from .settings_ui import Saver, global_settings, remember_source
@@ -424,6 +425,9 @@ class Session(QObject):
         return self._require().store.get(entry.path)
 
     def badge(self, item: QueueItem, labels: ImageLabels | None = None) -> str:
+        if item.finding is not None:
+            state = self.finding_state(item)
+            return finding_text(item.finding, self._require().dataset) + (f" · {state}" if state else "")
         labels = self.labels(item.entry) if labels is None else labels
         if labels.state is LabelState.ERROR:
             text = "unreadable"

@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPixmapItem,
@@ -30,6 +30,7 @@ HANDLE_PX = 8           #: a handle's size on screen, the same at every zoom
 GRAB_PX = 6             #: how near a handle's centre a press takes the handle
 SELECTED_ALPHA = 70     #: a selected box is filled with its colour at this opacity
 FAINT_ALPHA = 90        #: a prediction an accept would not add is drawn at this opacity
+DIM_ALPHA = 110         #: a finding's spotlight darkens the frame around its crop this much
 CROSSHAIR = "#ffffff"
 #: the eight handles of a box, as fractions of its width and height
 HANDLES = ((0, 0), (0.5, 0), (1, 0), (1, 0.5), (1, 1), (0.5, 1), (0, 1), (0, 0.5))
@@ -100,6 +101,8 @@ class Canvas(QGraphicsView):
         self._views: list[BoxView] = []
         self._predictions: list[PredictionView] = []
         self._pred_items: list[QGraphicsItem] = []
+        self._spotlight: tuple[tuple[int, int, int, int], PredictionView | None] | None = None
+        self._spot_items: list[QGraphicsItem] = []
         self.show_predictions = True
         self._size: tuple[int, int] | None = None
         self.show_labels = True
@@ -128,7 +131,7 @@ class Canvas(QGraphicsView):
 
     def set_image(self, image: QImage | None, message: str = "") -> None:
         """Show an image, fitted to the view; or no image and a message saying why."""
-        self._views, self._selected, self._predictions = [], frozenset(), []
+        self._views, self._selected, self._predictions, self._spotlight = [], frozenset(), [], None
         self._clear()
         if image is None:
             self._pixmap.setPixmap(QPixmap())
@@ -167,6 +170,19 @@ class Canvas(QGraphicsView):
         self._predictions = list(views)
         self._redraw()
 
+    @property
+    def spotlight(self):
+        """(the crop, the model's box) a finding is shown with, or None."""
+        return self._spotlight
+
+    def set_spotlight(self, rect: tuple[int, int, int, int] | None, view: PredictionView | None = None) -> None:
+        """Dim everything outside `rect` and draw the model's box `view` dashed; None: no spotlight.
+        The view keeps its zoom (docs/design/2026-10-06-find-bad.md#the-full-frame)."""
+        spot = None if rect is None else (rect, view)
+        if spot != self._spotlight:                 # an edit re-shows the same one: drawn once
+            self._spotlight = spot
+            self._redraw()
+
     def prediction_caption_items(self) -> list[CaptionItem]:
         return [it for it in self._pred_items if isinstance(it, CaptionItem)]
 
@@ -186,15 +202,17 @@ class Canvas(QGraphicsView):
 
     def _clear(self) -> None:
         self._drag = None                           # whatever it previewed is gone
-        for item in self._items + self._pred_items + ([self._preview] if self._preview else []):
+        for item in self._items + self._pred_items + self._spot_items + ([self._preview] if self._preview else []):
             self.scene().removeItem(item)
         self._items, self._box_items, self._handles, self._preview = [], {}, [], None
-        self._pred_items = []
+        self._pred_items, self._spot_items = [], []
 
     def _redraw(self) -> None:
         self._clear()
         if self._size is None:
             return
+        if self._spotlight is not None:
+            self._draw_spotlight(*self._spotlight)
         if self.show_predictions:                   # shown with the labels hidden, too
             for view in self._predictions:
                 self._draw_prediction(view)
@@ -203,7 +221,21 @@ class Canvas(QGraphicsView):
         for view in self._views:
             self._draw(view)
 
-    def _draw_prediction(self, view: PredictionView) -> None:
+    def _draw_spotlight(self, rect, view: PredictionView | None) -> None:
+        w, h = self._size
+        x1, y1, x2, y2 = rect
+        around = QPainterPath()
+        around.setFillRule(Qt.OddEvenFill)
+        around.addRect(QRectF(0, 0, w, h))
+        around.addRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)))
+        dim = self.scene().addPath(around, QPen(Qt.NoPen), QBrush(QColor(0, 0, 0, DIM_ALPHA)))
+        dim.setZValue(0.4)                          # under the predictions and the labels
+        self._spot_items.append(dim)
+        if view is not None:
+            self._draw_prediction(view, self._spot_items)
+
+    def _draw_prediction(self, view: PredictionView, into: list | None = None) -> None:
+        into = self._pred_items if into is None else into
         color = QColor(view.color)
         if view.faint:
             color.setAlpha(FAINT_ALPHA)
@@ -214,13 +246,13 @@ class Canvas(QGraphicsView):
         x1, y1, x2, y2 = view.rect
         shape = self.scene().addRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)), pen)
         shape.setZValue(0.5)                        # under the labels
-        self._pred_items.append(shape)
+        into.append(shape)
         if self.show_captions and not view.faint:   # a faint one's label names it already
             caption = CaptionItem(view.caption, view.color, above=True)
             caption.setPos(x1, y1)
             caption.setZValue(0.6)
             self.scene().addItem(caption)
-            self._pred_items.append(caption)
+            into.append(caption)
 
     def _draw(self, view: BoxView) -> None:
         pen = QPen(QColor(view.color))

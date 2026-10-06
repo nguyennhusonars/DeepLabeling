@@ -476,5 +476,5 @@ class ModelSession(QObject):
         self._failures[path] = why
         item = self.session.current()
         if item is not None and item.entry.path == path:
-            self.session.notice.emit("error", f"{item.key}: the model could not predict ({why})", path)
+            self.session.notice.emit("error", f"{item.entry.rel}: the model could not predict ({why})", path)
         self.failed.emit(path, why)
