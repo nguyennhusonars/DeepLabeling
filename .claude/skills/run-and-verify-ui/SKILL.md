@@ -73,3 +73,7 @@ Lessons from building the grid (plan 1d):
   reference does not survive the interpreter's exit: one still running then ends the
   process with `os._exit` (`src/deeplabeling/__main__.py::main`). Test it in a subprocess,
   by its exit code (`tests/ui/test_quit.py`).
+- **Cancel a long write from the fake, not by racing it.** A write behind a progress
+  dialog runs a chunk per event-loop turn; by the time a test polls for a value part-way,
+  the run may be over. Give `tests/fixtures.py::FakePrompter` a `cancel_at` (a value, or
+  `{title: value}`), and its progress cancels exactly there.
