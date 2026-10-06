@@ -19,14 +19,14 @@ class BoxView:
     rect: tuple[float, float, float, float]     #: (x1, y1, x2, y2) in image pixels
     polygon: tuple[tuple[float, float], ...]    #: a polygon's points in pixels; () for a box
     color: str                                  #: #rrggbb
-    caption: str                                #: "car", "car x2", "#13?"
+    caption: str                                #: "car", "car ×2", "#13?"
     known: bool                                 #: False: an id the names do not cover
     highlighted: bool                           #: a queue condition matched this box
 
 
 def box_views(labels: ImageLabels, dataset: Dataset, size: tuple[int, int],
               colors: dict[str, str], highlight: frozenset[int] = frozenset()) -> list[BoxView]:
-    """One view per parsed line. A box stacked on others captions the count (`car x2`):
+    """One view per parsed line. A box stacked on others captions the count (`car ×2`):
     identical rectangles otherwise draw as one. An id outside the names is drawn grey
     and captioned `#id?`, never dropped."""
     w, h = size
@@ -44,7 +44,7 @@ def box_views(labels: ImageLabels, dataset: Dataset, size: tuple[int, int],
         else:
             base = str(cls_id)
             color = class_color(cls_id, base, colors)
-        caption = f"{base} x{stack[pos]}" if pos in stack else base
+        caption = f"{base} ×{stack[pos]}" if pos in stack else base
         polygon = ()
         if line.is_polygon:
             polygon = tuple((x * w, y * h) for x, y in zip(line.coords[0::2], line.coords[1::2]))
@@ -60,10 +60,12 @@ class PredictionView:
     color: str                                  #: its class's colour, grey when unmapped
     caption: str                                #: "car 0.82", or "truck? 0.40" when unmapped
     faint: bool                                 #: not missing: an accept would not add it
+    emphasised: bool = False                    #: a queue condition matched it: drawn thicker, never faint
 
 
 def prediction_views(shown: list[Shown], dataset: Dataset, size: tuple[int, int],
-                     colors: dict[str, str], model_names: tuple[str, ...]) -> list[PredictionView]:
+                     colors: dict[str, str], model_names: tuple[str, ...],
+                     emphasised: frozenset[int] = frozenset()) -> list[PredictionView]:
     """What the predictions layer draws (docs/design/2026-10-05-model-assist.md#the-predictions-layer)."""
     w, h = size
     views = []
@@ -74,5 +76,7 @@ def prediction_views(shown: list[Shown], dataset: Dataset, size: tuple[int, int]
         else:
             name = dataset.names[s.cls] if s.cls < len(dataset.names) else str(s.cls)
             color, caption = class_color(s.cls, name, colors), f"{name} {s.pred.conf:.2f}"
-        views.append(PredictionView(index, norm_to_px(s.pred.box, w, h), color, caption, not s.missing))
+        marked = index in emphasised
+        views.append(PredictionView(index, norm_to_px(s.pred.box, w, h), color, caption,
+                                    not s.missing and not marked, marked))
     return views

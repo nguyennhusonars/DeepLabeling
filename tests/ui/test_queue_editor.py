@@ -1,8 +1,18 @@
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog
 
 from deeplabeling.core.dataset import Dataset
-from deeplabeling.core.queue import HasClass, ImageFilter, LabelStateIs, NameContains, Reviewed
+from deeplabeling.core.queue import (
+    Boxes,
+    HasClass,
+    ImageFilter,
+    LabelStateIs,
+    ModelDisagrees,
+    NameContains,
+    Overlap,
+    Reviewed,
+)
 from deeplabeling.ui.queue_editor import QueueEditor
 
 
@@ -11,8 +21,8 @@ def dataset(ds):
     return Dataset.open(ds.yaml)
 
 
-def editor(qtbot, dataset, current):
-    dialog = QueueEditor(dataset, current)
+def editor(qtbot, dataset, current, **kw):
+    dialog = QueueEditor(dataset, current, **kw)
     qtbot.addWidget(dialog)
     return dialog
 
@@ -22,6 +32,10 @@ def editor(qtbot, dataset, current):
     ImageFilter(("val",), (HasClass(("car", "bus_l")), LabelStateIs("boxes"),
                            Reviewed(False), NameContains("cam"))),
     ImageFilter(conditions=(HasClass(("person",), present=False), LabelStateIs("missing"))),
+    ImageFilter(conditions=(Boxes(("car", "bus_m"), w=(10, 30), unit="px"), Reviewed(False))),
+    ImageFilter(conditions=(Boxes((), h=(None, 5), unit="%"), Overlap("same", 0.99, 1.0))),
+    ImageFilter(conditions=(Overlap("different", 0.5, 1.0), ModelDisagrees("either", 0.6, (0.3, 0.9)))),
+    ImageFilter(conditions=(ModelDisagrees("unseen"),)),
 ])
 def test_the_editor_is_seeded_from_the_queue_in_force(qtbot, dataset, current):
     assert editor(qtbot, dataset, current).filter() == current
@@ -42,3 +56,85 @@ def test_the_widgets_build_the_filter(qtbot, dataset):
     dialog.name.setText("  seg ")
     assert dialog.filter() == ImageFilter(("val",), (HasClass(("car",), present=False),
                                                      Reviewed(False), NameContains("seg")))
+
+
+
+def test_the_new_rows_build_their_conditions(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter(), conf=0.4)
+    dialog.class_mode.setCurrentText("has")
+    dialog.classes.item(1).setCheckState(Qt.Checked)
+    dialog.size_w_hi.setText("10")
+    dialog.size_unit.setCurrentText("%")
+    dialog.overlap_mode.setCurrentText("same class")
+    dialog.overlap_lo.setText("0.99")
+    dialog.model_mode.setCurrentText("predictions nobody labelled")
+    assert dialog.filter() == ImageFilter(conditions=(
+        Boxes(("car",), w=(None, 10), unit="%"), Overlap("same", 0.99, 1.0),
+        ModelDisagrees("unlabelled", 0.5, (0.4, 1.0))))
+
+
+def test_a_size_with_any_class_is_a_size_of_any_box(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.size_h_lo.setText("100")
+    assert dialog.filter() == ImageFilter(conditions=(Boxes((), h=(100, None), unit="px"),))
+
+
+@pytest.mark.parametrize("setup, why", [
+    (lambda d: (d.size_w_lo.setText("30"), d.size_w_hi.setText("10")),
+     "Box size — width: 30 is above 10: put the lower end first"),
+    (lambda d: d.size_w_lo.setText("abc"), "Box size — width: “abc” is not a number"),
+    (lambda d: (d.class_mode.setCurrentText("lacks"), d.classes.item(0).setCheckState(Qt.Checked),
+                d.size_w_hi.setText("10")),
+     "Box size — a size is of boxes an image has: choose has, or any class"),
+    (lambda d: (d.overlap_mode.setCurrentText("any class"), d.overlap_hi.setText("1.5")),
+     "Overlapping labels — IoU: the upper end cannot be above 1"),
+    (lambda d: (d.model_mode.setCurrentText("either"), d.model_lo.setText("0.05")),
+     "Model — confidence: the lower end cannot be below 0.1"),
+    (lambda d: (d.model_mode.setCurrentText("either"), d.model_iou.setText("")),
+     "Model — matching IoU: “” is not a number"),
+    (lambda d: (d.overlap_mode.setCurrentText("same class"), d.overlap_lo.setText("abc")),
+     "Overlapping labels — IoU: “abc” is not a number"),
+])
+def test_ok_refuses_by_name_and_the_dialog_stays_open(qtbot, dataset, setup, why):
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.show()
+    setup(dialog)
+    dialog.accept()
+    assert dialog.isVisible() and dialog.result() != QDialog.Accepted
+    assert dialog.error.text() == why and dialog.error.isVisible()
+
+
+def test_ok_takes_what_the_rows_say_once_they_are_right(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.show()
+    dialog.size_w_lo.setText("30")
+    dialog.size_w_hi.setText("10")
+    dialog.accept()
+    dialog.size_w_lo.setText("5")
+    dialog.accept()
+    assert dialog.result() == QDialog.Accepted
+    assert dialog.chosen == ImageFilter(conditions=(Boxes((), w=(5, 10), unit="px"),))
+
+
+def test_every_row_is_visible_inside_the_dialog_and_none_overlaps(qtbot, dataset):
+    from PySide6.QtCore import QPoint, QRect
+
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+    widgets = [dialog.size_w_lo, dialog.size_w_hi, dialog.size_h_lo, dialog.size_h_hi, dialog.size_unit,
+               dialog.overlap_mode, dialog.overlap_lo, dialog.overlap_hi,
+               dialog.model_mode, dialog.model_iou, dialog.model_lo, dialog.model_hi]
+    rects = []
+    for w in widgets:
+        rect = QRect(w.mapTo(dialog, QPoint(0, 0)), w.size())
+        assert w.isVisible() and w.width() >= 30 and dialog.rect().contains(rect)
+        assert not any(rect.intersects(r) for r in rects)
+        rects.append(rect)
+    assert dialog.height() <= 800
+
+
+
+def test_a_saved_value_comes_back_exactly(qtbot, dataset):
+    current = ImageFilter(conditions=(ModelDisagrees("unseen", 0.55, (0.123456789, 1.0)),))
+    assert editor(qtbot, dataset, current).filter() == current

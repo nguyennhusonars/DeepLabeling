@@ -209,7 +209,7 @@ class Canvas(QGraphicsView):
             color.setAlpha(FAINT_ALPHA)
         pen = QPen(color)
         pen.setCosmetic(True)
-        pen.setWidth(2)
+        pen.setWidth(4 if view.emphasised else 2)
         pen.setStyle(Qt.DashLine)
         x1, y1, x2, y2 = view.rect
         shape = self.scene().addRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)), pen)

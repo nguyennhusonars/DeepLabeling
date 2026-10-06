@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..core.dataset import DatasetError, ImageEntry
 from ..core.edits import CreateEmpty, Edit, Intent, Refused
-from ..core.queue import BuildContext, ImageFilter, Queue, QueueItem
+from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem
 from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
@@ -34,6 +34,13 @@ from .workers import Jobs
 OUT_OF_RANGE = "out-of-range"
 #: How often the image on screen has its label file re-checked for outside changes.
 WATCH_MS = 1500
+
+
+#: What a build could not settle, as the queue chip says it.
+UNSETTLED = {
+    "could not be sized": lambda n: f"{n:,} image could not be sized" if n == 1 else f"{n:,} images could not be sized",
+    "not inferred": lambda n: f"{n:,} not inferred",
+}
 
 
 class Prompter(Protocol):
@@ -60,6 +67,7 @@ class Session(QObject):
     queueDone = Signal()                # the queue finished building
     itemsChanged = Signal(object)       # list[str]: keys whose badge or tick may differ
     cursorChanged = Signal()
+    itemInserted = Signal(int)          # a row joined the queue after its build
     notice = Signal(str, str, object)   # level, text, image Path or None
     standing = Signal(str, str)         # key, text: a notice that stays; "" removes it
     status = Signal(str)                # a passing message for the status bar
@@ -90,7 +98,11 @@ class Session(QObject):
         self._watch.start()
         self.running: Chunked | None = None         # a long write under way (ui/chunked.py)
         self._running_title = ""
+        self._arrived: set[Path] = set()           # predictions that came while a model queue built
+        self._closing = False                       # the model goes with the dataset: nothing to rebuild
         self.model = ModelSession(self, self)
+        self.model.changed.connect(self._model_changed)
+        self.model.ready.connect(self._predicted)
 
     # -- opening and closing -----------------------------------------------
 
@@ -149,7 +161,11 @@ class Session(QObject):
         if self.running is not None:
             self.running.stop()                     # between two chunks: nothing half-written
         self.io.cancel_all()
-        self.model.release()                        # before the store it writes to closes
+        self._closing = True
+        try:
+            self.model.release()                    # before the store it writes to closes
+        finally:
+            self._closing = False
         self.images.clear()
         self.thumbs.clear()
         self.io.wait(2000)
@@ -199,25 +215,77 @@ class Session(QObject):
             follow = self._follow or (self.current().entry if self.current() is not None else None)
         self._follow = follow
         queue = self.queue = Queue(source, follow=follow)
+        queue.built_with = self._model_identity()
+        queue.waiting = source.needs_model and queue.built_with is None    # built when a model is ready
+        self._arrived = set()
         ws.opening_settings.set(QUEUE_SOURCE, source.to_json())
         self.saver.schedule()
         self.queueReset.emit()
         self.cursorChanged.emit()
+        if queue.waiting:
+            if self.model.state != "loading":
+                self.notice.emit("warning", "this queue needs a model: load one", None)
+            return
         ctx = self.context()
         self._build = self.io.start(
             lambda emit, cancelled: source.build(ctx, emit, cancelled),
             batch=lambda items: self._grew(queue, items),
-            done=lambda finished: self._built(queue, finished),
-            failed=lambda why: self._build_failed(queue, why))
+            done=lambda finished: self._built(queue, finished, left_out=ctx.left_out),
+            failed=lambda why: self._build_failed(queue, why, ctx.left_out))
+
+    def _model_identity(self):
+        """What a model queue's build depends on: the model and its class map."""
+        model = self.model
+        return (model.key, model.class_map) if model.state == "ready" else None
+
+    def _model_changed(self) -> None:
+        """A model queue is rebuilt when the model or its class map changes, and built
+        once a model it waited for is ready; a threshold change leaves it as it is."""
+        queue = self.queue
+        if (not self._closing and queue is not None and self.workspace is not None and queue.source.needs_model
+                and self._model_identity() != queue.built_with):
+            self.set_queue(queue.source)
+
+    def _predicted(self, path) -> None:
+        """Predictions arrived for an image: a model queue re-tests it, and an image it
+        left out as not inferred joins it, in dataset order, if it now matches."""
+        queue, ws = self.queue, self.workspace
+        if queue is None or ws is None or not queue.source.needs_model:
+            return
+        try:
+            entry = ws.dataset.entry(path)
+        except KeyError:
+            return
+        if entry.rel in queue:
+            self._recheck((path,))
+            return
+        if not queue.complete:
+            if not queue.waiting:
+                self._arrived.add(path)             # settled when the build has said what it left out
+            return
+        waiting = queue.left_out.get("not inferred")
+        if not waiting or entry.rel not in waiting:
+            return
+        waiting.discard(entry.rel)
+        if queue.source.matches(entry, self.context()):
+            empty = queue.cursor is None
+            row = queue.insert(QueueItem(entry.rel, entry))
+            if row is not None:
+                self.itemInserted.emit(row)
+            if empty and queue.cursor is not None:
+                self._cursor_moved()                # the first image of an empty queue: shown
+        self.queueGrew.emit()
 
     def context(self) -> BuildContext:
         """The inputs of a build or a recheck. The review marks are snapshotted once and
         reused until they change: an import underneath the app reports thousands of
         changed files, and a fresh snapshot each time froze the GUI for seconds."""
-        ws = self._require()
+        ws, model = self._require(), self.model
         if self._keys is None:
             self._keys = ws.review.keys()
-        return BuildContext(ws.dataset, ws.store, self._keys)
+        snapshot = (ModelSnapshot(model.key, ws.predictions, model.class_map)
+                    if model.state == "ready" and model.class_map is not None else None)
+        return BuildContext(ws.dataset, ws.store, self._keys, sizes=ws.sizes, model=snapshot)
 
     def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
         if queue is not self.queue:
@@ -230,13 +298,15 @@ class Session(QObject):
         if queue.cursor != before:
             self._cursor_moved()
 
-    def _build_failed(self, queue: Queue, why: str) -> None:
+    def _build_failed(self, queue: Queue, why: str, left_out=None) -> None:
         self.notice.emit("error", f"building the queue failed: {why}", None)
-        self._built(queue, True, failed=why)
+        self._built(queue, True, failed=why, left_out=left_out)
 
-    def _built(self, queue: Queue, finished: bool, failed: str | None = None) -> None:
+    def _built(self, queue: Queue, finished: bool, failed: str | None = None, left_out=None) -> None:
         if queue is not self.queue or not finished:
             return
+        if left_out:
+            queue.left_out = {what: set(rels) for what, rels in left_out.items()}
         before = queue.cursor
         if failed is None:
             queue.finish()
@@ -246,6 +316,9 @@ class Session(QObject):
         self.queueDone.emit()
         if queue.cursor != before:
             self._cursor_moved()
+        arrived, self._arrived = self._arrived, set()
+        for path in arrived:
+            self._predicted(path)
 
     def current(self) -> QueueItem | None:
         return self.queue.current() if self.queue is not None else None
@@ -313,9 +386,16 @@ class Session(QObject):
     def progress_text(self) -> str:
         """How the queue's build stands, for the chip and the panel: "" once built."""
         queue = self.queue
-        if queue is None or (queue.complete and queue.failed is None):
+        if queue is None:
             return ""
-        return " · build failed" if queue.failed is not None else " · building…"
+        if queue.waiting:
+            return " · waiting for the model" if self.model.state == "loading" else " · needs a model"
+        if queue.failed is not None:
+            return " · build failed"
+        if not queue.complete:
+            return " · building…"
+        return "".join(f" · {UNSETTLED[what](len(rels))}" for what, rels in sorted(queue.left_out.items())
+                       if rels and what in UNSETTLED)
 
     def left(self) -> int:
         if self.queue is None or self.workspace is None:

@@ -252,3 +252,41 @@ def test_a_failed_build_keeps_what_came_and_settles_the_cursor(dataset):
     q.fail("OSError: the disk went away")
     assert len(q) == 3 and q.complete and q.failed == "OSError: the disk went away"
     assert q.cursor == dataset.images[2].rel            # the followed item never came
+
+
+def test_an_item_inserted_after_the_build_takes_its_place_in_dataset_order(dataset):
+    items = all_items(dataset)
+    queue = Queue(ImageFilter())
+    queue.extend([items[0], items[3]])
+    queue.go_to(items[3].key)
+    assert queue.insert(items[1]) == 1 and queue.insert(items[1]) is None
+    assert [it.key for it in queue.items] == [items[0].key, items[1].key, items[3].key]
+    assert queue.cursor == items[3].key and queue.index_of(items[3].key) == 2
+
+
+def test_an_item_inserted_into_an_empty_queue_takes_the_cursor(dataset):
+    queue = Queue(ImageFilter())
+    queue.insert(all_items(dataset)[2])
+    assert queue.cursor == all_items(dataset)[2].key
+
+
+def test_late_joins_into_a_long_queue_stay_quick():
+    """A pass fills a model queue one image at a time, on the GUI thread: each join must
+    not walk the whole queue."""
+    import time
+    from pathlib import Path
+
+    from deeplabeling.core.dataset import ImageEntry
+
+    def item(order):
+        rel = f"img/{order:06d}.jpg"
+        return QueueItem(rel, ImageEntry(Path("/x") / rel, Path("/x") / f"{order:06d}.txt", "train", rel, order))
+
+    queue = Queue(ImageFilter())
+    queue.extend(item(2 * k) for k in range(45_000))
+    start = time.perf_counter()
+    for k in range(1_000):
+        queue.insert(item(2 * k * 45 + 1))                   # spread through the queue
+    assert time.perf_counter() - start < 1.0
+    assert [it.entry.order for it in queue.items] == sorted(it.entry.order for it in queue.items)
+    assert all(queue.index_of(it.key) == i for i, it in enumerate(queue.items))

@@ -446,3 +446,17 @@ def test_the_predictions_layer_can_be_hidden(canvas):
     canvas.set_predictions([GREEN_PRED])
     canvas.set_layers(labels=True, captions=True, predictions=False)
     assert not any(map(is_green, near(canvas, 100, 25))) and canvas.prediction_caption_items() == []
+
+
+def test_an_emphasised_prediction_is_drawn_thicker(canvas):
+    def thickness(view):
+        canvas.set_image(grey_image())
+        canvas.set_boxes([], predictions=[view])
+        image = shot(canvas)
+        x = canvas.mapFromScene(QPointF(120, 25)).x()
+        y0 = canvas.mapFromScene(QPointF(120, 25)).y()
+        return sum(QColor(image.pixel(x, y)).green() > 150 for y in range(y0 - 6, y0 + 7))
+
+    plain = thickness(GREEN_PRED)
+    thick = thickness(PredictionView(0, GREEN_PRED.rect, "#00ff00", "car 0.90", False, emphasised=True))
+    assert thick > plain >= 1

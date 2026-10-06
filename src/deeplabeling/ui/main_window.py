@@ -12,6 +12,8 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QVBoxLayout, QWidget
 
+from ..core.assist import shown_predictions
+from ..core.queue import Seen
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views, prediction_views
 from .canvas import Canvas
@@ -114,6 +116,8 @@ class MainWindow(QMainWindow):
         session.standing.connect(lambda key, text: self.notices.add("warning", text, key=key))
         session.status.connect(lambda text: self.statusBar().showMessage(text, 4000))
         session.model.changed.connect(self._predictions_changed)
+        session.model.changed.connect(self._queue_state_changed)
+        session.queueDone.connect(self._queue_state_changed)
         session.model.ready.connect(self._image_predicted)
         self.canvas.predictionPicked.connect(self.editing.accept_prediction)
         self._restore_layout()
@@ -137,8 +141,15 @@ class MainWindow(QMainWindow):
             self.canvas.set_image(None, "No dataset is open: click the dataset chip to open one.")
         elif item is None:
             self._shown = None
-            building = session.queue is not None and not session.queue.complete
-            self.canvas.set_image(None, "Building the queue…" if building else "No images in this queue.")
+            queue = session.queue
+            if queue is not None and queue.waiting:
+                message = ("Waiting for the model…" if session.model.state == "loading"
+                           else "This queue needs a model: load one.")
+            elif queue is not None and not queue.complete:
+                message = "Building the queue…"
+            else:
+                message = "No images in this queue."
+            self.canvas.set_image(None, message)
         else:
             path = item.entry.path
             image, why = session.images.get(path), session.images.error(path)
@@ -163,21 +174,43 @@ class MainWindow(QMainWindow):
             return
         ws = session.workspace
         labels = session.labels(item.entry)
-        highlight = session.queue.source.highlight(labels, ws.dataset)
+        highlight = session.queue.source.highlight(labels, ws.dataset, self._seen(item))
         self.editing.show(labels)
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels),
                               predictions=self._prediction_views(item))
 
+    def _seen(self, item) -> Seen:
+        """What the queue's conditions highlight from besides the labels."""
+        model = self.session.model
+        return Seen(size=self.canvas.image_size, predictions=model.predictions(item.entry),
+                    class_map=model.class_map)
+
     def _prediction_views(self, item):
         """The predictions for the item on screen, as the canvas draws them; Editing keeps
-        the same list, so what is accepted is what is drawn."""
-        ws, model = self.session.workspace, self.session.model
-        shown = model.shown(item.entry)
+        the same list, so what is accepted is what is drawn. Those the queue matched are
+        emphasised, and drawn even below the display threshold: they are what it found."""
+        session, ws, model = self.session, self.session.workspace, self.session.model
+        shown, seen = model.shown(item.entry), self._seen(item)
+        marked: list = []
+        if session.queue is not None and seen.predictions is not None:
+            indices = session.queue.source.highlight_predictions(session.labels(item.entry), ws.dataset, seen)
+            marked = [seen.predictions[k] for k in sorted(indices)]
+        if marked:
+            shown = list(shown or [])
+            drawn = [s.pred for s in shown]
+            extras = [p for p in marked if p not in drawn]
+            if extras:
+                # Judged as everything the canvas draws is: missing only if no label covers it
+                # and it speaks for its place, so A never stacks it on a label.
+                judged = {s.pred: s for s in shown_predictions(drawn + extras, session.labels(item.entry),
+                                                                model.class_map, ws.dataset, 0.0)}
+                shown += [judged[p] for p in extras]
+        emphasised = frozenset(i for i, s in enumerate(shown or []) if s.pred in marked)
         self.editing.show_predictions(item.entry.path, shown)
         return prediction_views(shown or [], ws.dataset, self.canvas.image_size,
-                                ws.root_settings.get(CLASS_COLORS), model.names)
+                                ws.root_settings.get(CLASS_COLORS), model.names, emphasised)
 
     def _predictions_changed(self) -> None:
         """The model, its threshold or its class map changed: redraw the predictions alone."""
@@ -185,6 +218,11 @@ class MainWindow(QMainWindow):
         if item is not None and self.canvas.image_size is not None and self._shown == item.entry.path:
             self.canvas.set_predictions(self._prediction_views(item))
         self._update_status()
+
+    def _queue_state_changed(self) -> None:
+        """With nothing on screen, the canvas says why: waiting, building, or empty."""
+        if self.session.current() is None:
+            self.show_current()
 
     def _image_predicted(self, path) -> None:
         item = self.session.current()
@@ -333,7 +371,7 @@ class MainWindow(QMainWindow):
         if self.session.queue is None:
             return
         current = self.session.queue.source
-        chosen = self.prompter.edit_queue(self.session.workspace.dataset, current)
+        chosen = self.prompter.edit_queue(self.session.workspace.dataset, current, self.session.model.conf)
         if chosen is not None:                      # the same filter again is a refresh
             self.session.set_queue(chosen)
 

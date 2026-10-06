@@ -433,7 +433,10 @@ class ModelSession(QObject):
         queue = session.queue
         if self.state != "ready" or ws is None or queue is None or not queue.complete or self.passing:
             return
-        items = [(item.entry.rel, item.entry.path) for item in queue.items]
+        # A model queue also needs the images it left out as not inferred: inferred, they
+        # can join it (docs/design/2026-10-06-filters.md#building-and-keeping-current).
+        waiting = queue.left_out.get("not inferred", set())
+        items = [(e.rel, e.path) for e in ws.dataset.images if e.rel in queue or e.rel in waiting]
         self.passing, self.pass_walked, self.pass_total = True, 0, len(items)
         self._worker.start_pass(ws.predictions, items)
         self.changed.emit()
@@ -443,11 +446,13 @@ class ModelSession(QObject):
             self._worker.cancel_pass()
 
     def inferred_count(self) -> tuple[int, int] | None:
-        """How many of the queue's images the store has a row for, of how many."""
+        """How many of the queue's images the store has a row for, of how many. A model
+        queue's images left out as not inferred count too: a pass is what they wait for."""
         queue = self.session.queue
         if queue is None:
             return None
-        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items)
+        waiting = len(queue.left_out.get("not inferred", ()))
+        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items) + waiting
 
     def _pass_progress(self, walked: int, total: int) -> None:
         self.pass_walked, self.pass_total = walked, total

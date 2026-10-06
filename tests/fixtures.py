@@ -266,8 +266,8 @@ class FakePrompter:
         self.asked.append(("folder", title))
         return str(self.folders.pop(0)) if self.folders else None
 
-    def edit_queue(self, dataset, current):
-        self.asked.append(("queue", current))
+    def edit_queue(self, dataset, current, conf=None):
+        self.asked.append(("queue", current, conf))
         return self.queue
 
     def ask_text(self, title, label):
