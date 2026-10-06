@@ -8,7 +8,7 @@ batches. A Queue holds them on the GUI thread with one cursor, an identity key.
 from __future__ import annotations
 
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import ClassVar
@@ -55,6 +55,9 @@ class BuildContext:
     #: Images a condition could not settle ("could not be sized", "not inferred"), counted
     #: for the queue chip. One build or recheck owns it; it is never shared across threads.
     unsettled: Counter = field(default_factory=Counter)
+    #: The same, by image: which ones, so an image left out as not inferred can join the
+    #: queue when its predictions arrive.
+    left_out: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
 
     def labels(self, entry: ImageEntry) -> ImageLabels:
         return self.store.get(entry.path)
@@ -72,8 +75,9 @@ class BuildContext:
             return None
         return self.model.store.get(self.model.key, entry.rel, stamp)
 
-    def count(self, what: str) -> None:
+    def count(self, what: str, entry: ImageEntry) -> None:
         self.unsettled[what] += 1
+        self.left_out[what].add(entry.rel)
 
 
 @dataclass(frozen=True)
@@ -261,7 +265,7 @@ class Boxes(Condition):
         if self.unit == "px":
             size = ctx.size(entry)
             if size is None:
-                ctx.count("could not be sized")
+                ctx.count("could not be sized", entry)
                 return False
         return bool(self._matching(ctx.labels(entry), ctx.dataset, size))
 
@@ -362,11 +366,11 @@ class ModelDisagrees(Condition):
 
     def test(self, entry, ctx):
         if ctx.model is None:
-            ctx.count("no model")
+            ctx.count("no model", entry)
             return False
         preds = ctx.predictions(entry)
         if preds is None:
-            ctx.count("not inferred")
+            ctx.count("not inferred", entry)
             return False
         labels, cmap = ctx.labels(entry), ctx.model.class_map
         return bool(self._unseen(labels, preds, cmap, ctx.dataset)
@@ -498,6 +502,8 @@ class Queue:
         self.stale: set[str] = set()
         self.complete = False
         self.failed: str | None = None      #: why the build stopped early, if it failed
+        #: What the build could not settle, by image ("not inferred", "could not be sized").
+        self.left_out: dict[str, set[str]] = {}
         self._pos: dict[str, int] = {}
         self._follow = follow       #: the item the cursor was on before a rebuild
         self._moved = False

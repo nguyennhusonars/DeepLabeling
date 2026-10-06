@@ -138,3 +138,8 @@ def test_a_size_drawn_exactly_at_a_range_end_is_inside_it_after_six_decimals(ctx
     ds.lbl("camA/0003").write_text("1 0.500000 0.500000 0.100000 0.208333\n")
     assert "camA/images/0003.jpg" in keys(Boxes(("car",), h=(10, None), unit="px"), ctx)
     assert "camA/images/0003.jpg" in keys(Boxes(("car",), h=(None, 9.99999), unit="px"), ctx)
+
+
+def test_a_build_names_the_images_it_could_not_settle(ctx):
+    keys(Boxes((), w=(0, None), unit="px"), ctx)
+    assert ctx.left_out == {"could not be sized": {"bad/images/corrupt.jpg"}}

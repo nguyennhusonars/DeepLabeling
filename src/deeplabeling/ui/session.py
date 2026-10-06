@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..core.dataset import DatasetError, ImageEntry
 from ..core.edits import CreateEmpty, Edit, Intent, Refused
-from ..core.queue import BuildContext, ImageFilter, Queue, QueueItem
+from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem
 from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
@@ -34,6 +34,13 @@ from .workers import Jobs
 OUT_OF_RANGE = "out-of-range"
 #: How often the image on screen has its label file re-checked for outside changes.
 WATCH_MS = 1500
+
+
+#: What a build could not settle, as the queue chip says it.
+UNSETTLED = {
+    "could not be sized": lambda n: f"{n:,} image could not be sized" if n == 1 else f"{n:,} images could not be sized",
+    "not inferred": lambda n: f"{n:,} not inferred",
+}
 
 
 class Prompter(Protocol):
@@ -207,17 +214,19 @@ class Session(QObject):
         self._build = self.io.start(
             lambda emit, cancelled: source.build(ctx, emit, cancelled),
             batch=lambda items: self._grew(queue, items),
-            done=lambda finished: self._built(queue, finished),
+            done=lambda finished: self._built(queue, finished, left_out=ctx.left_out),
             failed=lambda why: self._build_failed(queue, why))
 
     def context(self) -> BuildContext:
         """The inputs of a build or a recheck. The review marks are snapshotted once and
         reused until they change: an import underneath the app reports thousands of
         changed files, and a fresh snapshot each time froze the GUI for seconds."""
-        ws = self._require()
+        ws, model = self._require(), self.model
         if self._keys is None:
             self._keys = ws.review.keys()
-        return BuildContext(ws.dataset, ws.store, self._keys)
+        snapshot = (ModelSnapshot(model.key, ws.predictions, model.class_map)
+                    if model.state == "ready" and model.class_map is not None else None)
+        return BuildContext(ws.dataset, ws.store, self._keys, sizes=ws.sizes, model=snapshot)
 
     def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
         if queue is not self.queue:
@@ -234,9 +243,11 @@ class Session(QObject):
         self.notice.emit("error", f"building the queue failed: {why}", None)
         self._built(queue, True, failed=why)
 
-    def _built(self, queue: Queue, finished: bool, failed: str | None = None) -> None:
+    def _built(self, queue: Queue, finished: bool, failed: str | None = None, left_out=None) -> None:
         if queue is not self.queue or not finished:
             return
+        if left_out:
+            queue.left_out = {what: set(rels) for what, rels in left_out.items()}
         before = queue.cursor
         if failed is None:
             queue.finish()
@@ -313,9 +324,14 @@ class Session(QObject):
     def progress_text(self) -> str:
         """How the queue's build stands, for the chip and the panel: "" once built."""
         queue = self.queue
-        if queue is None or (queue.complete and queue.failed is None):
+        if queue is None:
             return ""
-        return " · build failed" if queue.failed is not None else " · building…"
+        if queue.failed is not None:
+            return " · build failed"
+        if not queue.complete:
+            return " · building…"
+        return "".join(f" · {UNSETTLED[what](len(rels))}" for what, rels in sorted(queue.left_out.items())
+                       if rels and what in UNSETTLED)
 
     def left(self) -> int:
         if self.queue is None or self.workspace is None:
