@@ -24,6 +24,7 @@ from ..core.taxonomy import count_out_of_range
 from ..core.workspace import CLASS_COLORS, CLASS_HOTKEYS, QUEUE_CURSOR, QUEUE_SOURCE, OpenCancelled, Workspace
 from .classes import assign_classes
 from .images import THUMB_BYTES, ImageCache, decode_thumb
+from .model import ModelSession
 from .settings_ui import Saver, global_settings, remember_source
 from .workers import Jobs
 
@@ -81,6 +82,7 @@ class Session(QObject):
         self._watch.setInterval(WATCH_MS)
         self._watch.timeout.connect(self.check_current)
         self._watch.start()
+        self.model = ModelSession(self, self)
 
     # -- opening and closing -----------------------------------------------
 
@@ -137,6 +139,7 @@ class Session(QObject):
         if ws is None:
             return
         self.io.cancel_all()
+        self.model.release()                        # before the store it writes to closes
         self.images.clear()
         self.thumbs.clear()
         self.io.wait(2000)

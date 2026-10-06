@@ -16,7 +16,7 @@ def shown(qtbot, widget, width=900):
 
 
 def chips(bar):
-    return (bar.dataset, bar.queue, bar.layers, bar.reviewed)
+    return (bar.dataset, bar.queue, bar.model, bar.layers, bar.reviewed)
 
 
 def test_the_chips_say_what_is_in_force(qtbot, session):
@@ -25,6 +25,7 @@ def test_the_chips_say_what_is_in_force(qtbot, session):
     assert bar.queue.full_text == "Queue: all images · 15 · 15 left"
     assert bar.reviewed.full_text == "Reviewed 0 / 15"
     assert bar.layers.full_text == "Layers: none"
+    assert bar.model.full_text == "Model: none · load one"
     session.done_and_next()
     assert bar.reviewed.full_text == "Reviewed 1 / 15"
     assert bar.queue.full_text == "Queue: all images · 15 · 14 left"

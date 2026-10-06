@@ -50,23 +50,36 @@ class Chip(QToolButton):
         self.setText(self.fontMetrics().elidedText(self._full, Qt.ElideRight, room))
 
 
+def model_text(model) -> str:
+    if model.state == "none":
+        return "Model: none · load one"
+    name = model.path.name
+    if model.state == "loading":
+        return f"Model: {name} · loading…"
+    if model.state == "failed":
+        return f"Model: {name} · not loaded"
+    return f"Model: {name} · {len(model.names)} classes · conf {model.conf:.2f}"
+
+
 class StateBar(QWidget):
     def __init__(self, session: Session, parent=None):
         super().__init__(parent)
         self._session = session
         self.dataset, self.queue, self.layers, self.reviewed = Chip(), Chip(), Chip(), Chip()
-        self.dataset.setPopupMode(QToolButton.InstantPopup)
-        self.dataset.setMenu(QMenu(self.dataset))
-        self.layers.setPopupMode(QToolButton.InstantPopup)
-        self.layers.setMenu(QMenu(self.layers))
+        self.model = Chip()
+        for chip in (self.dataset, self.model, self.layers):
+            chip.setPopupMode(QToolButton.InstantPopup)
+            chip.setMenu(QMenu(chip))
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(6)
-        for chip, stretch in ((self.dataset, 3), (self.queue, 4), (self.layers, 1), (self.reviewed, 1)):
+        for chip, stretch in ((self.dataset, 3), (self.queue, 4), (self.model, 3), (self.layers, 1),
+                              (self.reviewed, 1)):
             layout.addWidget(chip, stretch)
         for signal in (session.opened, session.closed, session.queueReset,
                        session.queueDone, session.reviewChanged):
             signal.connect(self.refresh)
+        session.model.changed.connect(self.refresh)
         # A building queue grows every 0.2 s, and each refresh counts what is left across
         # the whole queue; while it builds, refresh at most every REFRESH_MS.
         self._soon = QTimer(self)
@@ -100,5 +113,6 @@ class StateBar(QWidget):
                                          f"{session.left():,} left{session.progress_text()}")
             marked, total = session.reviewed_counts()
             self.reviewed.set_full_text(f"Reviewed {marked:,} / {total:,}")
+        self.model.set_full_text(model_text(session.model))
         shown = [a.text().lower() for a in self.layers.menu().actions() if a.isChecked()]
         self.layers.set_full_text("Layers: " + (", ".join(shown) if shown else "none"))

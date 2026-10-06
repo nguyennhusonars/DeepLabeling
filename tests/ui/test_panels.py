@@ -131,3 +131,37 @@ def test_clicking_a_class_with_nothing_selected_makes_it_the_active_class(qtbot,
                      pos=inspector.classes.visualItemRect(row).center())
     assert inspector.classes.item(2).text() == "3   bus_m   0   ✎"
     assert inspector.classes.item(0).text() == "1   person   1"
+
+
+def test_the_inspector_says_what_the_model_found(qtbot, inspector, session, tmp_path):
+    import threading
+
+    from deeplabeling.core.inference import Prediction
+    from fixtures import FakePredictor
+
+    assert inspector.predictions_label.text() == "no model"
+    loading, predicting = threading.Event(), threading.Event()
+    found = {"0001.jpg": [Prediction(0, (0.8, 0.8, 0.1, 0.1), 0.9),           # car, missing
+                          Prediction(0, (0.5, 0.5, 0.2, 0.3), 0.85),          # on the person
+                          Prediction(2, (0.1, 0.9, 0.1, 0.1), 0.7)]}          # human: unmapped
+    session.model.factory = lambda p: (loading.wait(5), FakePredictor(p, found=found, gate=predicting))[1]
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    session.model.load(weights)
+    assert inspector.predictions_label.text() == "loading"
+    loading.set()
+    qtbot.waitUntil(lambda: inspector.predictions_label.text() == "not inferred yet")
+    predicting.set()
+    qtbot.waitUntil(lambda: inspector.predictions_label.text() == "3 (1 missing)")
+    session.go_to("camA/images/0002.jpg")
+    qtbot.waitUntil(lambda: inspector.predictions_label.text() == "none found")
+
+
+def test_the_inspector_says_when_the_model_could_not_predict(qtbot, inspector, session, tmp_path):
+    from fixtures import FakePredictor
+
+    session.model.factory = lambda p: FakePredictor(p, fail={"0001.jpg"})
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    session.model.load(weights)
+    qtbot.waitUntil(lambda: inspector.predictions_label.text() == "failed: 0001.jpg: CUDA out of memory")

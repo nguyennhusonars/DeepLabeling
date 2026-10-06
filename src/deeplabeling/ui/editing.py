@@ -14,6 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
 
+from ..core.assist import Shown, accept_image, accept_one
 from ..core.edits import Intent
 from ..core.geometry import px_to_norm
 from ..core.store import ImageLabels
@@ -38,6 +39,7 @@ class Editing(QObject):
         self.session, self.canvas, self.prompter = session, canvas, prompter
         self.selection = Selection(self)
         self._shown: ImageLabels | None = None      # what the canvas draws; its indices mean these
+        self._predicted: tuple[Path, list[Shown] | None] | None = None    # the predictions it draws
         self._applying: tuple | None = None         # (image, what to select) while an edit applies
         self._copied: tuple[str, tuple[str, ...]] | None = None    # (text, the class names it used)
         canvas.drawn.connect(self.draw)
@@ -58,6 +60,12 @@ class Editing(QObject):
         redrawn, so an index the canvas reports means a line of THIS snapshot: it is
         turned into a box identity here, and the core locates that box in the file."""
         self._shown = labels
+
+    def show_predictions(self, image: Path, shown: list[Shown] | None) -> None:
+        """The predictions the canvas now draws for `image`, None when the model has not
+        looked at it: a double-clicked index means one of these, and `A` adds what of
+        these is drawn solid."""
+        self._predicted = (image, shown)
 
     def _current(self) -> tuple[Path, ImageLabels] | None:
         """The current image and its labels, while that image is on the canvas with its
@@ -182,6 +190,57 @@ class Editing(QObject):
             image, labels = current
             self._apply(actions.resize(image, shown, index, self._norm(rect)),
                         select=self.selection.indices(labels))      # the one box with handles
+
+    # -- accepting predictions --------------------------------------------------------------
+
+    def _drawn_predictions(self) -> tuple[Path, list[Shown]] | None:
+        """The predictions drawn for the image being edited, or None, said why."""
+        current, model = self._current(), self.session.model
+        if not current:
+            return None
+        if not self.canvas.show_predictions:
+            self.session.status.emit("the predictions are hidden: press P to show them")
+            return None
+        if model.state != "ready":
+            self.session.status.emit("the model is still loading" if model.state == "loading"
+                                     else "no model is loaded")
+            return None
+        if self._predicted is None or self._predicted[0] != current[0] or self._predicted[1] is None:
+            self.session.status.emit("the model has not looked at this image yet")
+            return None
+        return self._predicted
+
+    def accept_missing(self) -> None:
+        """A: every missing prediction drawn on this image, as one edit."""
+        drawn = self._drawn_predictions()
+        if drawn is None:
+            return
+        intent, unmapped = accept_image(*drawn)
+        n = len(intent.ops) if intent is not None else 0
+        if intent is not None and not self._apply(intent, select=_last(n)):
+            return
+        said = (f"accepted {n} prediction" if n == 1 else f"accepted {n} predictions") if n else \
+            "no missing predictions to accept"
+        if unmapped:
+            said += (f"; 1 of a class the map leaves out was skipped" if unmapped == 1 else
+                     f"; {unmapped} of classes the map leaves out were skipped")
+        self.session.status.emit(said)
+
+    def accept_prediction(self, index: int) -> None:
+        """A double-clicked prediction, covered by a label or not."""
+        drawn = self._drawn_predictions()
+        if drawn is None or not 0 <= index < len(drawn[1]):
+            return
+        image, shown = drawn
+        chosen = shown[index]
+        intent = accept_one(image, chosen)
+        if intent is None:
+            names = self.session.model.names
+            name = names[chosen.pred.cls] if 0 <= chosen.pred.cls < len(names) else str(chosen.pred.cls)
+            self.session.status.emit(f"“{name}” is not mapped to a class of this dataset: "
+                                     "map it in the class map")
+            return
+        self._apply(intent, select=_last(1))
 
     # -- the editing keys -----------------------------------------------------------------
 

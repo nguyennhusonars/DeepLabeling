@@ -90,7 +90,10 @@ def load_class_map(settings: Settings, model_names: Sequence[str],
                    chosen=tuple(use))
 
 
-def save_class_map(settings: Settings, cmap: ClassMap) -> None:
-    """Save the user's choices, keeping those made on another yaml of the root."""
-    maps = settings.get(CLASS_MAPS)
-    settings.set(CLASS_MAPS, {**maps, cmap.key: {**maps.get(cmap.key, {}), **cmap.choices()}})
+def save_class_map(settings: Settings, cmap: ClassMap, dataset_names: Sequence[str]) -> None:
+    """Save the user's choices. A stored choice naming a class this yaml lacks was made on
+    another yaml of the root and is kept; one this yaml could apply but the map no longer
+    holds was cleared here (seeded by name again) and goes."""
+    maps, here = settings.get(CLASS_MAPS), set(dataset_names)
+    elsewhere = {n: t for n, t in maps.get(cmap.key, {}).items() if t is not None and t not in here}
+    settings.set(CLASS_MAPS, {**maps, cmap.key: {**elsewhere, **cmap.choices()}})

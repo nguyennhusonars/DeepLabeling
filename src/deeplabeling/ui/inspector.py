@@ -42,6 +42,7 @@ class Inspector(QWidget):
         self._labels = None                         # what the box list shows; its rows mean these
         self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label = (
             QLabel() for _ in range(5))
+        self.predictions_label = QLabel()
         for label in self._fields():
             label.setWordWrap(True)
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -51,6 +52,7 @@ class Inspector(QWidget):
         form.addRow("Labels", self.state_label)
         form.addRow("Unparsable lines", self.unparsed_label)
         form.addRow("Reviewed", self.reviewed_label)
+        form.addRow("Predictions", self.predictions_label)
         self.classes = QListWidget()
         self.boxes = QListWidget()
         for widget in (self.classes, self.boxes):
@@ -73,11 +75,15 @@ class Inspector(QWidget):
         self.boxes.itemSelectionChanged.connect(self._boxes_clicked)
         editing.selection.changed.connect(self._show_selection)
         editing.activeChanged.connect(self.refresh)
+        session.model.changed.connect(self.refresh)
+        session.model.ready.connect(self._image_event)
+        session.model.failed.connect(lambda path, why: self._image_event(path))
         self.refresh()
 
     def _fields(self) -> tuple[QLabel, ...]:
         # *_label names: a field called `size` would shadow QWidget.size()
-        return (self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label)
+        return (self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label,
+                self.predictions_label)
 
     def _labels_event(self, images) -> None:
         item = self._session.current()
@@ -140,6 +146,7 @@ class Inspector(QWidget):
         self.unparsed_label.setText(str(labels.unparsed))
         marked = ws.review.marked_at(entry.rel)
         self.reviewed_label.setText(time.strftime("%Y-%m-%d %H:%M", time.localtime(marked)) if marked else "not yet")
+        self.predictions_label.setText(self._predictions_text(session.model, entry))
         colors = ws.root_settings.get(CLASS_COLORS)
         counts = Counter(line.cls_id for _, line in labels.boxes)
         active = self._editing.active_class()
@@ -155,6 +162,23 @@ class Inspector(QWidget):
                 row = QListWidgetItem(swatch(view.color), f"{view.caption}   {round(x2 - x1)} × {round(y2 - y1)} px")
                 row.setData(Qt.UserRole, view.index)
                 self.boxes.addItem(row)
+
+    @staticmethod
+    def _predictions_text(model, entry) -> str:
+        if model.state == "loading":
+            return "loading"
+        if model.state != "ready":
+            return "no model"
+        why = model.failure(entry)
+        if why is not None:
+            return f"failed: {why}"
+        shown = model.shown(entry)
+        if shown is None:
+            return "not inferred yet"
+        if not shown:
+            return "none found"
+        missing = sum(1 for s in shown if s.missing and s.cls is not None)     # what A would add
+        return f"{len(shown)} ({missing} missing)"
 
     @staticmethod
     def _state_text(labels) -> str:

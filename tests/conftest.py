@@ -6,6 +6,7 @@ pytest` when a test needs a real X server.
 """
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,13 @@ def state_dir(tmp_path_factory, monkeypatch):
     folder = tmp_path_factory.mktemp("state")
     monkeypatch.setenv("DEEPLABELING_STATE_DIR", str(folder))
     return folder
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model(monkeypatch):
+    """No test loads a real model: `import ultralytics` fails, so a weights file opened
+    without a fake predictor is a model that does not load (CLAUDE.md landmine 8)."""
+    monkeypatch.setitem(sys.modules, "ultralytics", None)
 
 
 @pytest.fixture

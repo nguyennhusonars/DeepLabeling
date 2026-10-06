@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QGraphicsView,
 )
 
-from .boxes import BoxView
+from .boxes import BoxView, PredictionView
 from .classes import text_color
 
 BACKGROUND = "#2b2b2b"
@@ -29,6 +29,7 @@ DRAG_PX = 3             #: a press that moves less than this far is a click (the
 HANDLE_PX = 8           #: a handle's size on screen, the same at every zoom
 GRAB_PX = 6             #: how near a handle's centre a press takes the handle
 SELECTED_ALPHA = 70     #: a selected box is filled with its colour at this opacity
+FAINT_ALPHA = 90        #: a prediction an accept would not add is drawn at this opacity
 CROSSHAIR = "#ffffff"
 #: the eight handles of a box, as fractions of its width and height
 HANDLES = ((0, 0), (0.5, 0), (1, 0), (1, 0.5), (1, 1), (0.5, 1), (0, 1), (0, 0.5))
@@ -49,14 +50,17 @@ class CaptionItem(QGraphicsItem):
     """A caption on a solid plate, inside its box's top edge. It ignores the view's
     zoom, so it stays readable; the plate keeps it legible on any image."""
 
-    def __init__(self, text: str, color: str):
+    def __init__(self, text: str, color: str, above: bool = False):
         super().__init__()
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations)
         self.text, self.color = text, QColor(color)
         self._font = QFont()
         self._font.setPointSize(9)
         metrics = QFontMetricsF(self._font)
-        self._rect = QRectF(0, 0, metrics.horizontalAdvance(text) + 6, metrics.height() + 2)
+        height = metrics.height() + 2
+        # A label's plate hangs inside its box's top edge, a prediction's sits above its
+        # box: the two never cover each other (docs/knowledge/legacy-defects.md).
+        self._rect = QRectF(0, -height if above else 0, metrics.horizontalAdvance(text) + 6, height)
 
     def boundingRect(self) -> QRectF:
         return self._rect
@@ -73,6 +77,7 @@ class Canvas(QGraphicsView):
     picked = Signal(list)               #: the line indices to select now
     moved = Signal(float, float)        #: the selected boxes' shift, in image pixels
     resized = Signal(int, object)       #: a line index and its new (x1, y1, x2, y2)
+    predictionPicked = Signal(int)      #: a prediction was double-clicked: its index
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -93,6 +98,9 @@ class Canvas(QGraphicsView):
         self.scene().addItem(self._message)
         self._items: list[QGraphicsItem] = []
         self._views: list[BoxView] = []
+        self._predictions: list[PredictionView] = []
+        self._pred_items: list[QGraphicsItem] = []
+        self.show_predictions = True
         self._size: tuple[int, int] | None = None
         self.show_labels = True
         self.show_captions = True
@@ -120,7 +128,7 @@ class Canvas(QGraphicsView):
 
     def set_image(self, image: QImage | None, message: str = "") -> None:
         """Show an image, fitted to the view; or no image and a message saying why."""
-        self._views, self._selected = [], frozenset()
+        self._views, self._selected, self._predictions = [], frozenset(), []
         self._clear()
         if image is None:
             self._pixmap.setPixmap(QPixmap())
@@ -138,17 +146,29 @@ class Canvas(QGraphicsView):
         self.scene().setSceneRect(QRectF(0, 0, image.width(), image.height()))
         self.fit()
 
-    def set_boxes(self, views: list[BoxView], selected=()) -> None:
+    def set_boxes(self, views: list[BoxView], selected=(), predictions: list[PredictionView] | None = None) -> None:
+        """The labels, and the predictions when given (None keeps them): drawn once."""
         self._views, self._selected = list(views), frozenset(selected)
+        if predictions is not None:
+            self._predictions = list(predictions)
         self._redraw()
 
     def set_selected(self, indices) -> None:
         self._selected = frozenset(indices)
         self._redraw()
 
-    def set_layers(self, *, labels: bool, captions: bool) -> None:
+    def set_layers(self, *, labels: bool, captions: bool, predictions: bool | None = None) -> None:
         self.show_labels, self.show_captions = labels, captions
+        if predictions is not None:
+            self.show_predictions = predictions
         self._redraw()
+
+    def set_predictions(self, views: list[PredictionView]) -> None:
+        self._predictions = list(views)
+        self._redraw()
+
+    def prediction_caption_items(self) -> list[CaptionItem]:
+        return [it for it in self._pred_items if isinstance(it, CaptionItem)]
 
     def set_draw_color(self, color: str) -> None:
         """The colour of the box being drawn: the active class's."""
@@ -166,16 +186,41 @@ class Canvas(QGraphicsView):
 
     def _clear(self) -> None:
         self._drag = None                           # whatever it previewed is gone
-        for item in self._items + ([self._preview] if self._preview else []):
+        for item in self._items + self._pred_items + ([self._preview] if self._preview else []):
             self.scene().removeItem(item)
         self._items, self._box_items, self._handles, self._preview = [], {}, [], None
+        self._pred_items = []
 
     def _redraw(self) -> None:
         self._clear()
-        if not self.show_labels or self._size is None:
+        if self._size is None:
+            return
+        if self.show_predictions:                   # shown with the labels hidden, too
+            for view in self._predictions:
+                self._draw_prediction(view)
+        if not self.show_labels:
             return
         for view in self._views:
             self._draw(view)
+
+    def _draw_prediction(self, view: PredictionView) -> None:
+        color = QColor(view.color)
+        if view.faint:
+            color.setAlpha(FAINT_ALPHA)
+        pen = QPen(color)
+        pen.setCosmetic(True)
+        pen.setWidth(2)
+        pen.setStyle(Qt.DashLine)
+        x1, y1, x2, y2 = view.rect
+        shape = self.scene().addRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)), pen)
+        shape.setZValue(0.5)                        # under the labels
+        self._pred_items.append(shape)
+        if self.show_captions and not view.faint:   # a faint one's label names it already
+            caption = CaptionItem(view.caption, view.color, above=True)
+            caption.setPos(x1, y1)
+            caption.setZValue(0.6)
+            self.scene().addItem(caption)
+            self._pred_items.append(caption)
 
     def _draw(self, view: BoxView) -> None:
         pen = QPen(QColor(view.color))
@@ -388,6 +433,20 @@ class Canvas(QGraphicsView):
         super().resizeEvent(event)
         if self._fitted:
             self.fit()
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        """A double-click on a prediction accepts it: the smallest under the cursor."""
+        if (event.button() == Qt.LeftButton and self._size is not None and self.show_predictions
+                and self._predictions):
+            point = self.mapToScene(event.position().toPoint())
+            under = [v for v in self._predictions
+                     if v.rect[0] <= point.x() <= v.rect[2] and v.rect[1] <= point.y() <= v.rect[3]]
+            if under:
+                smallest = min(under, key=lambda v: (v.rect[2] - v.rect[0]) * (v.rect[3] - v.rect[1]))
+                self.predictionPicked.emit(smallest.index)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() in (Qt.MiddleButton, Qt.RightButton):

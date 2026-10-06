@@ -54,6 +54,7 @@ class PredictionStore:
         self._local = threading.local()
         self._all: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
+        self._closed = False
         try:
             try:
                 self._connection()
@@ -89,6 +90,8 @@ class PredictionStore:
     def get(self, model: str, img: str, stamp: Stamp, conf: float = FLOOR) -> list[Prediction] | None:
         """What `model` found on `img`, at or above `conf`: None when it never looked at
         this image as it is now, or not down to `conf`; [] when it found nothing."""
+        if self._closed:
+            return None
         row = self._connection().execute(
             "SELECT size, mtime_ns, floor, boxes FROM preds WHERE model = ? AND img = ?",
             (model, img)).fetchone()
@@ -101,7 +104,9 @@ class PredictionStore:
 
     def put_many(self, model: str, rows: Iterable[tuple[str, Stamp, Iterable[Prediction]]]) -> None:
         """Write rows in one transaction: a cancelled or crashed pass keeps every batch
-        it committed."""
+        it committed. After close() they are dropped: the dataset they were for is shut."""
+        if self._closed:
+            return
         conn = self._connection()
         with conn:
             conn.executemany(
@@ -111,6 +116,8 @@ class PredictionStore:
     def inferred(self, model: str) -> dict[str, Stamp]:
         """Every image `model` has a row for, with the stamp it was inferred at: what a
         pass reads to know what is left, without reading the boxes."""
+        if self._closed:
+            return {}
         rows = self._connection().execute(
             "SELECT img, size, mtime_ns FROM preds WHERE model = ?", (model,))
         return {img: (size, mtime_ns) for img, size, mtime_ns in rows}
@@ -123,4 +130,7 @@ class PredictionStore:
         self._local = threading.local()
 
     def close(self) -> None:
+        """Close every connection; afterwards the store answers nothing and writes nothing,
+        rather than opening a connection again for a thread that comes late."""
+        self._closed = True
         self._close_all()

@@ -48,6 +48,8 @@ class Predictor(Protocol):
 
     def predict(self, paths: Sequence[Path]) -> list[list[Prediction] | Failure]: ...
 
+    def close(self) -> None: ...
+
 
 def model_key(weights) -> str:
     """`name:size:mtime`: a file retrained in place gets a new key, so its old rows are
@@ -110,9 +112,23 @@ class UltralyticsPredictor:
         self._model, self._device = model, device
         self._decoder = ThreadPoolExecutor(DECODE_THREADS)
 
+    def close(self) -> None:
+        """Let go of the model, and its GPU memory, and of the decode threads."""
+        if self._model is None:
+            return
+        self._model = None
+        self._decoder.shutdown(wait=False, cancel_futures=True)
+        import sys
+
+        torch = sys.modules.get("torch")            # loaded with the model, if at all
+        if torch is not None and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def predict(self, paths: Sequence[Path]) -> list[list[Prediction] | Failure]:
         """One answer per path. An image that cannot be read fails alone; a batch the
         model fails on is retried image by image, so one bad image never fails the rest."""
+        if self._model is None:
+            raise ModelError("this model is closed")
         images = list(self._decoder.map(_read, paths))
         answers: list[list[Prediction] | Failure] = [
             Failure(f"{Path(p).name} could not be read as an image") if image is None else []

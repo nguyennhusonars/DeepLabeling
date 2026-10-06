@@ -166,7 +166,7 @@ def test_hiding_the_labels_clears_the_selection(qtbot, window, ds):
 def test_the_crosshair_is_a_layer_that_persists(qtbot, window, ds):
     window.actions["toggle_crosshair"].trigger()
     assert window.canvas.show_crosshair and window.session.settings.get(SHOW_CROSSHAIR) is True
-    assert window.state_bar.layers.full_text == "Layers: labels, captions, crosshair"
+    assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions, crosshair"
     window.close()
     again = start(qtbot, [str(ds.yaml)])
     assert again.canvas.show_crosshair

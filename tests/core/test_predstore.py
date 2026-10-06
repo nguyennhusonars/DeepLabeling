@@ -123,3 +123,15 @@ def test_a_store_that_is_locked_or_unwritable_is_not_set_aside(tmp_path, monkeyp
     with pytest.raises(OSError, match="database is locked"):
         PredictionStore(tmp_path / STORE_NAME)
     assert not list(tmp_path.glob(f"{STORE_NAME}.unreadable-*"))
+
+
+def test_a_closed_store_answers_nothing_and_drops_late_writes(tmp_path, image):
+    store = PredictionStore(tmp_path / STORE_NAME)
+    store.put(MODEL, "a.jpg", image_stamp(image), [CAR])
+    store.close()
+    store.put(MODEL, "b.jpg", (1, 2), [CAR])                # an inference thread, after the close
+    assert store.get(MODEL, "a.jpg", image_stamp(image)) is None and store.inferred(MODEL) == {}
+    assert store._all == []                                  # no connection was opened again
+    again = PredictionStore(tmp_path / STORE_NAME)
+    assert again.inferred(MODEL) == {"a.jpg": image_stamp(image)}
+    again.close()
