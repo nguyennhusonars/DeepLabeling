@@ -8,13 +8,17 @@ the yaml's class groups, and only a class the model could have seen can be "not 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
+from typing import ClassVar
 
 from .classmap import ClassMap
 from .dataset import Dataset
 from .disagree import checkable
 from .geometry import Box, iou
+from .edits import LineRef
 from .inference import FLOOR, Prediction
+from .queue import BuildContext, ImageFilter, QueueItem
 from .ranges import range_error
 from .store import ImageLabels
 
@@ -128,3 +132,80 @@ def judge(labels: ImageLabels, preds: list[Prediction], cmap: ClassMap, dataset:
                          if kept is not None else {})
                 found.append(Finding(kind="not an object", score=1 - near, **base, **model))
     return found
+
+
+@dataclass(frozen=True)
+class Findings:
+    """A queue of findings (docs/design/2026-10-06-find-bad.md#the-queue): the images its
+    scope selects, judged with the loaded model's rows, one item per finding, ordered by
+    kind and then score. Dismissed findings are left out; images never inferred are counted."""
+
+    scope: ImageFilter = field(default_factory=ImageFilter)
+    settings: FindSettings = field(default_factory=FindSettings)
+    needs_model: ClassVar[bool] = True
+
+    def items_for(self, entry, ctx: BuildContext) -> list[QueueItem]:
+        """The findings of one image, as queue items."""
+        if not self.scope.matches(entry, ctx):
+            return []
+        if ctx.model is None:
+            ctx.count("no model", entry)
+            return []
+        preds = ctx.predictions(entry)
+        if preds is None:
+            ctx.count("not inferred", entry)
+            return []
+        found = judge(ctx.labels(entry), preds, ctx.model.class_map, ctx.dataset, self.settings)
+        return [QueueItem(f"{entry.rel}#{f.line}#{f.kind}", entry,
+                          rank=(KINDS.index(f.kind), -f.score, entry.order, f.line),
+                          focus=LineRef(f.line, f.label_cls, f.label_box), finding=f)
+                for f in found if (entry.rel, f.text, f.kind) not in ctx.dismissed]
+
+    def build(self, ctx: BuildContext, emit, cancelled=lambda: False, *,
+              batch: int = 500, interval: float = 0.2, progress=None) -> bool:
+        """Scan, then stream the findings in their order. False when cancelled part-way.
+        `progress(scanned, total)` is told at most every `interval` seconds, and at the end."""
+        items, images, last = [], ctx.dataset.images, time.monotonic()
+        for n, entry in enumerate(images, 1):
+            if cancelled():
+                return False
+            items += self.items_for(entry, ctx)
+            if progress is not None and time.monotonic() - last >= interval:
+                progress(n, len(images))
+                last = time.monotonic()
+        if progress is not None:
+            progress(len(images), len(images))
+        items.sort(key=lambda item: item.sort_key)
+        for start in range(0, len(items), batch):
+            if cancelled():
+                return False
+            emit(items[start:start + batch])
+        return True
+
+    def holds(self, item: QueueItem, ctx: BuildContext) -> bool:
+        """Whether a finding is still there: its image judged again finds it."""
+        return any(it.key == item.key for it in self.items_for(item.entry, ctx))
+
+    def matches(self, entry, ctx: BuildContext) -> bool:
+        return bool(self.items_for(entry, ctx))
+
+    def highlight(self, labels, dataset, seen=None) -> frozenset[int]:
+        return frozenset()          # a finding is shown by its focus, not by a highlight
+
+    def highlight_predictions(self, labels, dataset, seen=None) -> frozenset[int]:
+        return frozenset()
+
+    def describe(self, dataset: Dataset) -> str:
+        kinds = ", ".join(self.settings.kinds) or "nothing"
+        text = f"findings: {kinds} (conf ≥ {self.settings.floor:.2f})"
+        return text if self.scope == ImageFilter() else f"{text} of {self.scope.describe(dataset)}"
+
+    def to_json(self) -> dict:
+        return {"source": "findings", "scope": self.scope.to_json(), "settings": self.settings.to_json()}
+
+    @classmethod
+    def from_json(cls, data) -> Findings:
+        try:
+            return cls(ImageFilter.from_json(data["scope"]), FindSettings.from_json(data["settings"]))
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"not a findings queue: {data!r}") from e

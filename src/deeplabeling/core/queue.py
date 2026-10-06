@@ -61,6 +61,8 @@ class BuildContext:
     reviewed: frozenset[str]        #: review-mark keys, snapshotted before the build
     sizes: ImageSizes | None = None     #: the open dataset's size cache, when there is one
     model: ModelSnapshot | None = None  #: the loaded model, when a condition asks for it
+    #: Dismissed findings, (image, label line, kind), snapshotted before the build.
+    dismissed: frozenset[tuple[str, str, str]] = frozenset()
     #: Images a condition could not settle ("could not be sized", "not inferred"), counted
     #: for the queue chip. One build or recheck owns it; it is never shared across threads.
     unsettled: Counter = field(default_factory=Counter)
@@ -633,3 +635,11 @@ class Queue:
                 self.stale.discard(key)
             else:
                 self.stale.add(key)
+
+
+def source_from_json(data):
+    """A saved queue's source: an image filter, or Find Bad's findings."""
+    if isinstance(data, dict) and data.get("source") == "findings":
+        from .findings import Findings              # findings.py builds on this module
+        return Findings.from_json(data)
+    return ImageFilter.from_json(data)
