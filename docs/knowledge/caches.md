@@ -122,6 +122,10 @@ screen. An unknown answer is reported as unknown.
   decoding. Decoding 46k frames only to learn their sizes cost about 6 minutes per scan,
   indistinguishable from re-running the model.
 
+- DeepLabeling's one size function is `src/deeplabeling/core/imagesize.py::image_size`;
+  `src/deeplabeling/core/imagesize.py::ImageSizes` caches it for the open dataset, stamped
+  like the label cache.
+
 **Rule:** never decode an image to learn its size; one size function, header-only and
 EXIF-aware, for every caller.
 
