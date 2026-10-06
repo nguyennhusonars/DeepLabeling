@@ -13,9 +13,13 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from .classmap import ClassMap
 from .dataset import Dataset, ImageEntry
+from .disagree import unlabelled_predictions, unseen_labels
 from .imagesize import ImageSizes, image_size
+from .inference import FLOOR, Prediction
 from .overlap import SCOPES, stack_counts
+from .predstore import PredictionStore, image_stamp
 from .ranges import range_error
 from .store import ImageLabels, LabelState, LabelStore
 
@@ -31,11 +35,21 @@ class QueueItem:
 
 
 @dataclass(frozen=True)
+class ModelSnapshot:
+    """The loaded model, as a build reads it: its rows in the store and its class map."""
+
+    key: str
+    store: PredictionStore
+    class_map: ClassMap
+
+
+@dataclass(frozen=True)
 class BuildContext:
     dataset: Dataset
     store: LabelStore
     reviewed: frozenset[str]        #: review-mark keys, snapshotted before the build
     sizes: ImageSizes | None = None     #: the open dataset's size cache, when there is one
+    model: ModelSnapshot | None = None  #: the loaded model, when a condition asks for it
     #: Images a condition could not settle ("could not be sized", "not inferred"), counted
     #: for the queue chip. One build or recheck owns it; it is never shared across threads.
     unsettled: Counter = field(default_factory=Counter)
@@ -47,6 +61,15 @@ class BuildContext:
         """The image's size as shown, from its header; None when it cannot be read."""
         return self.sizes.get(entry.path) if self.sizes is not None else image_size(entry.path)
 
+    def predictions(self, entry: ImageEntry) -> list[Prediction] | None:
+        """The model's predictions for the image at the floor; None when it never looked,
+        or the image has changed since (the store's stamp)."""
+        try:
+            stamp = image_stamp(entry.path)
+        except OSError:
+            return None
+        return self.model.store.get(self.model.key, entry.rel, stamp)
+
     def count(self, what: str) -> None:
         self.unsettled[what] += 1
 
@@ -56,6 +79,8 @@ class Seen:
     """What a view knows of an image besides its labels, for a condition's highlight."""
 
     size: tuple[int, int] | None = None     #: as shown: what a size in px is scaled by
+    predictions: list[Prediction] | None = None     #: the model's, at the floor, untranslated
+    class_map: ClassMap | None = None
 
 
 NOTHING_SEEN = Seen()
@@ -66,6 +91,7 @@ class Condition:
 
     kind: ClassVar[str]
     needs_labels: ClassVar[bool] = True
+    needs_model: ClassVar[bool] = False
 
     @property
     def cost(self) -> int:
@@ -81,6 +107,11 @@ class Condition:
 
     def highlight(self, labels: ImageLabels, dataset: Dataset, seen: Seen = NOTHING_SEEN) -> frozenset[int]:
         """Line indices of the boxes that made the condition hold."""
+        return frozenset()
+
+    def highlight_predictions(self, labels: ImageLabels, dataset: Dataset,
+                              seen: Seen = NOTHING_SEEN) -> frozenset[int]:
+        """Indices into `seen.predictions` of the predictions that made it hold."""
         return frozenset()
 
     def to_json(self) -> dict:
@@ -286,6 +317,78 @@ class Overlap(Condition):
         return {"kind": self.kind, "scope": self.scope, "lo": self.lo, "hi": self.hi}
 
 
+DIRECTIONS = ("unseen", "unlabelled", "either")
+DIRECTION_WORDS = {"unseen": "labels the model does not see", "unlabelled": "predictions nobody labelled",
+                   "either": "labels and predictions that disagree"}
+
+
+@dataclass(frozen=True)
+class ModelDisagrees(Condition):
+    """The loaded model and the labels disagree: a label it does not see, a prediction
+    nobody labelled, or either (docs/design/2026-10-06-filters.md#labelprediction-iou).
+    An image the model never looked at is left out and counted, never passed as clean."""
+
+    direction: str = "unseen"
+    match_iou: float = 0.5
+    conf: tuple[float, float] = (0.25, 1.0)
+    kind: ClassVar[str] = "model"
+    needs_model: ClassVar[bool] = True
+
+    def __post_init__(self):
+        if self.direction not in DIRECTIONS:
+            raise ValueError(f"unknown direction {self.direction!r}")
+        if not 0 < self.match_iou <= 1:
+            raise ValueError("matching IoU: must be above 0 and at most 1")
+        why = range_error(*self.conf, "confidence", lo_min=FLOOR)
+        if why:
+            raise ValueError(why)
+
+    @property
+    def cost(self) -> int:
+        return 3
+
+    def _unseen(self, labels, preds, cmap, dataset) -> frozenset[int]:
+        if self.direction == "unlabelled":
+            return frozenset()
+        return unseen_labels(labels, preds, cmap, dataset, self.match_iou, self.conf[0])
+
+    def _unlabelled(self, labels, preds, cmap, dataset) -> frozenset[int]:
+        if self.direction == "unseen":
+            return frozenset()
+        return unlabelled_predictions(labels, preds, cmap, dataset, self.match_iou, *self.conf)
+
+    def test(self, entry, ctx):
+        if ctx.model is None:
+            ctx.count("no model")
+            return False
+        preds = ctx.predictions(entry)
+        if preds is None:
+            ctx.count("not inferred")
+            return False
+        labels, cmap = ctx.labels(entry), ctx.model.class_map
+        return bool(self._unseen(labels, preds, cmap, ctx.dataset)
+                    or self._unlabelled(labels, preds, cmap, ctx.dataset))
+
+    def highlight(self, labels, dataset, seen=NOTHING_SEEN):
+        if seen.predictions is None or seen.class_map is None:
+            return frozenset()
+        return self._unseen(labels, seen.predictions, seen.class_map, dataset)
+
+    def highlight_predictions(self, labels, dataset, seen=NOTHING_SEEN):
+        if seen.predictions is None or seen.class_map is None:
+            return frozenset()
+        return self._unlabelled(labels, seen.predictions, seen.class_map, dataset)
+
+    def describe(self, dataset):
+        lo, hi = self.conf
+        conf = f"conf ≥ {lo:.2f}" if self.direction == "unseen" else f"conf {lo:.2f}–{hi:.2f}"
+        return f"{DIRECTION_WORDS[self.direction]} (IoU {self.match_iou:.2f}, {conf})"
+
+    def to_json(self):
+        return {"kind": self.kind, "direction": self.direction, "match_iou": self.match_iou,
+                "conf": list(self.conf)}
+
+
 def condition_from_json(data) -> Condition:
     try:
         kind = data["kind"]
@@ -297,6 +400,9 @@ def condition_from_json(data) -> Condition:
             return Reviewed(bool(data.get("value", True)))
         if kind == "name":
             return NameContains(str(data["text"]))
+        if kind == "model":
+            return ModelDisagrees(str(data["direction"]), float(data["match_iou"]),
+                                  tuple(float(c) for c in data["conf"]))
         if kind == "overlap":
             return Overlap(str(data["scope"]), float(data["lo"]), float(data["hi"]))
         if kind == "boxes":
@@ -332,6 +438,18 @@ class ImageFilter:
         for condition in self.conditions:
             found |= condition.highlight(labels, dataset, seen)
         return found
+
+    def highlight_predictions(self, labels: ImageLabels, dataset: Dataset,
+                              seen: Seen = NOTHING_SEEN) -> frozenset[int]:
+        found: frozenset[int] = frozenset()
+        for condition in self.conditions:
+            found |= condition.highlight_predictions(labels, dataset, seen)
+        return found
+
+    @property
+    def needs_model(self) -> bool:
+        """Whether a condition reads the loaded model's predictions."""
+        return any(c.needs_model for c in self.conditions)
 
     def build(self, ctx: BuildContext, emit: Callable[[list[QueueItem]], None],
               cancelled: Callable[[], bool] = lambda: False, *,
