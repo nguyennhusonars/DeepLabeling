@@ -12,6 +12,8 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QVBoxLayout, QWidget
 
+from ..core.assist import Shown
+from ..core.queue import Seen
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views, prediction_views
 from .canvas import Canvas
@@ -163,21 +165,37 @@ class MainWindow(QMainWindow):
             return
         ws = session.workspace
         labels = session.labels(item.entry)
-        highlight = session.queue.source.highlight(labels, ws.dataset)
+        highlight = session.queue.source.highlight(labels, ws.dataset, self._seen(item))
         self.editing.show(labels)
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels),
                               predictions=self._prediction_views(item))
 
+    def _seen(self, item) -> Seen:
+        """What the queue's conditions highlight from besides the labels."""
+        model = self.session.model
+        return Seen(size=self.canvas.image_size, predictions=model.predictions(item.entry),
+                    class_map=model.class_map)
+
     def _prediction_views(self, item):
         """The predictions for the item on screen, as the canvas draws them; Editing keeps
-        the same list, so what is accepted is what is drawn."""
-        ws, model = self.session.workspace, self.session.model
-        shown = model.shown(item.entry)
+        the same list, so what is accepted is what is drawn. Those the queue matched are
+        emphasised, and drawn even below the display threshold: they are what it found."""
+        session, ws, model = self.session, self.session.workspace, self.session.model
+        shown, seen = model.shown(item.entry), self._seen(item)
+        marked: list = []
+        if session.queue is not None and seen.predictions is not None:
+            indices = session.queue.source.highlight_predictions(session.labels(item.entry), ws.dataset, seen)
+            marked = [seen.predictions[k] for k in sorted(indices)]
+        if marked:
+            shown = list(shown or [])
+            drawn = [s.pred for s in shown]
+            shown += [Shown(p, model.class_map.translate(p.cls, ws.dataset), True) for p in marked if p not in drawn]
+        emphasised = frozenset(i for i, s in enumerate(shown or []) if s.pred in marked)
         self.editing.show_predictions(item.entry.path, shown)
         return prediction_views(shown or [], ws.dataset, self.canvas.image_size,
-                                ws.root_settings.get(CLASS_COLORS), model.names)
+                                ws.root_settings.get(CLASS_COLORS), model.names, emphasised)
 
     def _predictions_changed(self) -> None:
         """The model, its threshold or its class map changed: redraw the predictions alone."""

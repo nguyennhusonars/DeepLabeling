@@ -21,8 +21,8 @@ def views(dataset, ds, name, **kw):
 def test_captions_name_the_class_and_count_stacked_boxes(dataset, ds):
     v = views(dataset, ds, "bad/ok.jpg")
     assert {i: v[i].caption for i in v} == {
-        0: "car x4", 1: "#99? x2", 2: "#-1? x2", 3: "person",
-        5: "person x4", 6: "person x4", 10: "person x4"}
+        0: "car ×4", 1: "#99? ×2", 2: "#-1? ×2", 3: "person",
+        5: "person ×4", 6: "person ×4", 10: "person ×4"}
 
 
 def test_an_id_outside_the_names_is_grey_and_unknown(dataset, ds):
@@ -112,3 +112,15 @@ def test_prediction_views_are_in_pixels_with_their_class_colour_and_confidence(d
     assert car.rect == pytest.approx((40, 20, 60, 30)) and car.color == "#123456"
     assert (car.caption, car.faint, car.index) == ("car 0.88", False, 0)
     assert (unmapped.caption, unmapped.color, unmapped.faint) == ("human? 0.50", UNKNOWN, True)
+
+
+def test_an_emphasised_prediction_is_never_faint(dataset):
+    from deeplabeling.core.assist import Shown
+    from deeplabeling.core.inference import Prediction
+    from deeplabeling.ui.boxes import prediction_views
+
+    covered = Shown(Prediction(0, (0.5, 0.5, 0.2, 0.2), 0.2), 1, False)      # not missing: faint
+    [plain] = prediction_views([covered], dataset, SIZE, {}, ("car",))
+    [marked] = prediction_views([covered], dataset, SIZE, {}, ("car",), emphasised=frozenset({0}))
+    assert plain.faint and not plain.emphasised
+    assert marked.emphasised and not marked.faint
