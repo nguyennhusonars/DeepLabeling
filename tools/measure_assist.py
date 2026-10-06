@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure slice 2's performance targets with a real model on a real dataset, read-only
-(docs/design/2026-10-05-model-assist.md#performance-targets).
+(docs/design/2026-10-05-model-assist.md#performance-targets), and slice 3's model and size
+conditions as the window builds them (docs/design/2026-10-06-filters.md#performance-targets).
 
 App state -- the prediction store included -- goes to a temporary folder, deleted at the
 end. Nothing in the dataset is written and no label is edited. Run it from the repository
@@ -67,9 +68,11 @@ def main(argv=None) -> int:
     print("ultralytics:", importlib.util.find_spec("ultralytics").origin)     # found, not imported
     settings_before = md5(SETTINGS)
 
+    from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
     from deeplabeling.__main__ import launch
+    from deeplabeling.core.queue import Boxes, ImageFilter, ModelDisagrees
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     rows = []
@@ -133,6 +136,31 @@ def main(argv=None) -> int:
     t = time.perf_counter()
     store.inferred(model.key)
     rows.append((f"the store's rows read when a model loads ({len(rows_now):,} rows)", time.perf_counter() - t, "(none)"))
+
+    def build(name, condition) -> None:
+        """A queue built in the window: its first items, its end, and the longest the
+        event loop went without a turn meanwhile, which is what paging would wait."""
+        gaps, last = [], [time.perf_counter()]
+
+        def tick():
+            now = time.perf_counter()
+            gaps.append(now - last[0])
+            last[0] = now
+
+        timer = QTimer()
+        timer.timeout.connect(tick)
+        timer.start(5)
+        t = time.perf_counter()
+        s.set_queue(ImageFilter(conditions=(condition,)))
+        first = wait(app, lambda: len(s.queue) > 0 or s.queue.complete)
+        total = first + wait(app, lambda: s.queue.complete)
+        timer.stop()
+        rows.append((f"{name}: first items", first, "≤ 1 s"))
+        rows.append((f"{name}: complete, {len(s.queue):,} images{s.progress_text()}", total, "≤ 30 s cold"))
+        rows.append((f"{name}: the event loop's longest wait", max(gaps), "≤ 100 ms"))
+
+    build("labels the model does not see", ModelDisagrees("unseen"))
+    build("a size in px, cold", Boxes((), w=(None, 10), unit="px"))
     files = [store.path, store.path.with_name(store.path.name + "-wal")]
     size = sum(f.stat().st_size for f in files if f.exists())
     rows.append(("the store, bytes per image", size / max(len(rows_now), 1), "≤ 2048"))
