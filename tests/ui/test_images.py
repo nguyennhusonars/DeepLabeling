@@ -109,3 +109,20 @@ def test_the_session_keeps_thumbnails_until_the_dataset_closes(qtbot, session, d
     assert session.thumbs.get(path).width() == 64
     session.close()
     assert session.thumbs.get(path) is None
+
+
+@pytest.mark.parametrize("suffix", [".jpg", ".png", ".tif", ".webp"])
+def test_the_header_size_is_the_decoded_size_in_every_format(tmp_path, suffix):
+    """What a size in px is scaled by must be the frame the canvas shows: Qt turns a JPEG
+    or TIFF by its EXIF orientation and shows a PNG or WebP as stored."""
+    from PIL import Image
+
+    from deeplabeling.core.imagesize import image_size
+
+    im = Image.new("RGB", (64, 48), (90, 90, 90))
+    exif = im.getexif()
+    exif[274] = 6
+    path = tmp_path / f"turned{suffix}"
+    im.save(path, exif=exif)
+    shown = decode_image(path)
+    assert image_size(path) == (shown.width(), shown.height())

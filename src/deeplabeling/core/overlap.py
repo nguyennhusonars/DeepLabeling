@@ -10,8 +10,10 @@ from .geometry import Box, iou
 
 SCOPES = ("any", "same", "different")
 
-#: What slice 1's canvas counts: exact duplicates, of any class.
-DUPLICATES = ("any", 0.99, 1.0)
+#: What the canvas counts on every caption (`car ×2`): boxes drawn nearly on top of each
+#: other, of any class (docs/design/2026-10-06-filters.md#stack-counts). Below 0.9 the
+#: rectangles are visibly apart, and the count would mark ordinary occlusion.
+STACKED = ("any", 0.9, 1.0)
 
 
 def pair_counts(scope: str, cls_a: int, cls_b: int) -> bool:

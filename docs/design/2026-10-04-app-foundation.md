@@ -358,8 +358,8 @@ cache bounded in bytes (64 MB).
 
 - **Scene and labels.** Scene coordinates are image pixels. Each box is drawn in its
   class's colour, with a caption on a solid plate inside its top edge. A box stacked on
-  others shows the count: `car x2`. In slice 1 the stack count uses `core/overlap.py` with
-  scope *any class* and IoU 0.99–1.00; slice 3's overlap filter reuses the same predicate
+  others shows the count: `car x2`. The stack count uses `core/overlap.py` with scope
+  *any class* and the IoU [slice 3 chose](2026-10-06-filters.md#stack-counts); slice 3's overlap filter reuses the same predicate
   ([why counts](../knowledge/matching.md#overlap-between-labels)). A box a condition
   highlighted gets a thicker outline.
 - **Mouse.** Left-drag draws a box of the **active class**, anywhere but inside a selected
@@ -590,9 +590,7 @@ From the slice 1a whole-branch review; the core is built, these are what the UI 
 What each later spec starts from. None of this is designed yet.
 
 - **2 · Model assist.** Designed: [2026-10-05-model-assist.md](2026-10-05-model-assist.md).
-- **3 · Filters.** Size, name, overlap and IoU conditions for `ImageFilter`, each with its
-  `highlight` ([matching.md](../knowledge/matching.md)). Ranges follow
-  `legacy/yolo_labeling/core/ranges.py::range_error`.
+- **3 · Filters.** Designed: [2026-10-06-filters.md](2026-10-06-filters.md).
 - **4 · Find Bad.** A `QueueSource` that streams findings with `focus` set. Grid tiles show
   the crop. The canvas spotlights the finding in the whole frame, with the finding's
   actions in the inspector. Dismissals persist per dataset.
