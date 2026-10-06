@@ -62,7 +62,8 @@ def test_without_a_model_the_chip_invites_one(window):
 
 def test_loading_from_the_chip_names_the_model_and_draws_its_predictions(qtbot, window):
     load(qtbot, window)
-    assert window.state_bar.model.full_text == "Model: best.pt · 3 classes · conf 0.25"
+    qtbot.waitUntil(lambda: window.state_bar.model.full_text
+                    == "Model: best.pt · 3 classes · conf 0.25 · 3 / 15 inferred")   # and its neighbours
     assert captions(window) == ["car 0.90", "human? 0.70"]
 
 
@@ -103,7 +104,8 @@ def test_the_threshold_hides_weaker_predictions(qtbot, window, prompter):
     prompter.threshold = 0.8
     menu(window)["Threshold…"].trigger()
     assert ("threshold", 0.25) in prompter.asked
-    assert window.state_bar.model.full_text == "Model: best.pt · 3 classes · conf 0.80"
+    qtbot.waitUntil(lambda: window.state_bar.model.full_text
+                    == "Model: best.pt · 3 classes · conf 0.80 · 3 / 15 inferred")   # and its neighbours
     assert captions(window) == ["car 0.90"]         # the person's is faint: no caption
 
 
@@ -126,7 +128,8 @@ def test_the_model_its_threshold_and_its_map_survive_a_relaunch(qtbot, window, p
     window.close()
     again = start(qtbot, [str(ds.yaml)], FakePrompter())
     qtbot.waitUntil(lambda: len(again.canvas._predictions) == 3, timeout=5000)
-    assert again.state_bar.model.full_text == "Model: best.pt · 3 classes · conf 0.50"
+    qtbot.waitUntil(lambda: again.state_bar.model.full_text
+                    == "Model: best.pt · 3 classes · conf 0.50 · 3 / 15 inferred")   # and its neighbours
     assert captions(again) == ["car 0.90", "person 0.70"]
     again.close()
 
@@ -168,3 +171,19 @@ def test_the_queue_accept_waits_for_a_model_and_runs_from_the_menu(qtbot, window
         menu(window)["Accept missing boxes in this queue…"].trigger()
     assert said.args == ["accepted 1 box on 1 image"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + "1 0.800000 0.800000 0.100000 0.100000\n"
+
+
+def test_infer_this_queue_runs_from_the_menu_and_can_be_cancelled_there(qtbot, window, monkeypatch):
+    assert not menu(window)["Infer this queue"].isEnabled()
+    load(qtbot, window)
+    with qtbot.waitSignal(window.session.notice, timeout=5000,
+                          check_params_cb=lambda level, text, image: level == "info") as said:
+        menu(window)["Infer this queue"].trigger()
+    assert said.args[1] == "inferred 12 images; 0 failed"   # the screen had done the first three
+    assert window.state_bar.model.full_text == "Model: best.pt · 3 classes · conf 0.25 · 15 / 15 inferred"
+    cancelled = []
+    monkeypatch.setattr(window.session.model, "cancel_pass", lambda: cancelled.append(1))
+    window.session.model.passing = True                      # as while a pass runs
+    assert "Infer this queue" not in menu(window)
+    menu(window)["Cancel inferring"].trigger()
+    assert cancelled == [1]

@@ -287,8 +287,12 @@ class MainWindow(QMainWindow):
         menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
         menu.addSeparator()
         queue = self.session.queue
-        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(
-            model.state == "ready" and queue is not None and queue.complete)
+        whole = model.state == "ready" and queue is not None and queue.complete
+        if model.passing:
+            menu.addAction("Cancel inferring", model.cancel_pass)
+        else:
+            menu.addAction("Infer this queue", model.infer_queue).setEnabled(whole)
+        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(whole)
 
     def accept_queue(self) -> None:
         accept_queue(self.session)

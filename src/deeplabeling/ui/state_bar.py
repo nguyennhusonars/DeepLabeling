@@ -58,7 +58,11 @@ def model_text(model) -> str:
         return f"Model: {name} · loading…"
     if model.state == "failed":
         return f"Model: {name} · not loaded"
-    return f"Model: {name} · {len(model.names)} classes · conf {model.conf:.2f}"
+    text = f"Model: {name} · {len(model.names)} classes · conf {model.conf:.2f}"
+    if model.passing:
+        return text + f" · inferring {model.pass_walked:,} / {model.pass_total:,}"
+    counted = model.inferred_count()
+    return text if counted is None else text + f" · {counted[0]:,} / {counted[1]:,} inferred"
 
 
 class StateBar(QWidget):
@@ -80,6 +84,8 @@ class StateBar(QWidget):
                        session.queueDone, session.reviewChanged):
             signal.connect(self.refresh)
         session.model.changed.connect(self.refresh)
+        session.model.progress.connect(self._refresh_model)
+        session.model.ready.connect(self._refresh_model)
         # A building queue grows every 0.2 s, and each refresh counts what is left across
         # the whole queue; while it builds, refresh at most every REFRESH_MS.
         self._soon = QTimer(self)
@@ -94,6 +100,9 @@ class StateBar(QWidget):
         # the refresh off until the queue stopped growing.
         if not self._soon.isActive():
             self._soon.start()
+
+    def _refresh_model(self, _=None) -> None:
+        self.model.set_full_text(model_text(self._session.model))
 
     def refresh(self) -> None:
         session, ws = self._session, self._session.workspace

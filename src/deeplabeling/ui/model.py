@@ -34,6 +34,7 @@ PRED_CONF = define("model.conf", "root", 0.25,
 RECENT_MAX = 8
 SHUTDOWN_MS = 2000      #: the longest closing waits for a prediction in hand
 NEIGHBOURS = (1, 2, -1)  #: queue offsets predicted after the image on screen, as images are kept
+PASS_BATCH = 8          #: images a pass asks the model for at once, decoded in parallel
 
 Wanted = tuple[str, Path, Stamp]   #: (dataset-relative path, file, stamp)
 
@@ -52,12 +53,14 @@ def threads_running() -> bool:
 
 class _Worker(QThread):
     """The thread that owns the predictor. Control jobs (load, unload, stop) go first, then
-    the images wanted on screen, in order."""
+    the images wanted on screen, in order, then a batch of the dataset pass."""
 
     loaded = Signal(object, object, object)   # path, key, names
     loadFailed = Signal(object, str)          # path, why
     ready = Signal(object)                    # image path: its row is in the store
     failed = Signal(object, str)              # image path, why
+    passProgress = Signal(int, int)           # queue images walked, of how many
+    passEnded = Signal(int, int, bool)        # inferred, failed, cancelled
 
     def __init__(self):
         super().__init__()                            # no parent: it may outlive its session
@@ -66,6 +69,11 @@ class _Worker(QThread):
         self._screen: list[Wanted] = []
         self._store: PredictionStore | None = None
         self._predictor = None
+        self._known: dict[str, Stamp] | None = None    # the store's rows for this model, once a pass asks
+        self._pass: collections.deque = collections.deque()
+        self._pass_store: PredictionStore | None = None
+        self._passing = self._pass_cancelled = False
+        self._walked = self._total = self._inferred = self._failed = 0
 
     # -- asked from the GUI thread ----------------------------------------------------
 
@@ -76,10 +84,29 @@ class _Worker(QThread):
         self.want(None, [])
         self._put(("unload",))
 
+    def start_pass(self, store: PredictionStore, items: list[tuple[str, Path]]) -> None:
+        """Infer these (dataset-relative path, file) in order, those the store has no row
+        for, after whatever the screen wants."""
+        with self._cond:
+            self._pass_store, self._pass = store, collections.deque(items)
+            self._passing, self._pass_cancelled = True, False
+            self._walked, self._total, self._inferred, self._failed = 0, len(items), 0, 0
+            self._cond.notify()
+
+    def cancel_pass(self) -> None:
+        """Stop after the batch in hand; what it inferred is kept. passEnded says so."""
+        with self._cond:
+            if self._passing:
+                self._pass.clear()
+                self._pass_cancelled = True
+                self._cond.notify()
+
     def stop(self) -> None:
         """Stop after the job in hand: a load queued but not started is dropped."""
         self.want(None, [])
         with self._cond:
+            self._pass.clear()
+            self._passing = False
             self._control.clear()
             self._control.append(("stop",))
             self._cond.notify()
@@ -100,17 +127,21 @@ class _Worker(QThread):
     def run(self) -> None:
         while True:
             with self._cond:
-                while not self._control and not (self._screen and self._predictor is not None):
+                while not self._control and not ((self._screen or self._passing) and self._predictor is not None):
                     self._cond.wait()
                 if self._control:
                     job, item, store = self._control.popleft(), None, None
-                else:
+                elif self._screen:
                     job, item, store = None, self._screen.pop(0), self._store
+                else:
+                    job, item, store = ("pass",), None, None
             if job is not None:
                 if job[0] == "stop":
                     self._close()
                     return
-                if job[0] == "unload":
+                if job[0] == "pass":
+                    self._pass_step()
+                elif job[0] == "unload":
                     self._close()
                 else:
                     self._load(*job[1:])
@@ -121,6 +152,7 @@ class _Worker(QThread):
                     self.failed.emit(item[1], str(e))
 
     def _close(self) -> None:
+        self._known = None
         if self._predictor is not None:
             self._predictor.close()
             self._predictor = None
@@ -151,7 +183,57 @@ class _Worker(QThread):
         except Exception as e:                        # the disk full, the store broken
             self.failed.emit(path, f"its predictions could not be stored: {e}")
             return
+        if self._known is not None:
+            self._known[rel] = stamp                  # a pass under way skips it
         self.ready.emit(path)
+
+    def _pass_step(self) -> None:
+        """One batch of the pass: up to PASS_BATCH images the store has no row for, asked
+        at once and written in one transaction, so a cancel keeps every batch done."""
+        store, key = self._pass_store, self._predictor.key
+        if self._known is None:
+            self._known = store.inferred(key)
+        todo = []
+        while len(todo) < PASS_BATCH:
+            with self._cond:
+                if not self._pass:
+                    break
+                rel, path = self._pass.popleft()
+            self._walked += 1
+            try:
+                stamp = image_stamp(path)
+            except OSError as e:
+                self._failed += 1
+                self.failed.emit(path, f"it cannot be read: {e.strerror or e}")
+                continue
+            if self._known.get(rel) != stamp:
+                todo.append((rel, path, stamp))
+        if todo:
+            try:
+                answers = self._predictor.predict([path for _, path, _ in todo])
+            except Exception as e:                    # whatever the model raises: the batch fails
+                answers = [Failure(str(e))] * len(todo)
+            rows = [(rel, stamp, found) for (rel, _, stamp), found in zip(todo, answers)
+                    if not isinstance(found, Failure)]
+            try:
+                store.put_many(key, rows)
+            except Exception as e:                    # the disk full, the store broken
+                answers = [Failure(f"its predictions could not be stored: {e}")] * len(todo)
+            for (rel, path, stamp), found in zip(todo, answers):
+                if isinstance(found, Failure):
+                    self._failed += 1
+                    self.failed.emit(path, found.why)
+                else:
+                    self._inferred += 1
+                    self._known[rel] = stamp
+                    self.ready.emit(path)
+        self.passProgress.emit(self._walked, self._total)
+        with self._cond:
+            if self._pass or not self._passing:
+                return
+            self._passing = False
+            ended = (self._inferred, self._failed, self._pass_cancelled)
+        self.passEnded.emit(*ended)
 
 
 class ModelSession(QObject):
@@ -161,6 +243,7 @@ class ModelSession(QObject):
     changed = Signal()                  # the state, the model, the threshold or the map
     ready = Signal(object)              # image path: predictions for it are in the store
     failed = Signal(object, str)        # image path, why
+    progress = Signal()                 # the dataset pass moved on
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -173,6 +256,9 @@ class ModelSession(QObject):
         self.error = ""
         self.class_map: ClassMap | None = None
         self._failures: dict[Path, str] = {}
+        self._known: set[str] = set()               # images the store has a row for, by rel
+        self.passing = False
+        self.pass_walked = self.pass_total = 0
         self._worker: _Worker | None = None        # runs while a model is loaded or loading
         session.cursorChanged.connect(self.want_screen)
         session.opened.connect(self._opened)
@@ -200,6 +286,8 @@ class ModelSession(QObject):
         worker.loadFailed.connect(self._load_failed)
         worker.ready.connect(self._ready)
         worker.failed.connect(self._failed)
+        worker.passProgress.connect(self._pass_progress)
+        worker.passEnded.connect(self._pass_ended)
         worker.start()
         return worker
 
@@ -208,7 +296,8 @@ class ModelSession(QObject):
         if worker is None:
             return
         for signal, slot in ((worker.loaded, self._loaded), (worker.loadFailed, self._load_failed),
-                             (worker.ready, self._ready), (worker.failed, self._failed)):
+                             (worker.ready, self._ready), (worker.failed, self._failed),
+                             (worker.passProgress, self._pass_progress), (worker.passEnded, self._pass_ended)):
             signal.disconnect(slot)                   # a late answer is for a dataset now gone
         worker.stop()
         if not worker.wait(SHUTDOWN_MS):
@@ -218,7 +307,8 @@ class ModelSession(QObject):
 
     def _forget(self) -> None:
         self.state, self.path, self.key, self.names, self.error = "none", None, None, (), ""
-        self.class_map, self._failures = None, {}
+        self.class_map, self._failures, self._known = None, {}, set()
+        self.passing = False
         self.changed.emit()
 
     def _loaded(self, path, key, names) -> None:
@@ -229,6 +319,7 @@ class ModelSession(QObject):
         if ws is not None:
             self.class_map = load_class_map(ws.root_settings, self.names, ws.dataset.names)
             ws.opening_settings.set(MODEL_PATH, str(path))
+            self._known = set(ws.predictions.inferred(key))
         settings = self.session.settings
         recent = [str(path)] + [p for p in settings.get(RECENT_MODELS) if p != str(path)]
         settings.set(RECENT_MODELS, recent[:RECENT_MAX])
@@ -329,7 +420,45 @@ class ModelSession(QObject):
                 wanted.append((entry.rel, entry.path, stamp))
         self._worker.want(ws.predictions, wanted)
 
+    # -- the dataset pass ---------------------------------------------------------------------
+
+    def infer_queue(self) -> None:
+        """Infer the queue's images, in queue order, that the store has no row for."""
+        session, ws = self.session, self.session.workspace
+        queue = session.queue
+        if self.state != "ready" or ws is None or queue is None or not queue.complete or self.passing:
+            return
+        items = [(item.entry.rel, item.entry.path) for item in queue.items]
+        self.passing, self.pass_walked, self.pass_total = True, 0, len(items)
+        self._worker.start_pass(ws.predictions, items)
+        self.changed.emit()
+
+    def cancel_pass(self) -> None:
+        if self.passing and self._worker is not None:
+            self._worker.cancel_pass()
+
+    def inferred_count(self) -> tuple[int, int] | None:
+        """How many of the queue's images the store has a row for, of how many."""
+        queue = self.session.queue
+        if queue is None:
+            return None
+        return sum(1 for item in queue.items if item.entry.rel in self._known), len(queue.items)
+
+    def _pass_progress(self, walked: int, total: int) -> None:
+        self.pass_walked, self.pass_total = walked, total
+        self.progress.emit()
+
+    def _pass_ended(self, inferred: int, failed: int, cancelled: bool) -> None:
+        self.passing = False
+        images = f"{inferred:,} image" + ("" if inferred == 1 else "s")
+        self.session.notice.emit("info", f"inferring stopped: {images} inferred, {failed:,} failed"
+                                 if cancelled else f"inferred {images}; {failed:,} failed", None)
+        self.changed.emit()
+
     def _ready(self, path) -> None:
+        ws = self.session.workspace
+        if ws is not None:
+            self._known.add(ws.dataset.entry(path).rel)
         self.ready.emit(path)
 
     def _failed(self, path, why: str) -> None:
