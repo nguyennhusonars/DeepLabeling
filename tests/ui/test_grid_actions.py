@@ -130,3 +130,48 @@ def test_a_finding_whose_line_changed_since_is_skipped(qtbot, window, ds):
                                                   "skipped 1 (its label changed since)")
     assert read_exact(ds.lbl("camA/sub/0005")) == ""
     assert read_exact(ds.lbl("camA/0001")).startswith("1 0.500000 0.500000")
+
+
+def test_a_key_after_a_tile_is_deselected_acts_on_the_selected_tile(qtbot, window, ds):
+    click(qtbot, window, FOUND_TWO[1])
+    click(qtbot, window, FOUND_TWO[0], Qt.ControlModifier)
+    click(qtbot, window, FOUND_TWO[0], Qt.ControlModifier)               # deselected, but still current
+    assert window.session.current().key == FOUND_TWO[0]
+    assert [item.key for item in window.queue_panel.selected_findings()] == [FOUND_TWO[1]]
+    qtbot.keyClick(window, Qt.Key_M)
+    assert read_exact(ds.lbl("camA/sub/0005")) == CAMB_0001               # the deselected tile: untouched
+    assert read_exact(ds.lbl("camA/0001")).startswith("1 0.500000 0.500000")
+
+
+def test_a_box_picked_on_the_canvas_is_what_a_key_acts_on(qtbot, window, ds):
+    select(qtbot, window, [FOUND_TWO[0], FOUND_TWO[1]])                  # current: camA/0001
+    qtbot.waitUntil(lambda: window.canvas.image_size is not None, timeout=5000)
+    window.canvas.picked.emit([1])                                       # the car, picked on the canvas
+    assert [item.key for item in window.queue_panel.selected_findings()] == [FOUND_TWO[1]]
+    qtbot.keyClick(window, Qt.Key_Delete)
+    assert read_exact(ds.lbl("camA/sub/0005")) == CAMB_0001
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001.splitlines(keepends=True)[0]
+
+
+def test_switching_to_the_list_and_back_keeps_only_the_current_tile(qtbot, window):
+    select(qtbot, window, FOUND_TWO[:2])
+    window.queue_panel.set_grid(False)
+    window.queue_panel.set_grid(True)
+    assert [item.key for item in window.queue_panel.selected_findings()] == [FOUND_TWO[1]]
+
+
+def test_b_skips_a_polygon_and_the_rest_is_one_edit(qtbot, window, ds):
+    put_rows(window.session, {"seg/images/poly1.jpg": [P(0, (0.15, 0.15, 0.1, 0.1), 0.9)],     # the polygon: a car
+                              "camA/images/sub/0005.jpg": [P(0, (0.76, 0.75, 0.15, 0.15), 0.95)]})
+    window.session.set_queue(Findings())
+    qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)
+    select(qtbot, window, [FOUND_TWO[0], "seg/images/poly1.jpg#0#wrong class"])
+    assert said(qtbot, window, Qt.Key_B) == ("took the model's box on 1 finding, as one edit; "
+                                             "skipped 1 (it is a polygon)")
+    assert read_exact(ds.lbl("camA/sub/0005")) == "2 0.760000 0.750000 0.150000 0.150000\n"
+
+
+def test_b_on_a_label_that_has_the_model_s_box_already_is_skipped_and_said(qtbot, window, ds):
+    select(qtbot, window, FOUND_TWO[1:3])                                # the model's boxes are the labels'
+    assert said(qtbot, window, Qt.Key_B) == "nothing changed; skipped 2 (it has the model's box already)"
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001

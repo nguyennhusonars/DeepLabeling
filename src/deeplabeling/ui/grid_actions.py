@@ -19,17 +19,19 @@ def _count(n: int, one: str, many: str) -> str:
 
 
 def _act(session, items, describe, op_for) -> None:
-    """Apply `op_for(item)` -- an op, or None and why not -- to every finding that can take it."""
+    """Apply `op_for(item, line)` -- an op, or None and why not -- to every finding that can
+    take it; `line` is its label line as the file has it now."""
     ops, skipped = {}, Counter()
     for item in items:
         labels, f = session.labels(item.entry), item.focus
         if not labels.editable:
             skipped["its label file cannot be edited"] += 1
             continue
-        if locate_line(labels.lines, f.cls_id, f.bbox, f.index) is None:
+        index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
+        if index is None:
             skipped["its label changed since"] += 1
             continue
-        op, why = op_for(item)
+        op, why = op_for(item, labels.lines[index])
         if op is None:
             skipped[why] += 1
             continue
@@ -49,7 +51,7 @@ def _act(session, items, describe, op_for) -> None:
 
 
 def take_model_class(session, items) -> None:
-    def op(item):
+    def op(item, line):
         f = item.finding
         if f.model_cls is None or f.kind == "not an object":
             return None, "the model has no class for it"
@@ -60,19 +62,25 @@ def take_model_class(session, items) -> None:
 
 
 def take_model_box(session, items) -> None:
-    def op(item):
+    def op(item, line):
         box = item.finding.model_box and clamp_box(item.finding.model_box)
-        return (None, "it has no model box") if box is None else (SetBox(item.focus, box), "")
+        if box is None:
+            return None, "it has no model box"
+        if line.is_polygon:
+            return None, "it is a polygon"              # a box would replace its outline
+        if all(abs(a - b) < 5e-7 for a, b in zip(box, line.bbox)):
+            return None, "it has the model's box already"
+        return SetBox(item.focus, box), ""
     _act(session, items, lambda n: f"took the model's box on {_count(n, 'finding', 'findings')}", op)
 
 
 def delete(session, items) -> None:
     _act(session, items, lambda n: f"deleted {n:,} finding's label" if n == 1 else f"deleted {n:,} findings' labels",
-         lambda item: (DeleteLine(item.focus), ""))
+         lambda item, line: (DeleteLine(item.focus), ""))
 
 
 def set_class(session, items, cls_id: int, name: str) -> None:
-    def op(item):
+    def op(item, line):
         if item.focus.cls_id == cls_id:
             return None, f"it is a {name} already"
         return SetClass(item.focus, cls_id), ""

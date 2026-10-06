@@ -105,6 +105,10 @@ class MainWindow(QMainWindow):
             layers.addAction(self.actions[key])
         bind_toggle(self.actions["toggle_grid"], session.settings, SHOW_GRID, self._grid_changed)
         self.queue_panel.grid_button.setDefaultAction(self.actions["toggle_grid"])
+        # Working on the full frame lets the selected tiles go: a key then acts on what it shows.
+        for signal in (self.canvas.picked, self.canvas.drawn, self.canvas.moved, self.canvas.resized,
+                       self.canvas.predictionPicked, self.inspector.boxes.itemClicked):
+            signal.connect(lambda *_: self.queue_panel.keep_only_current())
         self.panels_menu = layers.addMenu("Panels")     # a closed dock comes back from here
         self.panels_menu.addAction(self.queue_dock.toggleViewAction())
         self.panels_menu.addAction(self.inspector_dock.toggleViewAction())
@@ -379,11 +383,14 @@ class MainWindow(QMainWindow):
         self.session.open(folder, labels)
 
     def _either(self, on_tiles, otherwise):
-        """A key's action: on the tiles selected in a grid of crops, when there are several
-        (docs/design/2026-10-06-find-bad.md#the-grid); otherwise its own."""
+        """A key's action: on the tiles selected in a grid of crops
+        (docs/design/2026-10-06-find-bad.md#the-grid), unless only the current one is; otherwise
+        its own."""
         def run():
-            items = self.queue_panel.selected_findings()
-            if len(items) > 1:
+            items, current = self.queue_panel.selected_findings(), self.session.current()
+            # One tile that is not the current item -- the current one Ctrl-clicked away -- is
+            # still the tiles' to act on: the frame shows a finding no longer selected.
+            if len(items) > 1 or (items and current is not None and items[0].key != current.key):
                 on_tiles(items)
             else:
                 otherwise()

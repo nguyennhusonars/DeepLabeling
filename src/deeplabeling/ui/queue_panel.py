@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import (QAbstractListModel, QItemSelectionModel, QModelIndex, QPoint, QPointF, QRect, QRectF,
+                            QSize, Qt, QTimer)
 from PySide6.QtGui import QColor, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -330,7 +331,19 @@ class QueuePanel(QWidget):
         page: its tiles are not whole images."""
         crops = self.grid and self._on_crops()
         self.mark_button.setVisible(self.grid and not crops)
+        if not crops:
+            self.keep_only_current()                # a list keeps no tiles selected for later
         self.view.setSelectionMode(QAbstractItemView.ExtendedSelection if crops else QAbstractItemView.SingleSelection)
+
+    def keep_only_current(self) -> None:
+        """Let the selected tiles go but the current one: the full frame is being worked on,
+        and a key must act on what it shows."""
+        queue = self._session.queue
+        row = queue.position() if queue is not None else None
+        if row is None or row >= self.model.rowCount():
+            self.view.clearSelection()
+        else:
+            self.view.selectionModel().select(self.model.index(row), QItemSelectionModel.ClearAndSelect)
 
     def selected_findings(self) -> list[QueueItem]:
         """The findings selected in a grid of crops, in queue order: what a key acts on
