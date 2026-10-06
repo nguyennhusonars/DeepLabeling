@@ -89,6 +89,9 @@ class MainWindow(QMainWindow):
             "copy": self.editing.copy,
             "paste": self.editing.paste,
             "accept_missing": self.editing.accept_missing,
+            "take_model_class": self.editing.take_model_class,
+            "take_model_box": self.editing.take_model_box,
+            "dismiss": session.dismiss_current,
         })
         layers = self.state_bar.layers.menu()
         for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS),

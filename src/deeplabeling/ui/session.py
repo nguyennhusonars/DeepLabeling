@@ -440,6 +440,30 @@ class Session(QObject):
             text += " · no longer matches"
         return text
 
+    def finding_state(self, item: QueueItem) -> str:
+        """"dismissed", "fixed" (it no longer holds), or "" for a finding still open."""
+        f = item.finding
+        if f is None:
+            return ""
+        if self._require().dismissals.has(item.entry.rel, f.text, f.kind):
+            return "dismissed"
+        return "fixed" if self.queue is not None and item.key in self.queue.stale else ""
+
+    def dismiss_current(self) -> None:
+        """D: dismiss the finding on screen and move on, or take its dismissal back."""
+        item = self.current()
+        if item is None or item.finding is None:
+            return
+        f = item.finding
+        dismissed = self._require().dismissals.toggle(item.entry.rel, f.text, f.kind)
+        self.saver.schedule()
+        self.itemsChanged.emit([item.key])
+        if dismissed:
+            self.status.emit(f"dismissed: {f.kind}")
+            self.move(1)
+        else:
+            self.status.emit("the dismissal is taken back")
+
     def describe_item(self, item: QueueItem) -> str:
         tick = "✓" if self._require().review.is_marked(item.entry.rel) else "·"
         return f"{tick} {item.entry.rel}  —  {self.badge(item)}"
