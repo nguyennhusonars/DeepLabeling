@@ -12,11 +12,12 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from .classmap import ClassMap
 from .dataset import Dataset, ImageEntry
 from .disagree import unlabelled_predictions, unseen_labels
+from .edits import LineRef
 from .imagesize import ImageSizes, image_size
 from .inference import FLOOR, Prediction
 from .overlap import SCOPES, stack_counts
@@ -35,6 +36,13 @@ HALF_STEP = 5e-7
 class QueueItem:
     key: str
     entry: ImageEntry
+    rank: tuple = ()                #: where it sorts in its queue; () is dataset order
+    focus: LineRef | None = None    #: the label line it is about: a finding's
+    finding: Any = None             #: the findings.Finding it stands for, in a findings queue
+
+    @property
+    def sort_key(self) -> tuple:
+        return self.rank or (self.entry.order,)
 
 
 @dataclass(frozen=True)
@@ -435,6 +443,14 @@ class ImageFilter:
         text = " and ".join(c.describe(dataset) for c in self.conditions) or "all images"
         return f"{text} in {' + '.join(self.splits)}" if self.splits else text
 
+    def holds(self, item: QueueItem, ctx: BuildContext) -> bool:
+        """Whether an item still belongs: its image still matches."""
+        return self.matches(item.entry, ctx)
+
+    def items_for(self, entry: ImageEntry, ctx: BuildContext) -> list[QueueItem]:
+        """The items one image stands behind: itself when it matches."""
+        return [QueueItem(entry.rel, entry)] if self.matches(entry, ctx) else []
+
     def matches(self, entry: ImageEntry, ctx: BuildContext) -> bool:
         if self.splits and entry.split not in self.splits:
             return False
@@ -461,7 +477,7 @@ class ImageFilter:
 
     def build(self, ctx: BuildContext, emit: Callable[[list[QueueItem]], None],
               cancelled: Callable[[], bool] = lambda: False, *,
-              batch: int = 500, interval: float = 0.2) -> bool:
+              batch: int = 500, interval: float = 0.2, progress=None) -> bool:
         """Stream the matching items to `emit`. False when cancelled part-way."""
         pending: list[QueueItem] = []
         last = time.monotonic()
@@ -493,14 +509,15 @@ class ImageFilter:
 
 
 class Queue:
-    """A queue's items in dataset order, one cursor (an identity key), and which items no
-    longer match since the queue was built. Used on the GUI thread.
+    """A queue's items in their order -- dataset order for an image queue, kind and score
+    for findings -- with one cursor (an identity key), and which items no longer hold since
+    the queue was built. Used on the GUI thread.
 
-    Rows are found by bisecting the items' dataset orders, never stored: an image joining
-    a 45k-item queue after its build (a pass filling a model queue) then costs two list
-    insertions, not a re-numbering of every row after it."""
+    Rows are found by bisecting the items' sort keys, never stored: an item joining a
+    45k-item queue after its build costs two list insertions, not a re-numbering of every
+    row after it. An image may stand behind several items (its findings)."""
 
-    def __init__(self, source: ImageFilter, *, follow: ImageEntry | None = None):
+    def __init__(self, source, *, follow: ImageEntry | None = None):
         self.source = source
         self.items: list[QueueItem] = []
         self.cursor: str | None = None
@@ -511,8 +528,9 @@ class Queue:
         self.left_out: dict[str, set[str]] = {}
         self.waiting = False        #: a model condition waits for a model: nothing is built yet
         self.built_with = None      #: the model (key, class map) its build read, if any
-        self._order: dict[str, int] = {}    #: each item's dataset order, by key
-        self._orders: list[int] = []        #: the items' dataset orders, row by row: ascending
+        self._rank: dict[str, tuple] = {}           #: each item's sort key, by key
+        self._ranks: list[tuple] = []               #: the items' sort keys, row by row: ascending
+        self._by_image: dict[str, list[str]] = {}   #: the keys of each image's items
         self._follow = follow       #: the item the cursor was on before a rebuild
         self._moved = False
 
@@ -520,21 +538,31 @@ class Queue:
         return len(self.items)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._order
+        return key in self._rank
+
+    def has_image(self, rel: str) -> bool:
+        return rel in self._by_image
+
+    def keys_of(self, rel: str) -> list[str]:
+        """The keys of the items an image stands behind, in queue order."""
+        return sorted(self._by_image.get(rel, ()), key=self._rank.__getitem__)
 
     def _row(self, key: str) -> int:
-        return bisect.bisect_left(self._orders, self._order[key])
+        return bisect.bisect_left(self._ranks, self._rank[key])
+
+    def _add(self, row: int, item: QueueItem) -> None:
+        self.items.insert(row, item)
+        self._ranks.insert(row, item.sort_key)
+        self._rank[item.key] = item.sort_key
+        self._by_image.setdefault(item.entry.rel, []).append(item.key)
 
     def extend(self, batch: Iterable[QueueItem]) -> None:
         for item in batch:
-            if item.key in self._order:
+            if item.key in self._rank:
                 continue
-            order = item.entry.order
-            if self._orders and order < self._orders[-1]:
-                raise ValueError(f"{item.key} arrives out of dataset order")
-            self._order[item.key] = order
-            self.items.append(item)
-            self._orders.append(order)
+            if self._ranks and item.sort_key < self._ranks[-1]:
+                raise ValueError(f"{item.key} arrives out of order")
+            self._add(len(self.items), item)
             if self._follow is not None and not self._moved and item.key == self._follow.rel:
                 self.cursor = item.key
                 self._follow = None
@@ -542,14 +570,12 @@ class Queue:
             self.cursor = self.items[0].key
 
     def insert(self, item: QueueItem) -> int | None:
-        """Add an item after the build, in dataset order: an image whose predictions have
+        """Add an item after the build, in its place: an image whose predictions have
         arrived. Its row, or None when it is already there."""
-        if item.key in self._order:
+        if item.key in self._rank:
             return None
-        row = bisect.bisect_right(self._orders, item.entry.order)
-        self.items.insert(row, item)
-        self._orders.insert(row, item.entry.order)
-        self._order[item.key] = item.entry.order
+        row = bisect.bisect_right(self._ranks, item.sort_key)
+        self._add(row, item)
         if self.cursor is None:
             self.cursor = item.key
         return row
@@ -577,7 +603,7 @@ class Queue:
 
     def index_of(self, key: str) -> int | None:
         """The row of the item with this key, or None when it is not in the queue."""
-        return self._row(key) if key in self._order else None
+        return self._row(key) if key in self._rank else None
 
     def move(self, delta: int) -> bool:
         """Step through the queue; False, and no move, at either end."""
@@ -589,7 +615,7 @@ class Queue:
         return self._set(self.items[index].key)
 
     def go_to(self, key: str) -> bool:
-        return key in self._order and self._set(key)
+        return key in self._rank and self._set(key)
 
     def _set(self, key: str) -> bool:
         self.cursor = key
@@ -601,10 +627,9 @@ class Queue:
         return sum(1 for item in self.items if not is_reviewed(item.key))
 
     def recheck(self, entry: ImageEntry, ctx: BuildContext) -> None:
-        """After `entry` changed: mark its item stale while it no longer matches."""
-        if entry.rel not in self._order:
-            return
-        if self.source.matches(entry, ctx):
-            self.stale.discard(entry.rel)
-        else:
-            self.stale.add(entry.rel)
+        """After `entry` changed: mark each of its items stale while it no longer holds."""
+        for key in self.keys_of(entry.rel):
+            if self.source.holds(self.items[self._row(key)], ctx):
+                self.stale.discard(key)
+            else:
+                self.stale.add(key)

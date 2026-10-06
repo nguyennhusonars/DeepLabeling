@@ -290,3 +290,39 @@ def test_late_joins_into_a_long_queue_stay_quick():
     assert time.perf_counter() - start < 1.0
     assert [it.entry.order for it in queue.items] == sorted(it.entry.order for it in queue.items)
     assert all(queue.index_of(it.key) == i for i, it in enumerate(queue.items))
+
+
+def test_a_queue_keeps_its_items_in_their_own_order(dataset):
+    """A queue of findings is ordered by kind and score, not by image."""
+    e = dataset.images
+    items = [QueueItem(f"{e[3].rel}#0#wrong class", e[3], rank=(0, -0.9, e[3].order, 0)),
+             QueueItem(f"{e[0].rel}#1#wrong class", e[0], rank=(0, -0.8, e[0].order, 1)),
+             QueueItem(f"{e[0].rel}#0#not an object", e[0], rank=(1, -1.0, e[0].order, 0))]
+    queue = Queue(ImageFilter())
+    queue.extend(items)
+    late = QueueItem(f"{e[5].rel}#0#wrong class", e[5], rank=(0, -0.85, e[5].order, 0))
+    assert queue.insert(late) == 1
+    assert [it.key for it in queue.items] == [items[0].key, late.key, items[1].key, items[2].key]
+    assert queue.has_image(e[0].rel) and queue.keys_of(e[0].rel) == [items[1].key, items[2].key]
+    assert queue.index_of(items[2].key) == 3 and not queue.has_image(e[1].rel)
+
+
+def test_a_queue_refuses_items_out_of_their_order(dataset):
+    e = dataset.images
+    queue = Queue(ImageFilter())
+    queue.extend([QueueItem(e[1].rel, e[1])])
+    with pytest.raises(ValueError, match="out of order"):
+        queue.extend([QueueItem(e[0].rel, e[0])])
+
+
+def test_each_item_of_a_changed_image_is_rechecked_by_its_source(dataset, ctx):
+    e = dataset.images[0]
+
+    class OneHolds(ImageFilter):
+        def holds(self, item, ctx):
+            return item.key.endswith("#keep")
+
+    queue = Queue(OneHolds())
+    queue.extend([QueueItem(f"{e.rel}#keep", e, rank=(0,)), QueueItem(f"{e.rel}#gone", e, rank=(1,))])
+    queue.recheck(e, ctx)
+    assert queue.stale == {f"{e.rel}#gone"}
