@@ -39,3 +39,23 @@ def test_the_class_map_and_threshold_dialogs_answer_none_when_cancelled(qtbot):
     answer_with_cancel()
     assert prompter.ask_threshold(0.25) is None
     qtbot.waitUntil(lambda: not parent.findChildren(ClassMapDialog))
+
+
+def test_the_progress_dialog_is_modal_visible_and_cancels(qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QProgressDialog
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    parent.resize(600, 400)
+    parent.show()
+    progress = QtPrompter(parent).progress("Undoing accept", 10)
+    dialog = parent.findChild(QProgressDialog)
+    qtbot.waitUntil(dialog.isVisible)
+    assert dialog.windowModality() == Qt.ApplicationModal and dialog.labelText() == "Undoing accept"
+    progress.set(4)
+    assert dialog.value() == 4 and not progress.cancelled()
+    dialog.cancel()
+    assert progress.cancelled()
+    progress.close()
+    qtbot.waitUntil(lambda: not parent.findChildren(QProgressDialog))

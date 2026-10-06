@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox, QProgressDialog
 
 from ..core.classmap import ClassMap
 from ..core.dataset import Dataset
@@ -29,6 +30,30 @@ def taxonomy_question(last_source: str, last_names, source: str, names) -> str:
             f"({len(names)} classes: {_names(names)}).\n\n"
             "A label file's ids mean one class list. Under the wrong one every name shown is "
             "wrong, and every edit writes wrong ids. Open with the new class list?")
+
+
+class Progress:
+    """A modal progress dialog with a Cancel button. The window keeps painting behind it,
+    and nothing else in the app can be clicked while it shows."""
+
+    def __init__(self, dialog: QProgressDialog):
+        self._dialog = dialog
+        dialog.setWindowModality(Qt.ApplicationModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setValue(0)
+        dialog.show()
+
+    def set(self, value: int) -> None:
+        self._dialog.setValue(value)
+
+    def cancelled(self) -> bool:
+        return self._dialog.wasCanceled()
+
+    def close(self) -> None:
+        self._dialog.close()
+        self._dialog.deleteLater()
 
 
 class QtPrompter:
@@ -87,3 +112,6 @@ class QtPrompter:
             return dialog.class_map() if dialog.exec() == QDialog.Accepted else None
         finally:
             dialog.deleteLater()
+
+    def progress(self, title: str, total: int) -> Progress:
+        return Progress(QProgressDialog(title, "Cancel", 0, total, self.parent))
