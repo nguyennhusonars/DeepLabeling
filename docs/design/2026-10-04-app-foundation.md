@@ -591,9 +591,7 @@ What each later spec starts from. None of this is designed yet.
 
 - **2 · Model assist.** Designed: [2026-10-05-model-assist.md](2026-10-05-model-assist.md).
 - **3 · Filters.** Designed: [2026-10-06-filters.md](2026-10-06-filters.md).
-- **4 · Find Bad.** A `QueueSource` that streams findings with `focus` set. Grid tiles show
-  the crop. The canvas spotlights the finding in the whole frame, with the finding's
-  actions in the inspector. Dismissals persist per dataset.
+- **4 · Find Bad.** Designed: [2026-10-06-find-bad.md](2026-10-06-find-bad.md).
 - **5 · Bulk and the rest.** Bulk reassign is one multi-file Edit, applied in chunks and
   undoable. Then statistics, crop export with unique names (legacy #7), and the Qwen round
   trip.

@@ -19,10 +19,15 @@ from .store import ImageLabels
 
 
 def checkable(cmap: ClassMap, dataset: Dataset) -> frozenset[int]:
-    """The dataset classes some model class maps to: only their labels can be unseen
+    """The dataset classes some model class maps to, directly or into their group of the
+    yaml's `groups:`: only their labels can be unseen
     (docs/knowledge/matching.md#the-checkable-class-guard)."""
-    return frozenset(c for c in (cmap.translate(m, dataset) for m in range(len(cmap.model_names)))
-                     if c is not None)
+    mapped = {c for c in (cmap.translate(m, dataset) for m in range(len(cmap.model_names))) if c is not None}
+    names = {dataset.names[c] for c in mapped if 0 <= c < len(dataset.names)}
+    for members in dataset.groups.values():
+        if names & set(members):
+            mapped |= {i for i in map(dataset.id_of, members) if i is not None}
+    return frozenset(mapped)
 
 
 def unseen_labels(labels: ImageLabels, preds: Sequence[Prediction], cmap: ClassMap, dataset: Dataset,
