@@ -16,6 +16,7 @@ from .workers import Handle, Jobs
 
 THUMB_PX = 160                  #: a thumbnail's longer side, at most
 THUMB_BYTES = 64 * 2**20        #: the thumbnail cache's budget (the spec)
+TILE_PICTURE = (THUMB_PX, 120)  #: a grid tile's picture area: a crop is scaled to fill it
 
 
 def decode_image(path) -> QImage:
@@ -102,6 +103,11 @@ def decode_crop(path, rect: tuple[int, int, int, int], fit: tuple[int, int]) -> 
     if image.isNull():
         raise ValueError(reader.errorString() or "not an image")
     return image
+
+
+def decode_tile(crop: Crop) -> QImage:
+    """A finding's tile: its crop, scaled to fill the tile's picture area."""
+    return decode_crop(crop.path, crop.rect, TILE_PICTURE)
 
 
 class ImageCache(QObject):

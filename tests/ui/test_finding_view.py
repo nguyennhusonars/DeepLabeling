@@ -54,12 +54,16 @@ def test_rows_name_the_finding_and_say_when_it_is_fixed_or_dismissed(qtbot, wind
     assert session.describe_item(session.queue.items[0]).endswith("car 0.95 · dismissed")
 
 
-def test_a_tile_names_its_image_and_is_ticked_by_it(qtbot, window):
+def test_a_tile_names_the_label_the_model_s_call_and_its_state(qtbot, window):
     session = window.session
-    item = session.queue.items[1]
-    assert tile_text(session, item) == "0001.jpg · wrong class: car → person 0.80"
+    first, item, nothing = session.queue.items
+    assert tile_text(session, item) == "car → person 0.80"
+    assert tile_text(session, nothing) == "bus_m → nothing 1.00"
     session.mark_reviewed([item.key])
-    assert tile_text(session, item).startswith("✓ 0001.jpg")
+    assert tile_text(session, item) == "✓ car → person 0.80"
+    session.go_to(first.key)
+    session.dismiss_current()
+    assert tile_text(session, first) == "bus_m → car 0.95 · dismissed"
 
 
 def test_the_inspector_has_a_finding_line(qtbot, window):
@@ -121,3 +125,15 @@ def test_the_queue_editor_opens_a_findings_queue_and_is_offered_it_back(qtbot, w
     assert [item.key for item in session.queue.items] == FOUND
     window.edit_queue()
     assert window.prompter.asked[-1][1] == Findings()
+
+
+@pytest.mark.parametrize("finding, text", [
+    (Finding(1, "", "wrong class", 0.82, 1, CAR, 0, CAR, 0.82), "car → person 0.82"),
+    (Finding(1, "", "not an object", 0.97, 2, CAR), "bus_m → nothing 0.97"),
+    (Finding(1, "", "weakly seen", 0.59, 1, CAR, 1, CAR, 0.41), "car → car 0.41"),
+])
+def test_a_tile_caption_is_short(ds, finding, text):
+    from deeplabeling.core.dataset import Dataset
+    from deeplabeling.ui.findview import finding_caption
+
+    assert finding_caption(finding, Dataset.open(ds.yaml)) == text
