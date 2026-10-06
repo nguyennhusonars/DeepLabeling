@@ -128,3 +128,50 @@ def test_an_image_changed_on_disk_since_is_inferred_again(qtbot, session, made, 
         session.model.infer_queue()
     assert said.args[1] == "inferred 1 image; 1 failed"      # it; and ok.jpg failed again
     assert made[-1].asked.count("0004.JPG") == 2
+
+
+def test_loading_another_model_stops_the_pass(qtbot, session, gate, made, tmp_path):
+    gate.clear()
+    session.model.infer_queue()
+    time.sleep(0.1)                                           # the first batch is in hand
+    other = tmp_path / "other.pt"
+    other.write_bytes(b"other")
+    session.model.factory = lambda path: made.append(FakePredictor(path)) or made[-1]
+    session.model.load(other)
+    assert not session.model.passing
+    gate.set()
+    qtbot.waitUntil(lambda: session.model.state == "ready", timeout=5000)
+    qtbot.wait(300)
+    assert made[-1].asked == ["0001.jpg", "0002.jpg", "0003.jpg"]    # the screen's, nothing more
+
+
+def test_a_model_that_fails_to_load_mid_pass_leaves_no_pass_behind(qtbot, session, gate, tmp_path):
+    gate.clear()
+    session.model.infer_queue()
+    time.sleep(0.1)
+    broken = tmp_path / "broken.pt"
+    broken.write_bytes(b"x")
+    session.model.load(broken)
+    gate.set()
+    qtbot.waitUntil(lambda: session.model.state == "failed", timeout=5000)
+    assert not session.model.passing
+
+
+def test_an_image_a_pass_could_not_store_is_no_longer_failed_once_a_later_pass_stores_it(qtbot, session,
+                                                                                        monkeypatch):
+    import sqlite3
+
+    store, put_many = session.workspace.predictions, session.workspace.predictions.put_many
+
+    def full(model, rows):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(store, "put_many", full)
+    with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info"):
+        session.model.infer_queue()
+    entry = session.queue.items[5].entry                      # camB/0001
+    assert "disk is full" in session.model.failure(entry)
+    monkeypatch.setattr(store, "put_many", put_many)
+    with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info"):
+        session.model.infer_queue()
+    assert session.model.failure(entry) is None and session.model.predictions(entry) == []

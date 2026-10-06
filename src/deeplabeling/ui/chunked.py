@@ -40,6 +40,9 @@ class Chunked(QObject):
         except Refused as e:
             self._finish(error=e)
             return
+        except Exception as e:                        # whatever a step raises ends the run
+            self._finish(error=Refused(f"{type(e).__name__}: {e}"))
+            return
         if more:
             QTimer.singleShot(0, self._next)
         else:

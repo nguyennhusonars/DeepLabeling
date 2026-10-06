@@ -70,7 +70,9 @@ def accept_queue(session) -> None:
         return looked < len(entries)
 
     def end(progress, cancelled, error) -> None:
-        if cancelled or error is not None or session.workspace is not ws:
+        if error is not None and session.workspace is ws:
+            session.notice.emit("error", f"the queue could not be looked at: {error}", None)
+        elif cancelled or session.workspace is not ws:
             session.status.emit("accept cancelled: nothing was written")
         elif not plan.intents:
             session.status.emit("; ".join(["no missing boxes to accept in this queue"]
@@ -83,7 +85,8 @@ def accept_queue(session) -> None:
 
 
 def _write(session, plan: QueueAccept) -> None:
-    batch = session.workspace.editor.batch(DESCRIPTION)
+    history = session.workspace.history
+    batch, last = session.workspace.editor.batch(DESCRIPTION), history.peek_undo()
     intents, written = plan.intents, 0
 
     def step(progress) -> bool:
@@ -96,7 +99,9 @@ def _write(session, plan: QueueAccept) -> None:
 
     def end(progress, cancelled, error) -> None:
         if error is not None:
-            session.notice.emit("error", f"nothing was accepted: {error}", None)
+            kept = history.peek_undo() is not last     # files the rollback could not put back
+            session.notice.emit("error", f"the accept failed part-way: {error}" if kept
+                                else f"nothing was accepted: {error}", None)
             return
         batch.finish()
         boxes = sum(len(intent.ops) for intent in intents[:written])

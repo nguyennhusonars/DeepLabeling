@@ -140,3 +140,34 @@ def test_without_a_model_or_a_whole_queue_it_says_why(qtbot, session):
     with qtbot.waitSignal(session.status) as said:
         accept_queue(session)
     assert said.args == ["no model is loaded"]
+
+
+def test_an_unexpected_error_while_looking_ends_the_run_and_says_so(qtbot, session, prompter, monkeypatch):
+    import sqlite3
+
+    def broken(*args):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(session.workspace.predictions, "get", broken)
+    with qtbot.waitSignal(session.notice, timeout=5000) as said:
+        accept_queue(session)
+    assert said.args[1] == "the queue could not be looked at: DatabaseError: database disk image is malformed"
+    assert session.running is None and prompter.progresses[-1].closed
+
+
+def test_files_that_cannot_be_put_back_are_said_to_stay_written(qtbot, session, ds, monkeypatch):
+    real, calls = store_module.write_atomic, []
+
+    def failing(path, data):
+        calls.append(path)
+        if len(calls) >= 3:                                  # the disk fills, and stays full
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", failing)
+    with qtbot.waitSignal(session.notice, timeout=5000) as said:
+        accept_queue(session)
+    qtbot.waitUntil(lambda: session.running is None)
+    assert said.args[1].startswith("the accept failed part-way: could not write")
+    assert "could not be put back and stay as written" in said.args[1]
+    assert session.workspace.history.depth == 1               # undo puts them back once there is room

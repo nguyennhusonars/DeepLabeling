@@ -49,7 +49,7 @@ class Progress:
         self._dialog.setValue(value)
 
     def cancelled(self) -> bool:
-        return self._dialog.wasCanceled()
+        return self._dialog.wasCanceled() or not self._dialog.isVisible()     # Esc hides it
 
     def close(self) -> None:
         self._dialog.close()

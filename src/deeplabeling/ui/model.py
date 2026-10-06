@@ -78,6 +78,9 @@ class _Worker(QThread):
     # -- asked from the GUI thread ----------------------------------------------------
 
     def load(self, factory: Callable, path: Path) -> None:
+        with self._cond:
+            self._pass.clear()                        # a pass is the old model's: it ends here
+            self._passing = False
         self._put(("load", factory, path))
 
     def unload(self) -> None:
@@ -267,8 +270,10 @@ class ModelSession(QObject):
 
     def load(self, path) -> None:
         """Load a weights file on the thread; `changed` says when it is ready or failed."""
+        if self.passing:
+            self.session.notice.emit("info", "inferring stopped: another model was loaded", None)
         self.state, self.path, self.key, self.names, self.error = "loading", Path(path), None, (), ""
-        self.class_map, self._failures = None, {}
+        self.class_map, self._failures, self.passing = None, {}, False
         if self._worker is None:
             self._worker = self._start_worker()
         self._worker.want(None, [])
@@ -459,6 +464,7 @@ class ModelSession(QObject):
         ws = self.session.workspace
         if ws is not None:
             self._known.add(ws.dataset.entry(path).rel)
+        self._failures.pop(path, None)                # stored since: no longer failed
         self.ready.emit(path)
 
     def _failed(self, path, why: str) -> None:

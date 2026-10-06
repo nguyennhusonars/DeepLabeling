@@ -78,3 +78,17 @@ def test_the_queue_accept_is_confirmed_with_yes_and_declined_otherwise(qtbot):
     assert prompter.confirm_queue_accept("Accept 1 box on 1 image?") is True
     answer_with_cancel()
     assert prompter.confirm_queue_accept("Accept 1 box on 1 image?") is False
+
+
+def test_esc_on_the_progress_dialog_cancels_it(qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QProgressDialog
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    progress = QtPrompter(parent).progress("Accepting", 10)
+    dialog = parent.findChild(QProgressDialog)
+    qtbot.waitUntil(dialog.isVisible)
+    qtbot.keyClick(dialog, Qt.Key_Escape)
+    assert progress.cancelled()
+    progress.close()
