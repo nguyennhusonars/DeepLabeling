@@ -139,3 +139,10 @@ def test_a_stronger_unmapped_prediction_speaks_for_its_place(ctx, dataset, cmap)
     preds = [P(0, (0.3, 0.3, 0.1, 0.1), 0.97), P(0, (0.3, 0.3, 0.1, 0.1), 0.4)]
     assert ModelDisagrees("unlabelled", conf=(0.25, 0.9)).highlight_predictions(
         labels, dataset, Seen(predictions=preds, class_map=cmap)) == frozenset()
+
+
+def test_a_class_is_checkable_through_its_group(dataset):
+    from deeplabeling.core.disagree import checkable
+
+    cmap = ClassMap.seeded(("car", "bus"), dataset.names).with_target(1, "bus_m")
+    assert checkable(cmap, dataset) == {1, 2, 3}           # car; bus_m, and bus_l of its group
