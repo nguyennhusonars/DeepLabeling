@@ -449,6 +449,10 @@ class ImageFilter:
         """Whether an item still belongs: its image still matches."""
         return self.matches(item.entry, ctx)
 
+    def still(self, entry: ImageEntry, items: list[QueueItem], ctx: BuildContext) -> set[str]:
+        """The keys of one image's items that still belong."""
+        return {item.key for item in items if self.holds(item, ctx)}
+
     def items_for(self, entry: ImageEntry, ctx: BuildContext) -> list[QueueItem]:
         """The items one image stands behind: itself when it matches."""
         return [QueueItem(entry.rel, entry)] if self.matches(entry, ctx) else []
@@ -533,7 +537,9 @@ class Queue:
         self._rank: dict[str, tuple] = {}           #: each item's sort key, by key
         self._ranks: list[tuple] = []               #: the items' sort keys, row by row: ascending
         self._by_image: dict[str, list[str]] = {}   #: the keys of each image's items
-        self._follow = follow       #: the item the cursor was on before a rebuild
+        #: Where the cursor was before a rebuild: an image (its first item takes the cursor)
+        #: or an item (that item, else the next after it in its order).
+        self._follow = follow
         self._moved = False
 
     def __len__(self) -> int:
@@ -565,11 +571,23 @@ class Queue:
             if self._ranks and item.sort_key < self._ranks[-1]:
                 raise ValueError(f"{item.key} arrives out of order")
             self._add(len(self.items), item)
-            if self._follow is not None and not self._moved and item.key == self._follow.rel:
+            if self._follow is not None and not self._moved and self._is_followed(item):
                 self.cursor = item.key
                 self._follow = None
         if self.cursor is None and self.items:
             self.cursor = self.items[0].key
+
+    def _is_followed(self, item: QueueItem) -> bool:
+        f = self._follow
+        return item.key == f.key if isinstance(f, QueueItem) else item.entry.rel == f.rel
+
+    def _comes_after(self, item: QueueItem) -> bool:
+        f = self._follow
+        if isinstance(f, QueueItem):
+            if len(item.sort_key) == len(f.sort_key):       # the same kind of queue: its order
+                return item.sort_key > f.sort_key
+            f = f.entry
+        return item.entry.order > f.order
 
     def insert(self, item: QueueItem) -> int | None:
         """Add an item after the build, in its place: an image whose predictions have
@@ -587,7 +605,7 @@ class Queue:
         item after it in dataset order, or the last item."""
         self.complete = True
         if self._follow is not None and not self._moved and self.items:
-            after = next((it for it in self.items if it.entry.order > self._follow.order), None)
+            after = next((it for it in self.items if self._comes_after(it)), None)
             self.cursor = (after or self.items[-1]).key
         self._follow = None
 
@@ -630,8 +648,12 @@ class Queue:
 
     def recheck(self, entry: ImageEntry, ctx: BuildContext) -> None:
         """After `entry` changed: mark each of its items stale while it no longer holds."""
-        for key in self.keys_of(entry.rel):
-            if self.source.holds(self.items[self._row(key)], ctx):
+        keys = self.keys_of(entry.rel)
+        if not keys:
+            return
+        held = self.source.still(entry, [self.items[self._row(key)] for key in keys], ctx)
+        for key in keys:
+            if key in held:
                 self.stale.discard(key)
             else:
                 self.stale.add(key)

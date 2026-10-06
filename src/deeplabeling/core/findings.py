@@ -59,10 +59,20 @@ class FindSettings:
         if not 0 < self.match_iou <= 1:
             raise ValueError("matching IoU: must be above 0 and at most 1")
         _unit(self.ceiling, "wrong-class ceiling")
-        why = range_error(*self.band, "not-an-object band", open_ends=True)
+        lo, hi = self.band
+        if lo is None:
+            raise ValueError("not-an-object band: the lower end must be a number")
+        why = range_error(lo, hi, "not-an-object band", open_ends=True)
         if why:
             raise ValueError(why)
+        if hi is None and lo > self.match_iou:
+            raise ValueError(f"not-an-object band: {lo:g} is above the matching IoU {self.match_iou:g}")
         _unit(self.cutoff, "weak cutoff")
+        # Settings under which a kind could never report are refused, not quietly kept.
+        if self.ceiling < self.floor:
+            raise ValueError(f"wrong-class ceiling: {self.ceiling:g} is below the confidence floor {self.floor:g}")
+        if self.cutoff <= self.floor:
+            raise ValueError(f"weak cutoff: {self.cutoff:g} is not above the confidence floor {self.floor:g}")
 
     @property
     def band_hi(self) -> float:
@@ -182,9 +192,15 @@ class Findings:
             emit(items[start:start + batch])
         return True
 
+    def still(self, entry, items: list[QueueItem], ctx: BuildContext) -> set[str]:
+        """The keys of one image's `items` still found: the image judged once, each finding
+        matched by its line's content and kind -- deleting another line shifts the numbers."""
+        found = {(it.finding.text, it.finding.kind) for it in self.items_for(entry, ctx)}
+        return {it.key for it in items if (it.finding.text, it.finding.kind) in found}
+
     def holds(self, item: QueueItem, ctx: BuildContext) -> bool:
-        """Whether a finding is still there: its image judged again finds it."""
-        return any(it.key == item.key for it in self.items_for(item.entry, ctx))
+        """Whether a finding is still there."""
+        return item.key in self.still(item.entry, [item], ctx)
 
     def matches(self, entry, ctx: BuildContext) -> bool:
         return bool(self.items_for(entry, ctx))

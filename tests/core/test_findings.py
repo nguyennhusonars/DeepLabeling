@@ -131,3 +131,14 @@ def test_unusable_settings_are_refused_by_name(kw, why):
 def test_settings_survive_their_json():
     s = FindSettings(floor=0.5, match_iou=0.6, ceiling=0.9, band=(0.0, None), weak=True, cutoff=0.7)
     assert FindSettings.from_json(s.to_json()) == s and FindSettings.from_json(FindSettings().to_json()) == FindSettings()
+
+
+@pytest.mark.parametrize("kw, why", [
+    (dict(band=(None, 0.3)), "not-an-object band: the lower end must be a number"),
+    (dict(band=(0.7, None)), "not-an-object band: 0.7 is above the matching IoU 0.5"),
+    (dict(ceiling=0.2), "wrong-class ceiling: 0.2 is below the confidence floor 0.4"),
+    (dict(cutoff=0.3, weak=True), "weak cutoff: 0.3 is not above the confidence floor 0.4"),
+])
+def test_settings_that_could_never_report_are_refused_by_name(kw, why):
+    with pytest.raises(ValueError, match=why):
+        FindSettings(**kw)

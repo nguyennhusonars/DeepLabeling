@@ -114,3 +114,42 @@ def test_a_findings_queue_reads_as_words_and_survives_its_json(source, text, dat
     assert source.describe(dataset) == text and source.needs_model
     assert source_from_json(source.to_json()) == source
     assert source_from_json(ImageFilter(splits=("val",)).to_json()) == ImageFilter(splits=("val",))
+
+
+def test_a_finding_still_there_holds_after_another_line_is_deleted(make_ctx, dataset, ds):
+    """Deleting a stray box shifts the lines after it: a finding is its line's content and
+    kind, not its line number."""
+    ds.lbl("camA/0002").write_text("0 0.100000 0.100000 0.050000 0.050000\n0 0.900000 0.900000 0.050000 0.050000\n")
+    ctx = make_ctx()
+    queue = Queue(Findings())
+    queue.extend(built(Findings(), ctx))
+    strays = [key for key in queue.keys_of("camA/images/0002.jpg")]
+    assert strays == ["camA/images/0002.jpg#0#not an object", "camA/images/0002.jpg#1#not an object"]
+    ds.lbl("camA/0002").write_text("0 0.900000 0.900000 0.050000 0.050000\n")   # the first one deleted
+    queue.recheck(dataset.entry(dataset.root / "camA/images/0002.jpg"), make_ctx())
+    assert queue.stale == {strays[0]}
+
+
+def test_rechecking_an_image_judges_it_once(make_ctx, dataset, ds, monkeypatch):
+    from deeplabeling.core import findings as findings_module
+
+    ds.lbl("camA/0002").write_text("0 0.100000 0.100000 0.050000 0.050000\n0 0.900000 0.900000 0.050000 0.050000\n")
+    queue = Queue(Findings())
+    queue.extend(built(Findings(), make_ctx()))
+    calls, real = [], findings_module.judge
+    monkeypatch.setattr(findings_module, "judge", lambda *a: calls.append(1) or real(*a))
+    queue.recheck(dataset.entry(dataset.root / "camA/images/0002.jpg"), make_ctx())
+    assert len(calls) == 1
+
+
+def test_a_rebuilt_findings_queue_keeps_the_finding_the_cursor_was_on(make_ctx):
+    items = built(Findings(), make_ctx())
+    on = items[1]                                            # the car's wrong class
+    again = Queue(Findings(), follow=on)
+    again.extend(items)
+    again.finish()
+    assert again.cursor == on.key
+    gone = Queue(Findings(), follow=on)                      # fixed since: the next finding takes it
+    gone.extend([items[0], items[2]])
+    gone.finish()
+    assert gone.cursor == items[2].key
