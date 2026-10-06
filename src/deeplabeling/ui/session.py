@@ -10,6 +10,7 @@ therefore owns the LabelStore's write path (spec: Notes for plan 1b).
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Protocol
 
@@ -17,7 +18,8 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..core.dataset import DatasetError, ImageEntry
 from ..core.edits import CreateEmpty, Edit, Intent, Refused
-from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem
+from ..core.findings import KINDS, Findings
+from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem, Scanned, source_from_json
 from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
@@ -85,7 +87,7 @@ class Session(QObject):
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
-        self._follow: ImageEntry | None = None      # where a rebuilding queue must land
+        self._follow: ImageEntry | QueueItem | None = None  # where a rebuilding queue must land
         self._seen: tuple | None = None             # (image, raw, state) last reported on screen
         self._keys: frozenset[str] | None = None    # review marks, snapshotted until they change
         self._reloaded.connect(lambda image: self.labelsChanged.emit((image,)))
@@ -198,21 +200,23 @@ class Session(QObject):
         opening = self._require().opening_settings
         try:
             stored = opening.get(QUEUE_SOURCE)
-            source = ImageFilter.from_json(stored) if stored else ImageFilter()
+            source = source_from_json(stored) if stored else ImageFilter()
         except ValueError:
             source = ImageFilter()
         cursor = opening.get(QUEUE_CURSOR)
-        self.set_queue(source, follow=self._by_rel.get(cursor) if cursor else None)
+        entry = self._by_rel.get(cursor.split("#")[0]) if cursor else None    # a finding's key starts with its image
+        self.set_queue(source, follow=QueueItem(cursor, entry) if entry is not None else None)
 
-    def set_queue(self, source: ImageFilter, follow: ImageEntry | None = None) -> None:
-        """Rebuild the queue from `source`, keeping the cursor on its image if it is still in."""
+    def set_queue(self, source, follow: ImageEntry | QueueItem | None = None) -> None:
+        """Rebuild the queue from `source` (images, or findings), keeping the cursor on its
+        item if it is still in."""
         ws = self._require()
         if self._build is not None:
             self._build.cancel()
         if follow is None:
             # A rebuild that has not yet reached the user's place still owes it: follow
             # that, not the item the unfinished queue happens to show.
-            follow = self._follow or (self.current().entry if self.current() is not None else None)
+            follow = self._follow or self.current()
         self._follow = follow
         queue = self.queue = Queue(source, follow=follow)
         queue.built_with = self._model_identity()
@@ -228,7 +232,8 @@ class Session(QObject):
             return
         ctx = self.context()
         self._build = self.io.start(
-            lambda emit, cancelled: source.build(ctx, emit, cancelled),
+            lambda emit, cancelled: source.build(ctx, emit, cancelled,
+                                                 progress=lambda done, total: emit(Scanned(done, total))),
             batch=lambda items: self._grew(queue, items),
             done=lambda finished: self._built(queue, finished, left_out=ctx.left_out),
             failed=lambda why: self._build_failed(queue, why, ctx.left_out))
@@ -256,7 +261,7 @@ class Session(QObject):
             entry = ws.dataset.entry(path)
         except KeyError:
             return
-        if entry.rel in queue:
+        if queue.has_image(entry.rel):
             self._recheck((path,))
             return
         if not queue.complete:
@@ -267,13 +272,13 @@ class Session(QObject):
         if not waiting or entry.rel not in waiting:
             return
         waiting.discard(entry.rel)
-        if queue.source.matches(entry, self.context()):
-            empty = queue.cursor is None
-            row = queue.insert(QueueItem(entry.rel, entry))
+        empty = queue.cursor is None
+        for item in queue.source.items_for(entry, self.context()):     # an image, or its findings
+            row = queue.insert(item)
             if row is not None:
                 self.itemInserted.emit(row)
-            if empty and queue.cursor is not None:
-                self._cursor_moved()                # the first image of an empty queue: shown
+        if empty and queue.cursor is not None:
+            self._cursor_moved()                    # the first item of an empty queue: shown
         self.queueGrew.emit()
 
     def context(self) -> BuildContext:
@@ -285,14 +290,19 @@ class Session(QObject):
             self._keys = ws.review.keys()
         snapshot = (ModelSnapshot(model.key, ws.predictions, model.class_map)
                     if model.state == "ready" and model.class_map is not None else None)
-        return BuildContext(ws.dataset, ws.store, self._keys, sizes=ws.sizes, model=snapshot)
+        return BuildContext(ws.dataset, ws.store, self._keys, sizes=ws.sizes, model=snapshot,
+                            dismissed=ws.dismissals.snapshot())
 
     def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
         if queue is not self.queue:
             return                                  # a cancelled build's last batch
+        if isinstance(items, Scanned):
+            queue.scanned = items
+            self.queueGrew.emit()
+            return
         before = queue.cursor
         queue.extend(items)
-        if self._follow is not None and queue.cursor == self._follow.rel:
+        if self._follow is not None and not queue.following:
             self._follow = None                     # the user's place has arrived
         self.queueGrew.emit()
         if queue.cursor != before:
@@ -393,9 +403,15 @@ class Session(QObject):
         if queue.failed is not None:
             return " · build failed"
         if not queue.complete:
+            if queue.scanned is not None:
+                return f" · scanning {queue.scanned.done:,} / {queue.scanned.total:,}"
             return " · building…"
-        return "".join(f" · {UNSETTLED[what](len(rels))}" for what, rels in sorted(queue.left_out.items())
-                       if rels and what in UNSETTLED)
+        text = ""
+        if isinstance(queue.source, Findings):
+            counts = Counter(item.finding.kind for item in queue.items)
+            text = "".join(f" · {counts[kind]:,} {kind}" for kind in KINDS if counts[kind])
+        return text + "".join(f" · {UNSETTLED[what](len(rels))}" for what, rels in sorted(queue.left_out.items())
+                              if rels and what in UNSETTLED)
 
     def left(self) -> int:
         if self.queue is None or self.workspace is None:
@@ -425,8 +441,8 @@ class Session(QObject):
         return text
 
     def describe_item(self, item: QueueItem) -> str:
-        tick = "✓" if self._require().review.is_marked(item.key) else "·"
-        return f"{tick} {item.key}  —  {self.badge(item)}"
+        tick = "✓" if self._require().review.is_marked(item.entry.rel) else "·"
+        return f"{tick} {item.entry.rel}  —  {self.badge(item)}"
 
     def reviewed_counts(self) -> tuple[int, int]:
         """Marks among THIS dataset's images: yamls sharing a root list different folders."""
@@ -440,16 +456,16 @@ class Session(QObject):
         item = self.current()
         if item is None:
             return
-        if self._require().review.mark(item.key):
-            self._review_changed([item.key])
+        if self._require().review.mark(item.entry.rel):
+            self._review_changed([item.entry.rel])
         self.move(1)
 
     def toggle_reviewed(self) -> None:
         item = self.current()
         if item is None:
             return
-        self._require().review.toggle(item.key)
-        self._review_changed([item.key])
+        self._require().review.toggle(item.entry.rel)
+        self._review_changed([item.entry.rel])
 
     def mark_reviewed(self, keys, left: int = 0) -> int:
         """Mark these images reviewed (the grid's mark page); how many were not already.
@@ -457,7 +473,9 @@ class Session(QObject):
         ws = self.workspace
         if ws is None:
             return 0
-        newly = [key for key in keys if ws.review.mark(key)]
+        rels = dict.fromkeys(self.queue.items[self.queue.index_of(key)].entry.rel for key in keys
+                             if self.queue is not None and key in self.queue)
+        newly = [rel for rel in rels if ws.review.mark(rel)]
         if newly:
             self._review_changed(newly)
             said = f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed"
@@ -469,11 +487,13 @@ class Session(QObject):
         self.status.emit(said)
         return len(newly)
 
-    def _review_changed(self, keys: list[str]) -> None:
+    def _review_changed(self, rels: list[str]) -> None:
+        """These images' marks changed: every item they stand behind is redrawn."""
         self._keys = None                           # the marks snapshot is out of date
         self.saver.schedule()
         self.reviewChanged.emit()
-        self.itemsChanged.emit(keys)
+        queue = self.queue
+        self.itemsChanged.emit([key for rel in rels for key in queue.keys_of(rel)] if queue is not None else rels)
 
     # -- edits -----------------------------------------------------------------
 
@@ -543,8 +563,9 @@ class Session(QObject):
         image = edit.images[0]
         rel = ws.dataset.entry(image).rel
         current = self.current()
-        if self.queue is not None and rel in self.queue and (current is None or current.key != rel):
-            self.go_to(rel)                         # the change happens in view
+        if (self.queue is not None and self.queue.has_image(rel)
+                and (current is None or current.entry.rel != rel)):
+            self.go_to(self.queue.keys_of(rel)[0])  # the change happens in view
         if len(edit.changes) > chunked.CHUNK:
             self._restore_in_chunks(edit, undo)
             return
@@ -602,11 +623,11 @@ class Session(QObject):
                 entry = self.workspace.dataset.entry(image)
             except KeyError:
                 continue
-            if entry.rel not in self.queue:
+            if not self.queue.has_image(entry.rel):
                 continue
             ctx = ctx or self.context()
             self.queue.recheck(entry, ctx)
-            keys.append(entry.rel)
+            keys.extend(self.queue.keys_of(entry.rel))
         if keys:
             self.itemsChanged.emit(keys)
 
