@@ -126,3 +126,16 @@ def test_a_model_condition_reads_as_words_and_survives_its_json(condition, text,
 def test_an_unusable_model_condition_is_refused(kw, why):
     with pytest.raises(ValueError, match=why):
         ModelDisagrees(**kw)
+
+
+def test_a_stronger_unmapped_prediction_speaks_for_its_place(ctx, dataset, cmap):
+    # On a negative, an unmapped truck at 0.92 and a mapped car at 0.31 on one spot: the
+    # truck speaks for the place, as accepting the image agrees (it would add nothing).
+    labels = ctx.labels(dataset.entry(dataset.root / "camA/images/0002.jpg"))
+    preds = [P(2, (0.3, 0.3, 0.1, 0.1), 0.92), P(0, (0.3, 0.3, 0.1, 0.1), 0.31)]
+    seen = Seen(predictions=preds, class_map=cmap)
+    assert ModelDisagrees("unlabelled").highlight_predictions(labels, dataset, seen) == frozenset()
+    # ... and a stronger prediction above the upper bound still speaks for its place
+    preds = [P(0, (0.3, 0.3, 0.1, 0.1), 0.97), P(0, (0.3, 0.3, 0.1, 0.1), 0.4)]
+    assert ModelDisagrees("unlabelled", conf=(0.25, 0.9)).highlight_predictions(
+        labels, dataset, Seen(predictions=preds, class_map=cmap)) == frozenset()

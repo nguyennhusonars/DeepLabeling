@@ -25,7 +25,9 @@ from .store import ImageLabels, LabelState, LabelStore
 
 LABEL_STATES = ("missing", "negative", "boxes")
 UNITS = ("px", "%")
-EPS = 1e-9          #: label files hold six decimals; a size at a range's end is inside it
+#: Label files hold six decimals: a box drawn exactly at a range's end reads back within
+#: half a step of it (10 px of a 48 px side is 0.208333, so 9.999984 px).
+HALF_STEP = 5e-7
 
 
 @dataclass(frozen=True)
@@ -208,9 +210,9 @@ class NameContains(Condition):
         return {"kind": self.kind, "text": self.text}
 
 
-def _in(value: float, bounds: tuple[float | None, float | None]) -> bool:
+def _in(value: float, bounds: tuple[float | None, float | None], tol: float) -> bool:
     lo, hi = bounds
-    return (lo is None or value >= lo - EPS) and (hi is None or value <= hi + EPS)
+    return (lo is None or value >= lo - tol) and (hi is None or value <= hi + tol)
 
 
 def _bounds(bounds: tuple[float | None, float | None], unit: str) -> str:
@@ -251,7 +253,8 @@ class Boxes(Condition):
         sx, sy = size if self.unit == "px" else (100.0, 100.0)
         return frozenset(i for i, line in labels.boxes
                          if (not self.names or line.cls_id in ids)
-                         and _in(line.bbox[2] * sx, self.w) and _in(line.bbox[3] * sy, self.h))
+                         and _in(line.bbox[2] * sx, self.w, HALF_STEP * sx)
+                         and _in(line.bbox[3] * sy, self.h, HALF_STEP * sy))
 
     def test(self, entry, ctx):
         size = None

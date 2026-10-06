@@ -122,6 +122,14 @@ screen. An unknown answer is reported as unknown.
   decoding. Decoding 46k frames only to learn their sizes cost about 6 minutes per scan,
   indistinguishable from re-running the model.
 
+- Which formats are turned depends on the decoder. Measured 2026-10-06 with orientation 6
+  written into a 64×48 image: Qt's decode (the canvas's) turns a JPEG and a TIFF, and shows
+  a PNG and a WebP as stored. Pillow already reports the TIFF's size as shown, so only a
+  JPEG's swap is the size function's to make. Reproduce:
+  `tests/ui/test_images.py::test_the_header_size_is_the_decoded_size_in_every_format`.
+- Pillow's `getexif()` decodes a PNG to look for EXIF after its pixels: about 21× a header
+  read on small crops, 300× on a 4000×3000 frame (2026-10-06). The EXIF a header holds is
+  in `info["exif"]` once the file is opened.
 - DeepLabeling's one size function is `src/deeplabeling/core/imagesize.py::image_size`;
   `src/deeplabeling/core/imagesize.py::ImageSizes` caches it for the open dataset, stamped
   like the label cache.

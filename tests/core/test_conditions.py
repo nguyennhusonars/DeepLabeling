@@ -131,3 +131,10 @@ def test_an_overlap_reads_as_words_and_survives_its_json(dataset):
 def test_an_unusable_overlap_is_refused(args, why):
     with pytest.raises(ValueError, match=why):
         Overlap(*args)
+
+
+def test_a_size_drawn_exactly_at_a_range_end_is_inside_it_after_six_decimals(ctx, ds):
+    # 10 px of a 48 px high frame is 0.2083333..., written as 0.208333: 9.999984 px.
+    ds.lbl("camA/0003").write_text("1 0.500000 0.500000 0.100000 0.208333\n")
+    assert "camA/images/0003.jpg" in keys(Boxes(("car",), h=(10, None), unit="px"), ctx)
+    assert "camA/images/0003.jpg" in keys(Boxes(("car",), h=(None, 9.99999), unit="px"), ctx)

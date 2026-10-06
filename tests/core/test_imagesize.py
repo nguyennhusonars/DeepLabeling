@@ -77,3 +77,11 @@ def test_a_workspace_keeps_one_cache_for_its_dataset(ds):
         assert isinstance(ws.sizes, ImageSizes) and ws.sizes.get(ds.img("camB/rot.jpg")) == (48, 64)
     finally:
         ws.close()
+
+
+def test_a_png_is_never_decoded_either(ds, monkeypatch):
+    def refuse(self):
+        raise AssertionError("decoded")
+
+    monkeypatch.setattr(Image.Image, "load", refuse)
+    assert image_size(ds.img("camB/twin.png")) == (64, 48)

@@ -39,8 +39,19 @@ def unlabelled_predictions(labels: ImageLabels, preds: Sequence[Prediction], cma
                            dataset: Dataset, match_iou: float, conf_lo: float,
                            conf_hi: float) -> frozenset[int]:
     """Indices of the mapped predictions inside [conf_lo, conf_hi] that overlap no label
-    at IoU >= `match_iou`."""
+    at IoU >= `match_iou` and speak for their place: of predictions overlapping each other
+    at that IoU, only the most confident does, mapped or not, inside the range or above it
+    (docs/knowledge/matching.md#candidates-and-the-deciding-prediction). A weaker mapped
+    box under a stronger unmapped one is inconclusive, as accepting the image agrees."""
     boxes = [line.bbox for _, line in labels.boxes]
-    return frozenset(k for k, p in enumerate(preds)
-                     if conf_lo <= p.conf <= conf_hi and cmap.translate(p.cls, dataset) is not None
-                     and not any(iou(p.box, b) >= match_iou for b in boxes))
+    places: list[Prediction] = []
+    found = set()
+    for k in sorted((k for k, p in enumerate(preds) if p.conf >= conf_lo), key=lambda k: -preds[k].conf):
+        p = preds[k]
+        if any(iou(p.box, q.box) >= match_iou for q in places):
+            continue                                # a stronger prediction speaks for this place
+        places.append(p)
+        if (p.conf <= conf_hi and cmap.translate(p.cls, dataset) is not None
+                and not any(iou(p.box, b) >= match_iou for b in boxes)):
+            found.add(k)
+    return frozenset(found)

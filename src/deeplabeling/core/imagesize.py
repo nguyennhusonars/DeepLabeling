@@ -11,17 +11,30 @@ from PIL import Image
 
 ORIENTATION = 274                   #: the EXIF orientation tag
 QUARTER_TURNS = {5, 6, 7, 8}        #: orientations shown turned a quarter: width and height swap
+#: The formats the canvas's decode (Qt) turns by their EXIF orientation. It shows a PNG or a
+#: WebP as stored, whatever its EXIF says, and Pillow already reports a TIFF as shown.
+TURNED = {"JPEG", "MPO"}
 
 
 def image_size(path) -> tuple[int, int] | None:
-    """(width, height) as the image is shown, or None when it is not a readable image."""
+    """(width, height) as the canvas shows the image, or None when it is not a readable
+    image. Only the header is read: the EXIF comes from what opening it parsed, never
+    from `getexif()`, which decodes a PNG to look for EXIF after its pixels."""
     try:
-        with Image.open(path) as im:             # reads the header only
+        with Image.open(path) as im:
             width, height = im.size
-            turn = im.getexif().get(ORIENTATION)
+            turn = _orientation(im.info.get("exif")) if im.format in TURNED else None
     except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
         return None
     return (height, width) if turn in QUARTER_TURNS else (width, height)
+
+
+def _orientation(raw: bytes | None) -> int | None:
+    if not raw:
+        return None
+    exif = Image.Exif()
+    exif.load(raw)
+    return exif.get(ORIENTATION)
 
 
 class ImageSizes:
