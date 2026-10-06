@@ -326,8 +326,20 @@ class QueuePanel(QWidget):
         return queue is not None and isinstance(queue.source, Findings)
 
     def _suit_source(self) -> None:
-        """A grid of crops offers no mark page: its tiles are not whole images."""
-        self.mark_button.setVisible(self.grid and not self._on_crops())
+        """A grid of crops selects several tiles (Ctrl- or Shift-click), and offers no mark
+        page: its tiles are not whole images."""
+        crops = self.grid and self._on_crops()
+        self.mark_button.setVisible(self.grid and not crops)
+        self.view.setSelectionMode(QAbstractItemView.ExtendedSelection if crops else QAbstractItemView.SingleSelection)
+
+    def selected_findings(self) -> list[QueueItem]:
+        """The findings selected in a grid of crops, in queue order: what a key acts on
+        when there are several."""
+        queue = self._session.queue
+        if not (self.grid and self._on_crops()):
+            return []
+        rows = sorted(index.row() for index in self.view.selectionModel().selectedIndexes())
+        return [queue.items[row] for row in rows if row < len(queue)]
 
     def mark_page(self) -> None:
         """Mark every tile wholly in view reviewed: what was seen, nothing more."""

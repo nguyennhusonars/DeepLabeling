@@ -15,9 +15,10 @@ from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QVBoxLayout, QWi
 from ..core.assist import shown_predictions
 from ..core.queue import Seen
 from ..core.workspace import CLASS_COLORS
+from . import grid_actions
 from .boxes import box_views, prediction_views
 from .canvas import Canvas
-from .classes import DEFAULT_HOTKEYS
+from .classes import DEFAULT_HOTKEYS, class_with_hotkey
 from .editing import Editing
 from .findview import spotlight
 from .inspector import Inspector
@@ -80,9 +81,10 @@ class MainWindow(QMainWindow):
             "zoom_out": lambda: self.canvas.zoom_by(0.8),
             "go_to": self.go_to,
             "help": self.show_help,
-            **{f"class_{key}": (lambda k=key: self.editing.class_key(k)) for key in DEFAULT_HOTKEYS},
+            **{f"class_{key}": self._either(lambda items, k=key: self._tiles_class(items, k),
+                                            lambda k=key: self.editing.class_key(k)) for key in DEFAULT_HOTKEYS},
             "pick_class": self.editing.pick_class,
-            "delete": self.editing.delete,
+            "delete": self._either(lambda items: grid_actions.delete(session, items), self.editing.delete),
             "select_next": lambda: self.editing.select_step(1),
             "select_previous": lambda: self.editing.select_step(-1),
             "select_all": self.editing.select_all,
@@ -90,9 +92,11 @@ class MainWindow(QMainWindow):
             "copy": self.editing.copy,
             "paste": self.editing.paste,
             "accept_missing": self.editing.accept_missing,
-            "take_model_class": self.editing.take_model_class,
-            "take_model_box": self.editing.take_model_box,
-            "dismiss": session.dismiss_current,
+            "take_model_class": self._either(lambda items: grid_actions.take_model_class(session, items),
+                                             self.editing.take_model_class),
+            "take_model_box": self._either(lambda items: grid_actions.take_model_box(session, items),
+                                           self.editing.take_model_box),
+            "dismiss": self._either(lambda items: grid_actions.dismiss(session, items), session.dismiss_current),
         })
         layers = self.state_bar.layers.menu()
         for key, setting in (("toggle_labels", SHOW_LABELS), ("toggle_captions", SHOW_CAPTIONS),
@@ -373,6 +377,24 @@ class MainWindow(QMainWindow):
             if not labels:
                 return
         self.session.open(folder, labels)
+
+    def _either(self, on_tiles, otherwise):
+        """A key's action: on the tiles selected in a grid of crops, when there are several
+        (docs/design/2026-10-06-find-bad.md#the-grid); otherwise its own."""
+        def run():
+            items = self.queue_panel.selected_findings()
+            if len(items) > 1:
+                on_tiles(items)
+            else:
+                otherwise()
+        return run
+
+    def _tiles_class(self, items, key: str) -> None:
+        info = class_with_hotkey(self.editing.classes(), key)
+        if info is None:
+            self.editing.class_key(key)             # which says no class has it
+        else:
+            grid_actions.set_class(self.session, items, info.cls_id, info.name)
 
     def edit_queue(self) -> None:
         if self.session.queue is None:

@@ -565,6 +565,18 @@ class Session(QObject):
             self._review_changed([rel])
         return edit
 
+    def apply_many(self, intents: list[Intent], description: str) -> Edit | None:
+        """Changes to many images as one edit that marks nothing: a grid action on
+        several findings. None when refused, which a notice says."""
+        ws = self._require()
+        if self._busy():
+            return None
+        try:
+            return ws.editor.apply_many(intents, description)
+        except Refused as e:
+            self.notice.emit("error", f"{description}: {e}", None)
+            return None
+
     def mark_negative(self) -> None:
         item = self.current()
         if item is not None:
