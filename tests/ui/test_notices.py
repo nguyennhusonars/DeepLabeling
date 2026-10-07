@@ -101,3 +101,10 @@ def test_a_notice_said_again_comes_back_to_the_top(strip):
     strip.add("error", "second")
     strip.add("error", "first")
     assert strip.texts() == ["first", "second"]
+
+
+def test_each_level_shows_its_icon_before_the_text(strip):
+    for level in ("info", "warning", "error"):
+        strip.add(level, f"a {level}")
+    assert [row.label.text() for row in strip.rows] == ["✖ a error", "⚠ a warning", "ℹ a info"]
+    assert strip.texts() == ["a error", "a warning", "a info"]     # what was said, without the icon
