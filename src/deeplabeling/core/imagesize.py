@@ -47,7 +47,7 @@ class ImageSizes:
         self._sizes: dict[Path, tuple[tuple[int, int], tuple[int, int] | None]] = {}
 
     def get(self, path) -> tuple[int, int] | None:
-        path = Path(path)
+        path = path if isinstance(path, Path) else Path(path)  # a copy per image survives, for the GC to walk
         try:
             st = path.stat()
         except OSError:

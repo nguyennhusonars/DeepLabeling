@@ -28,7 +28,7 @@ def menu(window) -> dict:
 
 
 def test_the_chip_offers_the_queue_s_actions(qtbot, window):
-    assert list(menu(window)) == ["Edit queue…", "Reassign a class in this queue…"]
+    assert list(menu(window)) == ["Edit queue…", "Reassign a class in this queue…", "Statistics of this queue…"]
     assert all(action.isEnabled() for action in menu(window).values())
 
 
@@ -65,3 +65,26 @@ def test_reassign_is_offered_only_once_the_queue_is_built(qtbot, window):
 def test_reassign_is_not_offered_on_a_queue_whose_build_failed(qtbot, window):
     window.session.queue.fail("could not read the store")
     assert not menu(window)["Reassign a class in this queue…"].isEnabled()
+
+
+
+def test_statistics_open_from_the_menu_and_close_with_the_dataset(qtbot, window):
+    menu(window)["Statistics of this queue…"].trigger()
+    dialog = window.statistics
+    qtbot.waitUntil(lambda: dialog.isVisible() and dialog.stats is not None, timeout=10000)
+    assert dialog.windowTitle() == "Statistics — all images"
+    window.session.close()
+    assert not dialog.isVisible()
+
+
+def test_a_second_statistics_window_replaces_the_first(qtbot, window):
+    from deeplabeling.ui.stats_dialog import StatsDialog
+
+    menu(window)["Statistics of this queue…"].trigger()
+    menu(window)["Statistics of this queue…"].trigger()
+    qtbot.waitUntil(lambda: len(window.findChildren(StatsDialog)) == 1, timeout=5000)
+
+
+def test_statistics_are_not_offered_on_a_queue_whose_build_failed(qtbot, window):
+    window.session.queue.fail("could not read the store")
+    assert not menu(window)["Statistics of this queue…"].isEnabled()

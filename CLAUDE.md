@@ -8,9 +8,9 @@ replaces `yolo_labeling` (Tkinter), kept as a frozen reference in
 grid. Slice 2 is built: model assist, from a model's predictions on screen to accepting
 them across a queue. Slice 3 is built: filters by box size, overlap and where the model
 disagrees. Slice 4 is built: Find Bad, the labels the model disagrees with as a queue,
-fixed a key at a time in the full frame or many at once in a grid of crops. Slice 5 has
-bulk reassign built; its statistics (plan 5b) are next. The design and the plans are in
-[docs/design/](docs/design/).
+fixed a key at a time in the full frame or many at once in a grid of crops. Slice 5 is
+built: bulk reassign and statistics. Every slice of the foundation is built. The design and
+the plans are in [docs/design/](docs/design/).
 
 ```sh
 ./run.sh                       # launch from this checkout; nothing to install

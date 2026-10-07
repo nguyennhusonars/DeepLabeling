@@ -98,6 +98,10 @@ class QtPrompter:
         finally:
             dialog.deleteLater()
 
+    def choose_save_path(self, title: str, filter: str) -> str | None:
+        path, _ = QFileDialog.getSaveFileName(self.parent, title, "", filter)
+        return path or None
+
     def choose_weights(self) -> str | None:
         path, _ = QFileDialog.getOpenFileName(self.parent, "Load a model", "",
                                               "Model weights (*.pt);;All files (*)")
