@@ -130,3 +130,39 @@ def test_a_fixed_tile_shows_the_labels_as_they_are_now(qtbot, window):
                    for c in column(image, target.x() + 38, target.y() + 40, target.y() + 80))   # the car is gone
     assert any(c.red() > 200 and c.green() < 80 and 40 < c.blue() < 120                           # the model's box stays
                for c in column(image, target.x() + 115, target.y() + 40, target.y() + 80))
+
+
+def test_a_tile_whose_header_reads_but_whose_pixels_do_not_says_so(qtbot, ds, tmp_path, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    png = io.BytesIO()
+    Image.new("RGB", (64, 48), (200, 50, 50)).save(png, "PNG")
+    broken = bytearray(png.getvalue())
+    at = broken.index(b"IDAT")
+    broken[at + 8:at + 20] = b"\0" * 12                                 # the pixels, garbled
+    (ds.root / "camA/images/broken.png").write_bytes(bytes(broken))
+    (ds.root / "camA/labels/broken.txt").write_text("0 0.500000 0.500000 0.200000 0.300000\n")
+    monkeypatch.setattr(model_module, "UltralyticsPredictor", factory)
+    w = start(qtbot, [str(ds.yaml)])
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    load(qtbot, w.session, weights)
+    put_rows(w.session, {"camA/images/broken.png": [P(0, (0.5, 0.5, 0.2, 0.3), 0.9)]})     # its person: a car
+    w.session.set_queue(Findings())
+    qtbot.waitUntil(lambda: w.session.queue.complete, timeout=5000)
+    w.queue_panel.set_grid(True)
+    session, panel = w.session, w.queue_panel
+    key = "camA/images/broken.png#0#wrong class"
+    session.go_to(key)
+    crop = session.crop_of(session.queue.items[row_of(session, key)])
+    assert crop is not None                                              # its size is read
+    qtbot.waitUntil(lambda: session.crops.error(crop) is not None, timeout=5000)
+    qtbot.wait(20)
+    cell = tile(panel, row_of(session, key))
+    image = shot(panel)
+    light = sum(QColor(image.pixel(x, y)).lightness() > 170
+                for x in range(cell.left() + 40, cell.right() - 40) for y in range(cell.top() + 50, cell.top() + 80))
+    assert light > 20                                                    # "cannot decode", not "…"
+    w.close()
