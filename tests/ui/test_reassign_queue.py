@@ -96,7 +96,7 @@ def test_a_queue_whose_build_failed_is_refused(qtbot, session, ds):
     before = ds.snapshot()
     with qtbot.waitSignal(session.status) as said:
         reassign_queue(session)
-    assert said.args == ["the queue's build failed: rebuild it first"] and ds.snapshot() == before
+    assert said.args == ["the queue's build failed — rebuild it first"] and ds.snapshot() == before
 
 
 def test_a_dataset_that_names_no_classes_is_refused(qtbot, ds, prompter):
@@ -171,7 +171,7 @@ def test_an_undo_that_cannot_read_a_file_keeps_the_edit_and_says_so(qtbot, sessi
             qtbot.waitUntil(lambda: session.running is None, timeout=5000)
     finally:
         ds.lbl("camA/0001").chmod(0o644)
-    assert said.args[1].endswith("it is still in the history: undo again")
+    assert said.args[1].endswith("— undo again")
     assert session.workspace.history.depth == 1
 
 

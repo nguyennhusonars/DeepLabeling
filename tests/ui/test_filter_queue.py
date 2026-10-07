@@ -46,7 +46,7 @@ def test_a_build_is_given_the_model_once_it_is_ready(qtbot, session, weights):
 def test_the_queue_says_what_its_build_could_not_settle(qtbot, session):
     built(qtbot, session, ImageFilter(conditions=(Boxes((), w=(0, None), unit="px"),)))
     assert session.queue.left_out == {"could not be sized": {"bad/images/corrupt.jpg"}}
-    assert session.progress_text() == " · 1 image could not be sized"
+    assert session.progress_text() == " · 1 unsized"
 
 
 def test_the_queue_counts_the_images_never_inferred(qtbot, session, weights):
@@ -64,7 +64,7 @@ UNLABELLED = ImageFilter(conditions=(ModelDisagrees("unlabelled"),))
 def test_without_a_model_a_model_queue_is_empty_and_says_it_needs_one(qtbot, session, weights):
     with qtbot.waitSignal(session.notice) as said:
         session.set_queue(UNLABELLED)
-    assert said.args[1] == "this queue needs a model: load one"
+    assert said.args[1] == "this queue needs a model — load one"
     assert len(session.queue) == 0 and session.progress_text() == " · needs a model"
     load(qtbot, session, weights, found={"0001.jpg": [CAR]})
     qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)

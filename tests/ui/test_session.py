@@ -49,7 +49,7 @@ def test_the_end_of_the_queue_is_said_not_passed(session):
     status = record(session.status)
     session.go_to(session.queue.items[-1].key)
     assert not session.move(1)
-    assert status[-1] == ("the end of the queue",)
+    assert status[-1] == ("end of the queue",)
 
 
 def test_toggle_reviewed(session):
@@ -100,7 +100,7 @@ def test_an_undecodable_image_is_never_edited(qtbot, session, ds):
     notices, before = record(session.notice), ds.snapshot()
     session.apply(Intent(ds.img("bad/corrupt.jpg"), (AddBox(0, BOX),), "draw"))
     assert_only_changed(before, ds.snapshot(), set())
-    assert "cannot be decoded" in notices[-1][1]
+    assert "cannot decode" in notices[-1][1]
 
 
 def test_a_queue_and_its_cursor_survive_a_reopen(qtbot, ds):
@@ -335,7 +335,7 @@ def test_a_build_that_fails_says_so_and_stops_building(qtbot, session):
         session.set_queue(ImageFilter(conditions=(Broken(),)))
     assert session.queue.complete and session.queue.failed == "OSError: the disk went away"
     assert session.progress_text() == " · build failed"
-    assert ("error", "building the queue failed: OSError: the disk went away", None) in notices
+    assert ("error", "the queue could not be built: OSError: the disk went away", None) in notices
 
 
 def test_marking_many_marks_each_once_and_says_how_many(session):
@@ -344,8 +344,8 @@ def test_marking_many_marks_each_once_and_says_how_many(session):
     session.toggle_reviewed()                               # the first is reviewed already
     assert session.mark_reviewed(keys) == 2
     assert session.workspace.review.keys() == frozenset(keys)
-    assert said[-1] == ("marked 2 images reviewed",)
-    assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)
+    assert said[-1] == ("✓ 2 images reviewed",)
+    assert session.mark_reviewed(keys) == 0 and said[-1] == ("all reviewed already",)
 
 
 

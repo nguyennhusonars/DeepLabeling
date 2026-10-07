@@ -179,4 +179,4 @@ def test_a_queue_whose_build_failed_is_not_accepted_across(qtbot, session, ds):
     before = ds.snapshot()
     with qtbot.waitSignal(session.status) as said:
         accept_queue(session)
-    assert said.args == ["the queue's build failed: rebuild it first"] and ds.snapshot() == before
+    assert said.args == ["the queue's build failed — rebuild it first"] and ds.snapshot() == before

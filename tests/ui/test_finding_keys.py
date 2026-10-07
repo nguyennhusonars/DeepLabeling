@@ -81,7 +81,7 @@ def test_d_dismisses_moves_on_and_d_again_takes_it_back(qtbot, window, ds):
     on(qtbot, window, FOUND[0])
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_D)
-    assert said.args == ["the dismissal is taken back"] and window.session.finding_state(first) == ""
+    assert said.args == ["undismissed"] and window.session.finding_state(first) == ""
     assert window.session.current().key == FOUND[0]
     qtbot.keyClick(window, Qt.Key_D)
     path = window.session.workspace.dismissals.path

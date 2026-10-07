@@ -309,7 +309,7 @@ def test_mark_page_leaves_the_tiles_not_showing_their_picture(qtbot, grid, sessi
     with qtbot.waitSignal(session.status) as said:
         grid.mark_page()
     assert session.workspace.review.keys() == frozenset([whole[0]])
-    assert said.args == ["marked 1 image reviewed; 1 tile showing no picture was left unmarked"]
+    assert said.args == ["✓ 1 image reviewed; 1 not shown yet, left unmarked"]
 
 
 def test_a_tile_reads_its_labels_once_and_a_thumbnail_repaints_only_its_tile(qtbot, grid, session, monkeypatch):

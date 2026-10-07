@@ -43,9 +43,9 @@ _UNREAD = object()      #: crop_of's size, when the caller has not read it
 
 #: What a build could not settle, as the queue chip says it.
 UNSETTLED = {
-    "could not be sized": lambda n: f"{n:,} image could not be sized" if n == 1 else f"{n:,} images could not be sized",
+    "could not be sized": lambda n: f"{n:,} unsized" ,
     "not inferred": lambda n: f"{n:,} not inferred",
-    "labels unreadable": lambda n: f"{n:,} image's labels unreadable" if n == 1 else f"{n:,} images' labels unreadable",
+    "labels unreadable": lambda n: f"{n:,} unreadable",
 }
 
 
@@ -247,7 +247,7 @@ class Session(QObject):
         self.cursorChanged.emit()
         if queue.waiting:
             if self.model.state != "loading":
-                self.notice.emit("warning", "this queue needs a model: load one", None)
+                self.notice.emit("warning", "this queue needs a model — load one", None)
             return
         ctx = self.context()
         self._build = self.io.start(
@@ -328,7 +328,7 @@ class Session(QObject):
             self._cursor_moved()
 
     def _build_failed(self, queue: Queue, why: str, left_out=None) -> None:
-        self.notice.emit("error", f"building the queue failed: {why}", None)
+        self.notice.emit("error", f"the queue could not be built: {why}", None)
         self._built(queue, True, failed=why, left_out=left_out)
 
     def _built(self, queue: Queue, finished: bool, failed: str | None = None, left_out=None) -> None:
@@ -357,7 +357,7 @@ class Session(QObject):
             self._follow = None                     # the user chose a place
         if self.queue is None or not self.queue.move(delta):
             if self.queue is not None and len(self.queue):
-                self.status.emit("the end of the queue" if delta > 0 else "the start of the queue")
+                self.status.emit("end of the queue" if delta > 0 else "start of the queue")
             return False
         self._cursor_moved()
         return True
@@ -488,20 +488,20 @@ class Session(QObject):
             self.status.emit(f"dismissed: {f.kind}")
             self.move(1)
         else:
-            self.status.emit("the dismissal is taken back")
+            self.status.emit("undismissed")
 
     def queue_not_whole(self) -> str:
         """Why the queue cannot stand for its images yet -- waiting for a model, building,
         or its build failed part-way -- or "" when it is whole."""
         queue = self.queue
         if queue is None:
-            return "there is no queue"
+            return "no queue"
         if queue.waiting:
             return "the queue waits for a model"
         if queue.failed is not None:
-            return "the queue's build failed: rebuild it first"
+            return "the queue's build failed — rebuild it first"
         if not queue.complete:
-            return "the queue is still being built"
+            return "the queue is still building"
         return ""
 
     def recount_unnamed(self) -> None:
@@ -565,12 +565,11 @@ class Session(QObject):
         newly = [rel for rel in rels if ws.review.mark(rel)]
         if newly:
             self._review_changed(newly)
-            said = f"marked {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed"
+            said = f"✓ {len(newly)} image{'' if len(newly) == 1 else 's'} reviewed"
         else:
-            said = "these were all reviewed already"
+            said = "all reviewed already"
         if left:
-            said += ("; 1 tile showing no picture was left unmarked" if left == 1 else
-                     f"; {left} tiles showing no picture were left unmarked")
+            said += (f"; {left} not shown yet, left unmarked")
         self.status.emit(said)
         return len(newly)
 
@@ -592,14 +591,12 @@ class Session(QObject):
         rel = ws.dataset.entry(intent.image).rel
         why = self.images.error(intent.image)
         if why is not None:
-            self.notice.emit("error", f"{rel}: the image cannot be decoded ({why}), "
-                             "so its labels are not edited", intent.image)
+            self.notice.emit("error", f"{rel}: cannot decode ({why}) — not edited", intent.image)
             return None
         if self.images.get(intent.image) is None:
             # Until it is decoded, whether it CAN be decoded is unknown -- and "could not
             # read" must never become "no boxes" (legacy defect #2).
-            self.notice.emit("error", f"{rel}: the image is still loading, so its labels "
-                             "are not edited yet", intent.image)
+            self.notice.emit("error", f"{rel}: still loading — not edited yet", intent.image)
             return None
         try:
             edit = ws.editor.apply(intent)
@@ -637,7 +634,7 @@ class Session(QObject):
         """While a long write runs, nothing else edits; a key that would says so."""
         if self.running is None:
             return False
-        self.status.emit(f"wait: {self._running_title[0].lower()}{self._running_title[1:]} is under way")
+        self.status.emit(f"wait — {self._running_title[0].lower()}{self._running_title[1:]}")
         return True
 
     def run_chunked(self, title: str, total: int, step, end) -> None:
@@ -673,7 +670,7 @@ class Session(QObject):
         except Refused as e:
             self.notice.emit("error", str(e), image)
             return
-        self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {rel}")
+        self.status.emit(f"{'↶' if undo else '↷'} {edit.description}: {rel}")
 
     def _restore_in_chunks(self, edit: Edit, undo: bool) -> None:
         """Undo (or redo) an edit across many images: every file checked, then written, a
@@ -693,20 +690,19 @@ class Session(QObject):
             n, w = restoring.total, restoring.written
             if error is None and not cancelled:
                 restoring.finish()
-                self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {n:,} files")
+                self.status.emit(f"{'↶' if undo else '↷'} {edit.description}: {n:,} files")
             elif error is not None and restoring.dropped:
                 self.notice.emit("error", str(error), None)     # a file changed since: it says what was dropped
             elif error is not None and restoring.checked < n:   # a file could not be read: nothing written
-                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}; "
-                                 f"it is still in the history: {verb} again", None)
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error} — {verb} again", None)
             elif error is not None:
                 restoring.stop()
-                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}. {w:,} of {n:,} "
-                                 f"files were {past}; the rest is still in the history: {verb} again", None)
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error} — {w:,} of {n:,} files {past}; "
+                                 f"{verb} again for the rest", None)
             else:
                 restoring.stop()
-                self.status.emit(f"{verb} stopped: {w:,} of {n:,} files {past}; the rest is still in the history"
-                                 if w else f"{verb} stopped before anything was written")
+                self.status.emit(f"{verb} stopped at {w:,} of {n:,} files; {verb} again for the rest"
+                                 if w else f"{verb} stopped: nothing written")
 
         self.run_chunked(f"{'Undoing' if undo else 'Redoing'} {edit.description}", 2 * restoring.total, step, end)
 
