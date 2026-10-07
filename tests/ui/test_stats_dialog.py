@@ -99,8 +99,9 @@ def test_while_it_reads_it_says_how_far_and_closing_cancels(qtbot, session, prom
     qtbot.waitUntil(lambda: d.status.text() == "reading 3 / 15", timeout=5000)
     d.close()
     gate.set()
-    qtbot.waitUntil(lambda: d._job is None, timeout=5000)
-    assert d.stats is None
+    session.io.wait(5000)
+    qtbot.wait(50)                                          # a late result would arrive now
+    assert d.stats is None and d.status.text() == "reading 3 / 15"
 
 
 def test_an_empty_queue_says_no_images_and_draws_no_charts(qtbot, session, prompter):
@@ -145,3 +146,78 @@ def test_the_charts_are_drawn_when_their_tab_is_shown_not_when_the_numbers_come(
     dialog.recompute()
     qtbot.waitUntil(lambda: dialog.stats is not first and dialog.stats is not None, timeout=10000)
     assert dialog.drawn_for is dialog.stats                 # its tab on show: redrawn for the new numbers
+
+
+
+def test_recompute_waits_for_a_whole_queue_and_names_the_queue_in_force(qtbot, dialog, session):
+    from deeplabeling.core.findings import Findings
+
+    session.set_queue(Findings())                            # no model: it waits
+    first = dialog.stats
+    dialog.recompute()
+    assert dialog.status.text() == "the queue waits for a model" and dialog.stats is first
+    session.set_queue(ImageFilter(conditions=(NameContains("camB"),)))
+    qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
+    dialog.recompute()
+    qtbot.waitUntil(lambda: dialog.stats is not first and dialog.stats is not None, timeout=5000)
+    assert dialog.windowTitle() == "Statistics — " + session.queue.source.describe(session.workspace.dataset)
+    assert dialog.status.text().startswith("4 images · computed ")
+
+
+def test_an_empty_recompute_takes_the_charts_away(qtbot, dialog, session, prompter):
+    dialog.tabs.setCurrentWidget(dialog.charts)
+    assert dialog.canvas.isVisible()
+    session.set_queue(ImageFilter(conditions=(NameContains("nothing like this"),)))
+    qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
+    first = dialog.stats
+    dialog.recompute()
+    qtbot.waitUntil(lambda: dialog.stats is not first, timeout=5000)
+    assert dialog.status.text() == "no images" and not dialog.canvas.isVisible()
+    dialog.save_charts()
+    assert not any(a[0] == "save" for a in prompter.asked)
+
+
+def test_ctrl_c_in_a_table_copies_the_whole_table(qtbot, dialog):
+    table = dialog.tables["Boxes per image"]
+    dialog.tabs.setCurrentWidget(table)
+    table.setFocus()
+    table.setCurrentCell(1, 1)
+    qtbot.waitUntil(table.hasFocus)
+    QApplication.clipboard().setText("")
+    qtbot.keyClick(table, Qt.Key_C, Qt.ControlModifier)
+    assert QApplication.clipboard().text().startswith("boxes\timages\n0\t3\n")
+
+
+def test_copy_is_offered_only_on_a_table(qtbot, dialog):
+    dialog.tabs.setCurrentWidget(dialog.charts)
+    assert not dialog.copy_button.isEnabled()
+    dialog.tabs.setCurrentIndex(0)
+    assert dialog.copy_button.isEnabled()
+
+
+def test_a_chosen_class_survives_a_recompute(qtbot, dialog):
+    dialog.tabs.setCurrentWidget(dialog.charts)
+    dialog.chart_class.setCurrentText("bus_m")
+    first = dialog.stats
+    dialog.recompute()
+    qtbot.waitUntil(lambda: dialog.stats is not first and dialog.stats is not None, timeout=10000)
+    assert dialog.chart_class.currentText() == "bus_m" and dialog.drawn_class == 2
+
+
+def test_a_class_with_no_boxes_draws_without_a_warning(qtbot, dialog):
+    import warnings
+
+    dialog.tabs.setCurrentWidget(dialog.charts)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dialog.chart_class.setCurrentText("bus_l")
+    assert dialog.drawn_class == 3
+
+
+def test_saved_charts_get_their_suffix_and_a_failure_is_said(qtbot, dialog, prompter, tmp_path, monkeypatch):
+    prompter.save_path = tmp_path / "charts"
+    dialog.save_charts()
+    assert (tmp_path / "charts.png").read_bytes()[:4] == b"\x89PNG"
+    prompter.save_path = tmp_path / "missing" / "charts.png"
+    dialog.save_charts()
+    assert prompter.errors and prompter.errors[-1][0] == "Could not save the charts"

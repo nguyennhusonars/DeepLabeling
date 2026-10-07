@@ -94,3 +94,23 @@ def test_a_long_computation_pauses_so_the_window_gets_the_gil(ds, monkeypatch):
     monkeypatch.setattr(stats_module.time, "sleep", lambda s: pauses.append(s))
     stats_of(dataset.images, LabelStore(dataset).get, ImageSizes().get)
     assert len(pauses) == len(dataset.images) // 4 and all(0 < s <= 0.001 for s in pauses)
+
+
+
+def test_a_malformed_box_is_counted_but_never_sized_or_placed(ds):
+    ds.lbl("camA/0002").write_text("0 0.5 0.5 -0.1 0.1\n0 nan 0.5 0.1 0.1\n0 inf 0.5 0.1 0.1\n")
+    dataset = Dataset.open(ds.yaml)
+    stats = stats_of(dataset.images, LabelStore(dataset).get, ImageSizes().get)
+    assert stats.boxes[("train", PERSON)] == 7 and stats.malformed == 3
+    assert sum(n for (cls, _), n in stats.sizes.items() if cls == PERSON) == 13       # nan and inf: sized, not placed
+    assert sum(n for (cls, _, _), n in stats.centres.items() if cls == PERSON) == 13  # the -0.1 wide one has a centre
+
+
+def test_an_unreadable_label_file_is_not_an_image_with_no_boxes(ds):
+    dataset = Dataset.open(ds.yaml)
+    ds.lbl("camA/0002").chmod(0o000)
+    try:
+        stats = stats_of(dataset.images, LabelStore(dataset).get, ImageSizes().get)
+    finally:
+        ds.lbl("camA/0002").chmod(0o644)
+    assert sum(stats.per_image.values()) == 14 and stats.per_image[0] == 2

@@ -73,31 +73,36 @@ On a worker, from the label store and the header-only, EXIF-aware image sizes
 
 - **Classes:** per class and split, the boxes, the images with at least one, and how many of
   the boxes are polygons. Ids the yaml does not name are rows of their own, `#99?`.
-- **Label files:** per split, the images, those with boxes, negative (an empty file),
-  missing, unreadable, shared, and the lines that could not be parsed.
+- **Label files:** per split, the images, those with boxes, negative (a file with no box:
+  empty, or holding only lines that cannot be parsed), missing, unreadable, shared, and
+  the lines that could not be parsed.
 - **Box sizes:** per class, boxes by √(w·h) in pixels of the image as shown, in buckets
   < 8, 8–16, 16–32, 32–64, 64–128, 128–256 and ≥ 256 (each lower end inclusive). Images
   whose header cannot be read are counted; their boxes are left out of the pixel figures,
-  never guessed.
-- **Boxes per image:** how many images have 0, 1, … 19, and 20 or more.
+  never guessed. A box with a width or height not finite and positive, or a centre not
+  finite, is counted as a box and left out of the sizes or the centres it cannot have.
+- **Boxes per image:** how many images have 0, 1, … 19, and 20 or more. An image whose label
+  file cannot be read is not among them: its count is unknown.
 - **Box centres:** per class, a 20 × 20 grid of normalised box centres.
 
 ### The dialog
 
-- A window of its own, not modal. Its title names the queue and when it was computed;
-  **Recompute** computes again. Closing it cancels a computation under way.
+- A window of its own, not modal. Its title names the queue, and its status line how many
+  images and when it was computed. **Recompute** computes again, for the queue in force,
+  once that queue is whole. Closing it cancels a computation under way.
 - While it computes: `reading 12,000 / 45,252`, and the window stays responsive.
 - **Tables**, one tab each — Classes, Label files, Box sizes, Boxes per image. Each copies
   as TSV (a button, or Ctrl+C).
-- **Charts**, drawn with matplotlib from the result, when their tab is shown — never as
-  the numbers come in, so a recompute does not hold the window up:
+- **Charts**, drawn with matplotlib from the result when their tab is shown, and again
+  when new numbers come while it is shown — never behind a tab, so a recompute does not
+  hold the window up:
   - class balance: bars per class, train and val side by side;
   - box sizes: the buckets above, with a log count axis;
   - box centres: the 20 × 20 grid as a heatmap;
   - boxes per image: a histogram.
 - A **Class** selector — all, or one — applies to the box sizes and the box centres.
   **Save charts…** writes them as one PNG.
-- An empty queue shows `no images` in the tables and draws no charts.
+- An empty queue says `no images` in the status line, and shows no charts.
 
 ## The queue chip
 
@@ -119,7 +124,9 @@ A click still opens the queue editor. The chip gains a menu (its arrow):
 | Reassign cancelled while looking / while writing | nothing written / the chunks written are kept, as one edit | status bar |
 | Statistics meets an unreadable label file | counted as unreadable | the Label files table |
 | An image header cannot be read | counted; its boxes are left out of pixel sizes only | the Box sizes table |
-| Statistics of an empty queue | `no images`; no charts | the dialog |
+| Statistics of an empty queue | `no images`; no charts | the dialog's status line |
+| Recompute while the queue is not whole | the last numbers stay; the reason is given | the dialog's status line |
+| Save charts… fails | nothing is written | an error dialog |
 
 ## Performance targets
 
@@ -129,8 +136,8 @@ measured value, not quietly dropped.
 | Action | Target | Measured 2026-10-07 |
 |---|---|---|
 | reassign over 45k images: looking / writing 10k boxes | ≤ 30 s / ≤ 30 s, with progress, the window responsive | 750 ms / 938 ms (the write on a generated dataset) |
-| statistics over 45k images, complete: cold / warm | ≤ 30 s / ≤ 5 s | 3.50 s / 1.64 s; cold was 8.2–9.6 s in two runs that day with a colder page cache |
-| the window while statistics compute | the event loop never waits more than 100 ms | **missed intermittently, cold:** 200 ms and 221 ms in 2 of 4 runs of the script (16–17 ms in the others; 15–18 ms in 9 of 10 probe runs). Each stall came near the end of a cold run, the window waiting for the GIL; its cause is not found. Warm: 11–21 ms |
+| statistics over 45k images, complete: cold / warm | ≤ 30 s / ≤ 5 s | 3.15 s / 1.41 s; cold was 8.2–9.6 s in two runs that day with a colder page cache |
+| the window while statistics compute | the event loop never waits more than 100 ms | 15–20 ms cold, 10–23 ms warm, in six runs. Before a fix, cold missed in 2 of 4 runs: 200 and 221 ms (see below) |
 | the dialog, its charts drawn, once the numbers are in | ≤ 1 s | 580–825 ms the first time (matplotlib imported), 217–221 ms after |
 
 - "Cold" is the first computation after opening. The label files are already in the store
@@ -138,6 +145,12 @@ measured value, not quietly dropped.
   headers; the OS page cache varied between runs.
 - A warm computation is all Python on a worker, and held the GIL long enough to stall the
   window 177–223 ms; it pauses 0.5 ms every 256 images (`src/deeplabeling/core/stats.py::stats_of`).
+- The cold misses were most likely a full garbage collection on the worker: it holds the GIL
+  throughout, and the measurement logs 50–230 ms ones. The cold run made one more `Path`
+  for each of 45k images and kept it (`src/deeplabeling/core/imagesize.py::ImageSizes.get`),
+  and those survivors brought a full collection into the run. Keeping the path given ended
+  the misses. Long full collections still come while a dataset opens and its class ids are
+  checked; that is outside these targets.
 - The reassign write is timed on a dataset generated in a temporary folder, never on the
   real one. Reproduce, read-only (app state goes to a temporary folder, deleted at the end):
 

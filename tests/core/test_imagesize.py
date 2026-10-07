@@ -85,3 +85,12 @@ def test_a_png_is_never_decoded_either(ds, monkeypatch):
 
     monkeypatch.setattr(Image.Image, "load", refuse)
     assert image_size(ds.img("camB/twin.png")) == (64, 48)
+
+
+
+def test_a_path_is_kept_as_given_not_copied(ds):
+    from deeplabeling.core.imagesize import ImageSizes
+
+    sizes, path = ImageSizes(), ds.img("camA/0001.jpg")
+    sizes.get(path)
+    assert next(iter(sizes._sizes)) is path                 # 45k copies were 45k survivors for the GC

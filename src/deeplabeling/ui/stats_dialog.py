@@ -63,7 +63,7 @@ class StatsDialog(QDialog):
         row.addWidget(self.chart_class, 1)
         self._chart_layout.addLayout(row)
         self.tabs.addTab(self.charts, "Charts")
-        self.tabs.currentChanged.connect(lambda _: self._draw_if_shown())
+        self.tabs.currentChanged.connect(self._tab_shown)
         self.copy_button, self.recompute_button = QPushButton("Copy"), QPushButton("Recompute")
         self.save_button = QPushButton("Save charts…")
         self.copy_button.clicked.connect(self.copy)
@@ -88,7 +88,12 @@ class StatsDialog(QDialog):
         if self._job is not None:
             self._job.cancel()
         session = self._session
+        why = session.queue_not_whole()
+        if why:
+            self.status.setText(why)                # the last numbers stay; nothing of part of a queue
+            return
         ws, entries = session.workspace, session.queue_images()
+        self.setWindowTitle(f"Statistics — {session.queue.source.describe(ws.dataset)}")
         store, sizes = ws.store, ws.sizes
         self.status.setText(f"reading 0 / {len(entries):,}")
         token = []
@@ -143,11 +148,13 @@ class StatsDialog(QDialog):
                 for c, text in enumerate(row):
                     table.setItem(r, c, QTableWidgetItem(text))
             table.resizeColumnsToContents()
+        chosen = self.chart_class.currentData()
         self.chart_class.blockSignals(True)
         self.chart_class.clear()
         self.chart_class.addItem(ALL, None)
         for cls in table_classes(stats, names):
             self.chart_class.addItem(class_label(cls, names), cls)
+        self.chart_class.setCurrentIndex(max(self.chart_class.findData(chosen), 0))    # a recompute keeps it
         self.chart_class.blockSignals(False)
         self._draw_if_shown()
 
@@ -158,14 +165,24 @@ class StatsDialog(QDialog):
         if name in self._shown:
             QApplication.clipboard().setText(tsv(*self._shown[name]))
 
+    def _tab_shown(self, _=None) -> None:
+        self.copy_button.setEnabled(self.tabs.currentWidget() is not self.charts)
+        self._draw_if_shown()
+
     def _draw_if_shown(self, again: bool = False) -> None:
         """Draw the charts if their tab is on show and they are not drawn from these numbers."""
         if self.tabs.currentWidget() is self.charts and (again or self.drawn_for is not self.stats):
             self._draw()
 
+    def _empty(self) -> bool:
+        stats = self.stats
+        return stats is None or not any(stats.files[(split, "images")] for split in stats.splits)
+
     def _draw(self) -> None:
         stats = self.stats
-        if stats is None or not any(stats.files[(split, "images")] for split in stats.splits):
+        if self._empty():
+            if self.canvas is not None:
+                self.canvas.hide()                  # no numbers: no charts of the last ones
             return
         import numpy as np
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -174,6 +191,7 @@ class StatsDialog(QDialog):
         if self.canvas is None:
             self.canvas = FigureCanvasQTAgg(Figure(figsize=(9, 6), layout="constrained"))
             self._chart_layout.addWidget(self.canvas, 1)
+        self.canvas.show()
         cls = self.chart_class.currentData()
         self.drawn_class, self.drawn_for = cls, stats
         figure, names = self.canvas.figure, self._names
@@ -192,8 +210,9 @@ class StatsDialog(QDialog):
         counts = [sum(stats.sizes[(c, b)] for c in chosen) for b in range(len(SIZE_LABELS))]
         sizes.bar(range(len(SIZE_LABELS)), counts)
         sizes.set_xticks(range(len(SIZE_LABELS)), SIZE_LABELS, rotation=45, ha="right")
-        sizes.set_yscale("log", nonpositive="clip")
-        sizes.set_ylim(bottom=0.5)                  # a bucket of one box still shows its bar
+        if any(counts):                             # a log axis of nothing but zeros has no range
+            sizes.set_yscale("log", nonpositive="clip")
+            sizes.set_ylim(bottom=0.5)              # a bucket of one box still shows its bar
         sizes.set_title("Box sizes, √(w·h) px")
         grid = np.zeros((GRID, GRID))
         for (c, gx, gy), n in stats.centres.items():
@@ -206,10 +225,16 @@ class StatsDialog(QDialog):
         self.canvas.draw()
 
     def save_charts(self) -> None:
+        if self._empty():
+            return
         if self.drawn_for is not self.stats:
             self._draw()                            # saved as they would show
-        if self.canvas is None:
-            return
         path = self._prompter.choose_save_path("Save charts", "PNG image (*.png)")
-        if path:
+        if not path:
+            return
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        try:
             self.canvas.figure.savefig(path, dpi=100)
+        except OSError as e:
+            self._prompter.error("Could not save the charts", str(e))

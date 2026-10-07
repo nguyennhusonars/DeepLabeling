@@ -12,9 +12,11 @@ temporary folder -- --write-boxes images with one box each -- never on the real 
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -94,7 +96,16 @@ def main(argv=None) -> int:
     from deeplabeling.ui.session import Session
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    rows = []
+    rows, collections, started = [], [], {}
+
+    def collected(phase, info) -> None:
+        """Full collections that hold the GIL long: what a stall of the window would be."""
+        if phase == "start":
+            started["t"] = time.perf_counter()
+        elif info["generation"] == 2 and time.perf_counter() - started["t"] > 0.05:
+            collections.append((time.perf_counter() - started["t"], threading.current_thread().name))
+
+    gc.callbacks.append(collected)
     prompter = Prompter((0, 1), confirm=False)
     window = launch([str(args.yaml)], prompter)
     window.resize(1440, 900)
@@ -115,7 +126,6 @@ def main(argv=None) -> int:
         timer = QTimer()
         timer.timeout.connect(tick)
         timer.start(5)
-        t = time.perf_counter()
         if window.statistics is None:
             window.show_statistics()
         else:
@@ -158,6 +168,8 @@ def main(argv=None) -> int:
         shown = f"{value * 1000:.0f} ms" if value < 1 else f"{value:.2f} s"
         print(f"{name:72s} {shown:>10s}   target {target}")
     print(f"generated labels rewritten: {written:,} of {args.write_boxes:,}")
+    print("full collections over 50 ms: " + (", ".join(f"{t * 1000:.0f} ms on {name}" for t, name in collections)
+                                              or "none"))
     tmp.cleanup()
     return 0
 

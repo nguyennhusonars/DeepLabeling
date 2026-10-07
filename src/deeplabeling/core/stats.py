@@ -46,6 +46,7 @@ class Stats:
     polygons: Counter = field(default_factory=Counter)          #: (split, class id) -> polygons
     sizes: Counter = field(default_factory=Counter)             #: (class id, size bucket) -> boxes
     unsized: int = 0                                            #: images with boxes and no readable header
+    malformed: int = 0                                          #: boxes with a size not finite and positive, or a centre not finite
     per_image: Counter = field(default_factory=Counter)         #: min(boxes, PER_IMAGE_MAX) -> images
     centres: Counter = field(default_factory=Counter)           #: (class id, x cell, y cell) -> boxes
 
@@ -69,7 +70,8 @@ class Stats:
             files[(split, "shared")] += 1
         files[(split, "unparsable lines")] += labels.unparsed
         boxes = labels.boxes
-        self.per_image[min(len(boxes), PER_IMAGE_MAX)] += 1
+        if labels.state is not LabelState.ERROR:        # an unreadable file's boxes are unknown, not none
+            self.per_image[min(len(boxes), PER_IMAGE_MAX)] += 1
         if not boxes:
             return
         files[(split, "with boxes")] += 1
@@ -83,8 +85,13 @@ class Stats:
             self.polygons[(split, cls)] += line.is_polygon
             seen.add(cls)
             cx, cy, w, h = line.bbox
-            self.centres[(cls, _cell(cx), _cell(cy))] += 1
-            if size is not None:
+            # A cleaning tool's input: a box the parser took but no size or place can be read from.
+            placed, sized = math.isfinite(cx) and math.isfinite(cy), math.isfinite(w * h) and w > 0 and h > 0
+            if not (placed and sized):
+                self.malformed += 1
+            if placed:
+                self.centres[(cls, _cell(cx), _cell(cy))] += 1
+            if sized and size is not None:
                 self.sizes[(cls, size_bucket(math.sqrt(w * size[0] * h * size[1])))] += 1
         for cls in seen:
             self.images_with[(split, cls)] += 1
