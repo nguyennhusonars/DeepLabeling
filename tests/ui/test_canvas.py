@@ -460,3 +460,10 @@ def test_an_emphasised_prediction_is_drawn_thicker(canvas):
     plain = thickness(GREEN_PRED)
     thick = thickness(PredictionView(0, GREEN_PRED.rect, "#00ff00", "car 0.90", False, emphasised=True))
     assert thick > plain >= 1
+
+
+def test_a_drag_from_the_margin_previews_only_what_it_will_draw(canvas):
+    canvas.set_image(grey_image())                          # grey margins above and below it
+    drag(canvas, (20, -20), (80, 50), release=False)        # pressed above the image, moved into it
+    rect = canvas._preview.rect()
+    assert rect.top() >= 0 and rect.left() > 19 and rect.bottom() < 51     # the start pulled in, as the box is

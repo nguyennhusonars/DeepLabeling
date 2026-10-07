@@ -163,15 +163,28 @@ def test_an_outside_edit_appears_on_the_canvas(qtbot, window, ds):
     qtbot.waitUntil(lambda: [c.text for c in window.canvas.caption_items()] == ["bus_l"], timeout=5000)
 
 
-def test_rapid_paging_ends_on_the_current_image(qtbot, window):
+def test_rapid_paging_ends_on_the_current_image(qtbot, ds):
+    from PIL import Image
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor
+
+    Image.new("RGB", (64, 48), (255, 0, 255)).save(ds.img("weird/имя пробел.jpg"))    # the one magenta frame
+    window = launch([str(ds.yaml)], FakePrompter())
+    qtbot.addWidget(window)
+    window.resize(1200, 800)
+    window.show()
+    qtbot.waitUntil(lambda: window.canvas.image_size is not None, timeout=5000)
     for _ in range(9):
         qtbot.keyClick(window, Qt.Key_Right)
     current = window.session.current()
     assert current.key == "weird/images/имя пробел.jpg"
     qtbot.waitUntil(lambda: window._shown == current.entry.path)
     qtbot.wait(200)                         # late decodes of skipped images arrive
-    assert window._shown == current.entry.path
+    shot = window.canvas.viewport().grab().toImage()
+    middle = QColor(shot.pixel(window.canvas.mapFromScene(QPointF(32, 24))))
+    assert middle.red() > 240 and middle.green() < 15 and middle.blue() > 240     # drawn: the frame itself
     assert window.status_text.text().startswith(current.key)
+    window.close()
 
 
 def test_closing_while_jobs_run_frees_the_root(qtbot, ds):
