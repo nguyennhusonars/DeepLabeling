@@ -334,3 +334,13 @@ def test_a_paste_under_another_class_list_keeps_each_box_its_class_name(qtbot, w
     go(qtbot, window, "camA/images/0003.jpg")
     qtbot.keyClick(window, Qt.Key_V, Qt.ControlModifier)
     assert [cls for cls, _ in lines(ds.lbl("camA/0003"))] == [2, 0]   # person, car by name
+
+
+def test_an_edit_rebuilds_the_inspector_once(qtbot, window, monkeypatch):
+    import deeplabeling.ui.inspector as inspector_module
+
+    click(window.canvas, PERSON)
+    calls, real = [], inspector_module.box_views
+    monkeypatch.setattr(inspector_module, "box_views", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    qtbot.keyClick(window, Qt.Key_3)                        # a reclassify, which also marks the image reviewed
+    assert len(calls) == 1

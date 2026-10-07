@@ -173,3 +173,10 @@ def test_an_undo_that_cannot_read_a_file_keeps_the_edit_and_says_so(qtbot, sessi
         ds.lbl("camA/0001").chmod(0o644)
     assert said.args[1].endswith("it is still in the history: undo again")
     assert session.workspace.history.depth == 1
+
+
+def test_a_finished_long_write_lets_its_runner_go(qtbot, session):
+    from deeplabeling.ui.chunked import Chunked
+
+    reassigned(qtbot, session)
+    qtbot.waitUntil(lambda: not session.findChildren(Chunked), timeout=5000)
