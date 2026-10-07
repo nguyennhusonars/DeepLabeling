@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         session.images.failed.connect(lambda path, why: self._image_event(path))
         session.labelsChanged.connect(self._labels_changed)
         session.historyChanged.connect(self._history_changed)
+        session.written.connect(self._wrote)
         session.reviewChanged.connect(self._update_status)
         session.notice.connect(lambda level, text, image: self.notices.add(level, text, image))
         session.standing.connect(lambda key, text: self.notices.add("warning", text, key=key))
@@ -261,7 +262,10 @@ class MainWindow(QMainWindow):
         self._update_status()
 
     def _history_changed(self) -> None:
-        self._written = time.time()
+        self._update_status()
+
+    def _wrote(self) -> None:
+        self._written = time.time()                 # files written: a refused undo writes none
         self._update_status()
 
     def _closed(self) -> None:
@@ -338,7 +342,9 @@ class MainWindow(QMainWindow):
         if recent:
             menu.addSeparator()
         for path in map(Path, recent):
-            menu.addAction(f"{path.name} — {path.parent}", lambda p=path: model.load(p))
+            there = path.is_file()                  # a file gone is shown, never handed to the loader
+            menu.addAction(f"{path.name} — {path.parent}" + ("" if there else " (missing)"),
+                           lambda p=path: model.load(p)).setEnabled(there)
         menu.addSeparator()
         menu.addAction("Threshold…", self.ask_threshold).setEnabled(ws is not None)
         menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
@@ -448,6 +454,13 @@ class MainWindow(QMainWindow):
             self.session.go_to_text(text)
 
     def show_help(self) -> None:
+        """The one help window: a second press brings it forward."""
+        if self._help is not None and self._help.isVisible():
+            self._help.raise_()
+            self._help.activateWindow()
+            return
+        if self._help is not None:
+            self._help.deleteLater()
         self._help = HelpDialog(self)
         self._help.show()
 

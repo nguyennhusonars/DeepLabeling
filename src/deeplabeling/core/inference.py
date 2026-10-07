@@ -9,6 +9,7 @@ importing it costs seconds.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -73,6 +74,12 @@ def _inside(box) -> Box | None:
     return tuple(round(v, 10) for v in ((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1))
 
 
+def _down(conf: float) -> float:
+    """Three decimals, rounded down: a 0.2496 stored as 0.250 passed a 0.25 threshold. The
+    margin is float32's: the model's 0.7 is 0.69999999 and must stay 0.700."""
+    return math.floor(conf * 1000 + 1e-4) / 1000
+
+
 def predictions_from(result) -> list[Prediction]:
     """One ultralytics result as Predictions, strongest first, at the floor and capped."""
     boxes = result.boxes
@@ -80,7 +87,7 @@ def predictions_from(result) -> list[Prediction]:
     for box, cls, conf in zip(boxes.xywhn.tolist(), boxes.cls.tolist(), boxes.conf.tolist()):
         inside = _inside(box)
         if conf >= FLOOR and inside is not None:
-            found.append(Prediction(int(cls), inside, round(float(conf), 3)))
+            found.append(Prediction(int(cls), inside, _down(float(conf))))
     found.sort(key=lambda p: -p.conf)
     return found[:MAX_BOXES]
 
@@ -99,6 +106,8 @@ class UltralyticsPredictor:
 
     def __init__(self, weights, device: str | None = None):
         path = Path(weights)
+        if not path.is_file():                      # ultralytics would download an official asset of the name
+            raise ModelError(f"{path.name} is not there: {path.parent}")
         try:
             from ultralytics import YOLO
 

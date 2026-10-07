@@ -146,3 +146,17 @@ def test_a_class_is_checkable_through_its_group(dataset):
 
     cmap = ClassMap.seeded(("car", "bus"), dataset.names).with_target(1, "bus_m")
     assert checkable(cmap, dataset) == {1, 2, 3}           # car; bus_m, and bus_l of its group
+
+
+def test_an_image_whose_labels_cannot_be_read_is_unsettled_not_unlabelled(ctx, ds):
+    from deeplabeling.core.findings import Findings
+
+    ds.lbl("camA/0002").chmod(0o000)
+    try:
+        assert "camA/images/0002.jpg" not in keys(ModelDisagrees("unlabelled"), ctx)
+        assert ctx.left_out["labels unreadable"] == {"camA/images/0002.jpg"}
+        found = []
+        Findings().build(ctx, found.extend)
+        assert "camA/images/0002.jpg" in ctx.left_out["labels unreadable"]
+    finally:
+        ds.lbl("camA/0002").chmod(0o644)

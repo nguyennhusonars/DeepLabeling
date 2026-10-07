@@ -143,3 +143,8 @@ def test_a_size_drawn_exactly_at_a_range_end_is_inside_it_after_six_decimals(ctx
 def test_a_build_names_the_images_it_could_not_settle(ctx):
     keys(Boxes((), w=(0, None), unit="px"), ctx)
     assert ctx.left_out == {"could not be sized": {"bad/images/corrupt.jpg"}}
+
+
+
+def test_an_iou_typed_finer_than_two_decimals_reads_as_typed(dataset):
+    assert Overlap("same", 0.995, 1.0).describe(dataset) == "labels overlapping, same class, IoU 0.995–1.00"

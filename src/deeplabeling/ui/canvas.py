@@ -382,7 +382,7 @@ class Canvas(QGraphicsView):
     def _preview_to(self, drag: _Drag, point: QPointF) -> None:
         delta = point - drag.start
         if drag.kind == "draw":
-            self._preview.setRect(QRectF(drag.start, self._inside_image(point)).normalized())
+            self._preview.setRect(QRectF(self._inside_image(drag.start), self._inside_image(point)).normalized())
         elif drag.kind == "move":
             delta = self._move_delta(delta)
             for item, origin in drag.origins.items():

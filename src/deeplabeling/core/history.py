@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from .edits import Conflict, Edit, Refused
+from .edits import Conflict, Edit, PartlyRestored, Refused
 from .store import LabelStore
 
 
@@ -62,6 +62,12 @@ class History:
             self._bytes -= edit.nbytes
             raise Refused(f"cannot undo “{edit.description}”: {e}. "
                           "It has been dropped from the history.") from e
+        except PartlyRestored as e:
+            stuck, rest = self._part(edit, e.stuck), self._part(edit, [c for c in edit.changes if c not in e.stuck])
+            self._undo[-1] = rest
+            self._redo.append(stuck)
+            raise PartlyRestored(f"cannot undo “{edit.description}”: {e}. Those stay undone; "
+                                 "the rest is still in the history; try again.", e.stuck, stuck.images) from e
         except Refused as e:
             raise Refused(f"cannot undo “{edit.description}”: {e}. "
                           "It is still in the history; try again.") from e
@@ -79,11 +85,23 @@ class History:
             self._bytes -= edit.nbytes
             raise Refused(f"cannot redo “{edit.description}”: {e}. "
                           "It has been dropped from the history.") from e
+        except PartlyRestored as e:
+            stuck, rest = self._part(edit, e.stuck), self._part(edit, [c for c in edit.changes if c not in e.stuck])
+            self._redo[-1] = rest
+            self._undo.append(stuck)
+            raise PartlyRestored(f"cannot redo “{edit.description}”: {e}. Those stay redone; "
+                                 "the rest is still in the history; try again.", e.stuck, stuck.images) from e
         except Refused as e:
             raise Refused(f"cannot redo “{edit.description}”: {e}. "
                           "It is still in the history; try again.") from e
         self._undo.append(self._redo.pop())
         return edit
+
+    def _part(self, edit: Edit, changes) -> Edit:
+        """The part of `edit` of these changes, with the images they belong to."""
+        paths = {change.path for change in changes}
+        images = tuple(i for i in edit.images if self._store.dataset.entry(i).label_path in paths)
+        return Edit(tuple(changes), images, edit.description)
 
     # -- an edit undone or redone in chunks (editor.py::Restoring) ------------------------
 
@@ -96,7 +114,9 @@ class History:
 
     def move(self, edit: Edit, *, undo: bool) -> None:
         """`edit` was undone (or redone) whole: on to the other list."""
-        (self._undo if undo else self._redo).pop()
+        stack = self._undo if undo else self._redo
+        assert stack and stack[-1] is edit
+        stack.pop()
         (self._redo if undo else self._undo).append(edit)
 
     def split(self, edit: Edit, *, undo: bool, done: Edit, rest: Edit) -> None:

@@ -76,7 +76,8 @@ def main(argv=None) -> int:
     ap.add_argument("yaml", type=Path)
     ap.add_argument("--class", dest="cls", required=True, help="a class name for the class-condition queue")
     args = ap.parse_args(argv)
-    tmp = tempfile.mkdtemp(prefix="measure-ui-")
+    state = tempfile.TemporaryDirectory(prefix="measure-ui-")     # removed at the end, or at exit
+    tmp = state.name
     os.environ["DEEPLABELING_STATE_DIR"] = str(Path(tmp) / "state")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     sys.path.insert(0, str(ROOT / "src"))
@@ -160,6 +161,7 @@ def main(argv=None) -> int:
         shown = f"{seconds * 1000:.0f} ms" if seconds < 1 else f"{seconds:.2f} s"
         print(f"{name:45s} {shown:>10s}   target {target}")
     print(f"median edit {statistics.median(edits):.1f} ms")
+    state.cleanup()
     return 0
 
 

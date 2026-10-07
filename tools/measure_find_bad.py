@@ -125,9 +125,10 @@ def main(argv=None) -> int:
     for name, value, target in rows:
         shown = f"{value * 1000:.0f} ms" if value < 1 else f"{value:.2f} s"
         print(f"{name:90s} {shown:>10s}   target {target}")
-    print("ultralytics settings unchanged:", md5(SETTINGS) == settings_before)
+    unchanged = md5(SETTINGS) == settings_before
+    print("ultralytics settings unchanged:", unchanged)
     tmp.cleanup()
-    return 0
+    return 0 if unchanged else 1            # a changed settings file fails the run: landmine 8
 
 
 if __name__ == "__main__":

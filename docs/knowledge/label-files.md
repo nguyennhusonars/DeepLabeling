@@ -71,6 +71,10 @@ empty one ([why](#empty-file-is-a-negative-sample)).
   original untouched. A crash leaves the old file or the new one, never a truncated one:
   `legacy/yolo_labeling/core/labelio.py::write_label_file`. It opens with `newline=""`, so
   terminators pass through untranslated.
+- **Read-only respected.** A label file the user made read-only is neither edited nor
+  restored by undo or redo (`src/deeplabeling/core/store.py::LabelStore.check`). The
+  atomic replace needs only the folder's write permission, so without this check a 0444
+  file was rewritten.
 - **Permissions kept.** The replacement keeps the target's permission bits, and a new
   file gets `0o666` less the umask: `src/deeplabeling/core/atomic.py::write_atomic`. A
   bare `mkstemp` creates `0600`, as the legacy writer's did
@@ -98,6 +102,12 @@ label file.
 - Evidence: the legacy main save and the review's delete-line writer both write zero bytes
   when the last box goes (`legacy/yolo_labeling/app.py::YOLOLabelingTool.save_labels`,
   `legacy/yolo_labeling/app.py::YOLOLabelingTool._delete_label_line`).
+
+- A file holding only lines that cannot be parsed has no box, and the app counts it as
+  negative. Training does not: ultralytics refuses a whole image as corrupt when any line
+  is not five numbers (`ultralytics/data/utils.py`, `verify_image_label`, in the editable
+  install), so such an image -- or any image with one bad line -- is skipped, not trained
+  as a negative.
 
 **Rule:** an emptied label file is written as zero bytes, never deleted. Only an explicit
 "delete this image" removes a label file.

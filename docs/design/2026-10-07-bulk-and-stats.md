@@ -60,7 +60,7 @@ across a queue is.
    Cancelling keeps the chunks written, as one edit; a write that fails puts every file
    back, and what cannot be put back stays as an edit undo can retry.
 4. **After.** The status bar says what was reassigned, on how many images, and what was
-   skipped. The queue rechecks the images as after any edit, so a `has car` queue shows
+   skipped. The queue rechecks the images as after any edit, so a `has a car` queue shows
    them as *no longer matches*.
 
 ## Statistics

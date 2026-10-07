@@ -28,7 +28,7 @@ def test_ids_the_yaml_does_not_name_raise_a_standing_notice(qtbot, ds):
     with qtbot.waitSignal(s.standing, timeout=5000,
                           check_params_cb=lambda key, text: key == OUT_OF_RANGE and bool(text)) as caught:
         s.open(ds.yaml)
-    assert "2 boxes in 1 images" in caught.args[1] and "data.yaml" in caught.args[1]
+    assert "2 boxes in 1 image have class ids (-1, 99)" in caught.args[1] and "data.yaml" in caught.args[1]
     s.close()
 
 
@@ -133,7 +133,7 @@ def test_badges(session):
     assert session.badge(by_key["camA/images/0001.jpg"]) == "2 boxes"
     assert session.badge(by_key["camA/images/0002.jpg"]) == "negative"
     assert session.badge(by_key["camA/images/0003.jpg"]) == "missing"
-    assert session.badge(by_key["camB/images/twin.jpg"]) == "shared"
+    assert session.badge(by_key["camB/images/twin.jpg"]) == "read-only (shared)"
     assert session.describe_item(by_key["camA/images/0002.jpg"]).startswith("· camA/images/0002.jpg")
 
 
@@ -346,3 +346,55 @@ def test_marking_many_marks_each_once_and_says_how_many(session):
     assert session.workspace.review.keys() == frozenset(keys)
     assert said[-1] == ("marked 2 images reviewed",)
     assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)
+
+
+
+def test_a_label_file_made_read_only_says_so_in_its_row_and_the_inspector(qtbot, ds):
+    from deeplabeling.ui.inspector import Inspector
+
+    ds.lbl("camA/0001").chmod(0o444)
+    try:
+        session = open_session(qtbot, ds.yaml)
+        item = session.current()
+        assert item.entry.rel == "camA/images/0001.jpg" and session.badge(item) == "read-only · 2 boxes"
+        assert Inspector._state_text(session.labels(item.entry)) == "read-only: 0001.txt is read-only, so it is not edited here"
+        session.close()
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)
+
+
+def test_holding_an_arrow_leaves_no_backlog_of_skipped_decodes(qtbot, ds):
+    import time
+
+    s = open_session(qtbot, ds.yaml)
+    s.images.clear()
+    slow = s.images._decode
+    s.images._decode = lambda p: (time.sleep(0.3), slow(p))[1]
+    for _ in range(len(s.queue) - 1):
+        s.move(1)                                           # an arrow held down
+    waiting = {p for p, job in s.images._pending.items() if not job.cancelled}
+    assert waiting <= {item.entry.path for item in s.queue.items[-4:]}      # the screen and its neighbours
+    s.close()
+
+
+def test_a_shared_file_also_made_read_only_says_read_only_once(qtbot, ds):
+    ds.lbl("camB/twin").chmod(0o444)
+    try:
+        session = open_session(qtbot, ds.yaml)
+        item = next(it for it in session.queue.items if it.key == "camB/images/twin.jpg")
+        assert session.badge(item) == "read-only (shared)"
+        session.close()
+    finally:
+        ds.lbl("camB/twin").chmod(0o644)
+
+
+def test_a_chmod_of_the_image_on_screen_is_seen(qtbot, ds):
+    session = open_session(qtbot, ds.yaml)
+    changed = record(session.labelsChanged)
+    ds.lbl("camA/0001").chmod(0o444)
+    try:
+        session.check_current()
+        assert changed and session.badge(session.current()).startswith("read-only")
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)
+        session.close()

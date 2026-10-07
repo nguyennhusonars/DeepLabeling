@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .edits import Conflict, Edit, FileChange, Intent, Refused
+from .edits import Conflict, Edit, FileChange, Intent, PartlyRestored, Refused
 from .history import History
 from .review import ReviewMarks
 from .store import LabelStore
@@ -56,6 +56,9 @@ class Editor:
     def undo(self) -> Edit | None:
         try:
             edit = self.history.undo()
+        except PartlyRestored as e:
+            self._labels_changed(e.images)          # files that stayed restored: the views follow
+            raise
         finally:
             self._history_changed()     # a refused undo still dropped an edit
         if edit is not None:
@@ -65,6 +68,9 @@ class Editor:
     def redo(self) -> Edit | None:
         try:
             edit = self.history.redo()
+        except PartlyRestored as e:
+            self._labels_changed(e.images)          # files that stayed restored: the views follow
+            raise
         finally:
             self._history_changed()
         if edit is not None:
@@ -168,6 +174,7 @@ class Restoring:
         self._editor, self.edit, self.undo = editor, edit, undo
         self._changes = list(edit.changes)
         self.checked = self.written = 0
+        self.dropped = False            #: a file changed since: what was not written is gone from the history
         self._images: dict[Path, list[Path]] = {}       # label file -> its images in the edit
         for image in edit.images:
             self._images.setdefault(editor.store.dataset.entry(image).label_path, []).append(image)
@@ -187,6 +194,7 @@ class Restoring:
         except Conflict as e:
             self._editor.history.drop(self.edit, undo=self.undo)
             self._editor._history_changed()
+            self.dropped = True
             raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e}. "
                           "It has been dropped from the history.") from e
         self.checked += len(chunk)
@@ -202,6 +210,21 @@ class Restoring:
                 self._editor.store.restore(Edit((change,), mine, self.edit.description), undo=self.undo)
                 self.written += 1
                 images.extend(mine)
+        except Conflict as e:
+            # Changed between its check and its write: as in the check, what is left cannot be
+            # restored. What was written becomes an edit of its own; the rest is dropped.
+            done = self.written
+            history = self._editor.history
+            if done:
+                self.stop()                         # the rest is left where the edit was
+                history.drop(history.peek_undo() if self.undo else history.peek_redo(), undo=self.undo)
+            else:
+                self._editor.history.drop(self.edit, undo=self.undo)
+            self._editor._history_changed()
+            self.dropped = True
+            past = "undone" if self.undo else "redone"
+            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e}. {done:,} of {self.total:,} files "
+                          f"were {past}; the rest has been dropped from the history") from e
         finally:
             if images:
                 self._editor._labels_changed(tuple(images))

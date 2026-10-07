@@ -1,6 +1,8 @@
 """Typed ranges: never swapped, never clamped; refused by name
 (`legacy/yolo_labeling/core/ranges.py::range_error`)."""
 
+import pytest
+
 from deeplabeling.core.ranges import range_error
 
 
@@ -22,3 +24,17 @@ def test_open_ends_only_where_allowed():
     assert range_error(None, 30, "width", hi_max=None, open_ends=True) is None
     assert range_error(10, None, "width", hi_max=100, open_ends=True) is None
     assert range_error(10, 120, "width", hi_max=100, open_ends=True) == "width: the upper end cannot be above 100"
+
+
+@pytest.mark.parametrize("lo, hi", [(float("nan"), 1.0), (0.0, float("inf")), ("0.5", 1.0), (True, 1.0)])
+def test_an_end_that_is_not_a_finite_number_is_refused(lo, hi):
+    assert range_error(lo, hi, "IoU") == "IoU: an end is not a number"
+
+
+def test_a_saved_condition_with_an_end_that_is_not_a_number_is_refused():
+    from deeplabeling.core.queue import condition_from_json
+
+    for data in ({"kind": "overlap", "scope": "any", "lo": "nan", "hi": 1.0},
+                 {"kind": "boxes", "names": [], "w": [None, "5"], "h": [None, None], "unit": "px"}):
+        with pytest.raises(ValueError):
+            condition_from_json(data)

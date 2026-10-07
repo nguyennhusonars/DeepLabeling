@@ -43,8 +43,13 @@ def test_the_model_key_names_the_file_its_size_and_its_time(tmp_path):
 
 def test_a_result_becomes_normalised_predictions_strongest_first():
     result = Result((2.0, [0.5, 0.5, 0.2, 0.3], 0.40004), (0.0, [0.25, 0.25, 0.1, 0.1], 0.87654))
-    assert predictions_from(result) == [Prediction(0, (0.25, 0.25, 0.1, 0.1), 0.877),
+    assert predictions_from(result) == [Prediction(0, (0.25, 0.25, 0.1, 0.1), 0.876),
                                         Prediction(2, (0.5, 0.5, 0.2, 0.3), 0.4)]
+
+
+def test_a_confidence_is_stored_rounded_down_so_a_threshold_never_lets_in_a_weaker_one():
+    [p] = predictions_from(Result((0.0, [0.5, 0.5, 0.1, 0.1], 0.2496)))
+    assert p.conf == 0.249                                  # 0.250 would pass a 0.25 threshold
 
 
 def test_a_result_is_cut_at_the_floor_and_capped():
@@ -152,3 +157,27 @@ def test_a_closed_predictor_lets_go_of_its_model_and_its_decoders(predictor, tmp
     with pytest.raises(ModelError, match="closed"):
         predictor.predict([tmp_path / "a.jpg"])
     predictor.close()                                       # twice is harmless
+
+
+def test_a_weights_file_that_is_not_there_is_refused_before_ultralytics_sees_it(tmp_path):
+    from deeplabeling.core.inference import ModelError, UltralyticsPredictor
+
+    with pytest.raises(ModelError, match=r"^yolov8n\.pt is not there"):
+        UltralyticsPredictor(tmp_path / "yolov8n.pt")       # an official asset name: never downloaded
+
+
+
+def test_importing_the_ui_does_not_import_ultralytics():
+    code = ("import sys\nimport deeplabeling.ui.main_window, deeplabeling.ui.model, deeplabeling.ui.stats_dialog\n"
+            "print('ultralytics' in sys.modules, 'torch' in sys.modules, 'matplotlib' in sys.modules)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env={**os.environ, "PYTHONPATH": str(SRC), "QT_QPA_PLATFORM": "offscreen"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == ["False", "False", "False"]
+
+
+def test_a_float32_confidence_keeps_its_three_decimals():
+    import numpy as np
+
+    [p] = predictions_from(Result((0.0, [0.5, 0.5, 0.1, 0.1], float(np.float32(0.7)))))
+    assert p.conf == 0.7                                    # not 0.699: a 0.70 threshold keeps it, as ultralytics does

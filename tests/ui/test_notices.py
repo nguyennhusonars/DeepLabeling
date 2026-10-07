@@ -78,3 +78,26 @@ def test_a_standing_notice_is_never_pushed_out(strip):
     for i in range(MAX_ROWS + 1):
         strip.add("error", f"refused {i}")
     assert "ids the yaml does not name" in strip.texts()
+
+
+def test_a_very_long_notice_leaves_the_canvas_its_room(qtbot, ds):
+    from drive import start
+
+    w = start(qtbot, [str(ds.yaml)])
+    w.resize(1024, 640)
+    qtbot.waitUntil(lambda: w.canvas.height() > 300, timeout=5000)
+    before = w.canvas.height()
+    text = "a very long reason " * 320                     # about 6,000 characters
+    w.notices.add("error", text)
+    qtbot.wait(50)
+    assert w.canvas.height() >= before - 170                # shortened: a few lines, not a page
+    row = w.notices.rows[0]
+    assert row.toolTip() == text and text in w.notices.texts()
+    w.close()
+
+
+def test_a_notice_said_again_comes_back_to_the_top(strip):
+    strip.add("error", "first")
+    strip.add("error", "second")
+    strip.add("error", "first")
+    assert strip.texts() == ["first", "second"]

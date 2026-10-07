@@ -57,6 +57,7 @@ class Chunked(QObject):
         self._over = True
         self._progress.close()
         self._end(cancelled, error)
+        self.deleteLater()                          # with it go its closures: an edit's intents, or the edit
 
 
 def write_as_one_edit(session, intents, description: str, title: str, said, *, failed: str, undone: str,

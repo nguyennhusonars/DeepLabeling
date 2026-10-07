@@ -45,6 +45,7 @@ _UNREAD = object()      #: crop_of's size, when the caller has not read it
 UNSETTLED = {
     "could not be sized": lambda n: f"{n:,} image could not be sized" if n == 1 else f"{n:,} images could not be sized",
     "not inferred": lambda n: f"{n:,} not inferred",
+    "labels unreadable": lambda n: f"{n:,} image's labels unreadable" if n == 1 else f"{n:,} images' labels unreadable",
 }
 
 
@@ -70,6 +71,7 @@ class Session(QObject):
     closed = Signal()
     labelsChanged = Signal(object)      # tuple[Path, ...]: images whose label file changed
     historyChanged = Signal()
+    written = Signal()                  # an edit, undo or redo wrote label files (an outside change is not)
     reviewChanged = Signal()
     queueReset = Signal()               # a new queue replaced the old one
     queueGrew = Signal()                # items were appended to the queue
@@ -137,7 +139,7 @@ class Session(QObject):
     def _open(self, source, labels, *, quiet: bool) -> bool:
         try:
             ws = Workspace.open(source, labels, confirm_taxonomy=self.prompter.confirm_taxonomy,
-                                on_labels_changed=self.labelsChanged.emit,
+                                on_labels_changed=self._wrote,
                                 on_history_changed=self.historyChanged.emit,
                                 on_reload=self._reloaded.emit)
         except OpenCancelled:
@@ -164,6 +166,11 @@ class Session(QObject):
         self._count_out_of_range()
         self._restore_queue()
         return True
+
+    def _wrote(self, images) -> None:
+        """The editor wrote these images' label files."""
+        self.labelsChanged.emit(images)
+        self.written.emit()
 
     def close(self) -> None:
         ws = self.workspace
@@ -383,9 +390,11 @@ class Session(QObject):
                 self.saver.schedule()
             self.workspace.store.pin(item.entry.path)
             labels = self.workspace.store.get(item.entry.path)
-            self._seen = (item.entry.path, labels.raw, labels.state)
+            self._seen = (item.entry.path, labels.raw, labels.state, labels.writable)
             i, items = self.queue.position(), self.queue.items
-            self.images.keep([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
+            # want, not keep: an arrow held down passes images whose decodes, still waiting,
+            # are cancelled -- otherwise the image on screen waits behind every one skipped.
+            self.images.want([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
                               if 0 <= j < len(items)])
         self.cursorChanged.emit()
 
@@ -399,7 +408,7 @@ class Session(QObject):
         if item is None or self.workspace is None:
             return
         labels = self.workspace.store.get(item.entry.path)      # may report a reload itself
-        seen = (item.entry.path, labels.raw, labels.state)
+        seen = (item.entry.path, labels.raw, labels.state, labels.writable)
         if self._seen is not None and self._seen[0] == seen[0] and self._seen != seen:
             self._seen = seen
             self.labelsChanged.emit((item.entry.path,))
@@ -443,7 +452,7 @@ class Session(QObject):
         if labels.state is LabelState.ERROR:
             text = "unreadable"
         elif labels.state is LabelState.SHARED:
-            text = "shared"
+            text = "read-only (shared)"             # an edit here would be refused: say so
         elif labels.raw is None:
             text = "missing"
         elif labels.negative:
@@ -451,6 +460,8 @@ class Session(QObject):
         else:
             n = len(labels.boxes)
             text = f"{n} box" if n == 1 else f"{n} boxes"
+        if not labels.writable and labels.state is not LabelState.SHARED:   # shared says read-only already
+            text = f"read-only · {text}"
         if self.queue is not None and item.key in self.queue.stale:
             text += " · no longer matches"
         return text
@@ -683,8 +694,11 @@ class Session(QObject):
             if error is None and not cancelled:
                 restoring.finish()
                 self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {n:,} files")
-            elif error is not None and restoring.checked < n:
-                self.notice.emit("error", str(error), None)     # a file changed since: dropped
+            elif error is not None and restoring.dropped:
+                self.notice.emit("error", str(error), None)     # a file changed since: it says what was dropped
+            elif error is not None and restoring.checked < n:   # a file could not be read: nothing written
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}; "
+                                 f"it is still in the history: {verb} again", None)
             elif error is not None:
                 restoring.stop()
                 self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}. {w:,} of {n:,} "
@@ -702,7 +716,7 @@ class Session(QObject):
         item = self.current()
         if item is not None and item.entry.path in images:
             labels = self.workspace.store.get(item.entry.path)
-            self._seen = (item.entry.path, labels.raw, labels.state)
+            self._seen = (item.entry.path, labels.raw, labels.state, labels.writable)
         if self.queue is None:
             return
         ctx, keys = None, []

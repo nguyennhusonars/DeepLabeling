@@ -137,7 +137,7 @@ def test_the_queue_chip_edits_the_queue(qtbot, ds):
     with qtbot.waitSignal(w.session.queueDone, timeout=5000):
         qtbot.mouseClick(w.state_bar.queue, Qt.LeftButton)
     assert len(w.session.queue) == 3
-    assert w.state_bar.queue.full_text.startswith("Queue: has bus_m · 3 · 3 left")
+    assert w.state_bar.queue.full_text.startswith("Queue: has a bus_m · 3 · 3 left")
     w.close()
 
 
@@ -163,15 +163,28 @@ def test_an_outside_edit_appears_on_the_canvas(qtbot, window, ds):
     qtbot.waitUntil(lambda: [c.text for c in window.canvas.caption_items()] == ["bus_l"], timeout=5000)
 
 
-def test_rapid_paging_ends_on_the_current_image(qtbot, window):
+def test_rapid_paging_ends_on_the_current_image(qtbot, ds):
+    from PIL import Image
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor
+
+    Image.new("RGB", (64, 48), (255, 0, 255)).save(ds.img("weird/имя пробел.jpg"))    # the one magenta frame
+    window = launch([str(ds.yaml)], FakePrompter())
+    qtbot.addWidget(window)
+    window.resize(1200, 800)
+    window.show()
+    qtbot.waitUntil(lambda: window.canvas.image_size is not None, timeout=5000)
     for _ in range(9):
         qtbot.keyClick(window, Qt.Key_Right)
     current = window.session.current()
     assert current.key == "weird/images/имя пробел.jpg"
     qtbot.waitUntil(lambda: window._shown == current.entry.path)
     qtbot.wait(200)                         # late decodes of skipped images arrive
-    assert window._shown == current.entry.path
+    shot = window.canvas.viewport().grab().toImage()
+    middle = QColor(shot.pixel(window.canvas.mapFromScene(QPointF(32, 24))))
+    assert middle.red() > 240 and middle.green() < 15 and middle.blue() > 240     # drawn: the frame itself
     assert window.status_text.text().startswith(current.key)
+    window.close()
 
 
 def test_closing_while_jobs_run_frees_the_root(qtbot, ds):
@@ -206,3 +219,52 @@ def test_a_closed_panel_can_be_shown_again(qtbot, window):
     action.trigger()
     qtbot.waitUntil(window.queue_dock.isVisible)
     assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions"
+
+
+
+def test_a_second_help_press_brings_the_one_help_window_forward(qtbot, ds):
+    from deeplabeling.ui.keymap import HelpDialog
+    from drive import start
+
+    w = start(qtbot, [str(ds.yaml)])
+    w.show_help()
+    w.show_help()
+    assert len([d for d in w.findChildren(HelpDialog) if d.isVisible()]) == 1
+    w.close()
+
+
+def test_written_is_stamped_only_when_files_are_written(qtbot, ds):
+    from deeplabeling.core.edits import AddBox, Intent
+    from drive import start
+
+    w = start(qtbot, [str(ds.yaml)])
+    s = w.session
+    s.workspace.editor.apply(Intent(ds.img("camA/0001.jpg"), (AddBox(1, (0.9, 0.9, 0.05, 0.05)),), "add"))
+    assert w._written is not None
+    w._written = None
+    ds.lbl("camA/0001").write_text("1 0.1 0.1 0.1 0.1\n")     # changed outside: the undo is refused
+    s.undo()
+    assert w._written is None and "written" not in w.status_text.text()
+    w.close()
+
+
+def test_arriving_at_an_image_the_model_failed_on_says_so_once(qtbot, ds, tmp_path):
+    from drive import start
+    from fixtures import FakePredictor
+
+    w = start(qtbot, [str(ds.yaml)])
+    s = w.session
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    s.model.factory = lambda path: FakePredictor(path, fail={"0002.jpg"})
+    s.model.load(weights)                                    # on 0001: 0002, a neighbour, fails out of sight
+    qtbot.waitUntil(lambda: ds.img("camA/0002.jpg") in s.model._failures, timeout=5000)
+    s.go_to("camA/images/0002.jpg")
+    s.go_to("camA/images/0001.jpg")
+    s.go_to("camA/images/0002.jpg")
+    said = [t for t in w.notices.texts() if "could not predict" in t]
+    assert said == ["camA/images/0002.jpg: the model could not predict (0002.jpg: CUDA out of memory)"]
+    w.notices.clear()                                        # dismissed
+    s.cursorChanged.emit()                                   # the same image, re-shown (a rebuild)
+    assert not [t for t in w.notices.texts() if "could not predict" in t]
+    w.close()

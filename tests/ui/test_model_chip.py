@@ -187,3 +187,44 @@ def test_infer_this_queue_runs_from_the_menu_and_can_be_cancelled_there(qtbot, w
     assert "Infer this queue" not in menu(window)
     menu(window)["Cancel inferring"].trigger()
     assert cancelled == [1]
+
+
+def test_a_model_loaded_before_the_dataset_opens_is_remembered_and_counts_its_rows(qtbot, ds, weights):
+    from deeplabeling.core.predstore import image_stamp
+    from deeplabeling.ui.model import MODEL_PATH
+    from fixtures import FakePrompter, open_session
+    from deeplabeling.ui.session import Session
+
+    first = open_session(qtbot, ds.yaml)                    # rows stored, no model remembered
+    for entry in first.workspace.dataset.images:
+        first.workspace.predictions.put("fake:best.pt", entry.rel, image_stamp(entry.path), [])
+    first.close()
+    s = Session(FakePrompter())
+    s.model.factory = fake
+    s.model.load(weights)                                   # no dataset open yet
+    qtbot.waitUntil(lambda: s.model.state == "ready", timeout=5000)
+    with qtbot.waitSignal(s.queueDone, timeout=5000):
+        assert s.open(ds.yaml)
+    assert s.workspace.opening_settings.get(MODEL_PATH) == str(weights)
+    assert s.model.inferred_count() == (15, 15)
+    s.close()
+
+
+def test_a_recent_model_whose_file_is_gone_is_shown_but_not_offered(qtbot, window, weights, tmp_path):
+    gone = tmp_path / "gone" / "yolov8n.pt"
+    window.session.settings.set(model_module.RECENT_MODELS, [str(gone), str(weights)])
+    actions = menu(window)
+    assert not actions[f"yolov8n.pt — {gone.parent} (missing)"].isEnabled()
+    assert actions[f"best.pt — {weights.parent}"].isEnabled()
+
+
+def test_answers_queued_before_a_switch_are_dropped(qtbot, window, ds, tmp_path):
+    model = window.session.model
+    load(qtbot, window)
+    notices = []
+    window.session.notice.connect(lambda *args: notices.append(args))
+    model._pass_ended(3, 0, False)                          # a pass that ended for another dataset
+    model._ready(tmp_path / "elsewhere.jpg")                # an image of another dataset: no KeyError
+    model.load(model.path)                                  # a model switch: loading again
+    model._failed(ds.img("camA/0001.jpg"), "the old model failed")
+    assert notices == [] and model._failures == {}

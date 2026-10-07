@@ -99,7 +99,8 @@ keeps raw model ids and translates on read
   does ([image sizes](../knowledge/caches.md#image-sizes)), so they need no conversion to
   be drawn.
 - **"Never inferred" and "inferred, nothing found" stay apart** (`None` and `[]`).
-- **Reads on the GUI thread** are the image on screen only. Each thread has its own
+- **Reads on the GUI thread** are the image on screen and its neighbours, one indexed
+  lookup each, to know which the model must still be asked for. Each thread has its own
   connection.
 
 ### The class map

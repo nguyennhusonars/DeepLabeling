@@ -42,10 +42,16 @@ def test_the_editor_is_seeded_from_the_queue_in_force(qtbot, dataset, current):
     assert editor(qtbot, dataset, current).filter() == current
 
 
-def test_choosing_has_without_a_class_adds_no_condition(qtbot, dataset):
+@pytest.mark.parametrize("setup, why", [
+    (lambda d: d.class_mode.setCurrentText("has"), "Classes — choose a class, or any class"),
+    (lambda d: d.class_mode.setCurrentText("lacks"), "Classes — choose a class, or any class"),
+    (lambda d: [box.setChecked(False) for box in d.splits.values()], "Splits — choose at least one"),
+])
+def test_a_choice_left_half_made_is_refused_not_ignored(qtbot, dataset, setup, why):
     dialog = editor(qtbot, dataset, ImageFilter())
-    dialog.class_mode.setCurrentText("has")
-    assert dialog.filter() == ImageFilter()
+    setup(dialog)
+    with pytest.raises(ValueError, match=why):
+        dialog.filter()
 
 
 def test_the_widgets_build_the_filter(qtbot, dataset):
@@ -197,3 +203,9 @@ def test_the_find_bad_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot
         assert not any(rect.intersects(r) for r in rects)
         rects.append(rect)
     assert dialog.height() <= 800
+
+
+
+def test_the_model_confidence_is_seeded_as_the_value_itself(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter(), conf=0.123456789)
+    assert dialog.model_lo.text() == "0.123456789"

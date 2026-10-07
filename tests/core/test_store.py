@@ -286,3 +286,95 @@ def test_the_pinned_image_is_never_evicted(ds):
     for entry in store.dataset.images:
         store.get(entry.path)
     assert store.is_cached(pinned)
+
+
+def test_a_label_file_made_read_only_is_not_edited(store, ds):
+    path = ds.lbl("camA/0001")
+    path.chmod(0o444)
+    try:
+        labels = store.get(ds.img("camA/0001.jpg"))
+        assert not labels.editable and labels.error == "0001.txt is read-only, so it is not edited here"
+        with pytest.raises(Refused, match="read-only"):
+            store.apply(intent(ds.img("camA/0001.jpg"), AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    finally:
+        path.chmod(0o644)
+    assert read_exact(path) == CAMA_0001
+    assert store.get(ds.img("camA/0001.jpg")).editable           # the chmod back is seen, though mtime is not
+
+
+def test_an_undo_failing_part_way_puts_back_what_it_wrote(store, ds, monkeypatch):
+    a, b = ds.img("camA/0001.jpg"), ds.img("weird/имя пробел.jpg")
+    first = store.apply(intent(a, AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    second = store.apply(intent(b, AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    edit = Edit(first.changes + second.changes, (a, b), "two")
+    after_a, after_b = read_exact(ds.lbl("camA/0001")), read_exact(ds.lbl("weird/имя пробел"))
+    real, calls = store_module.write_atomic, []
+
+    def failing(path, data):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", failing)
+    with pytest.raises(Refused, match="could not write"):
+        store.restore(edit, undo=True)
+    assert read_exact(ds.lbl("camA/0001")) == after_a                    # put back: nothing half undone
+    assert read_exact(ds.lbl("weird/имя пробел")) == after_b
+    monkeypatch.setattr(store_module, "write_atomic", real)
+    store.restore(edit, undo=True)                                       # so the undo can be tried again
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
+
+
+def test_undo_leaves_a_file_made_read_only_since_and_keeps_the_edit(ds):
+    from deeplabeling.core.editor import Editor
+    from deeplabeling.core.history import History
+    from deeplabeling.core.review import ReviewMarks
+
+    dataset = Dataset.open(ds.yaml)
+    store = LabelStore(dataset)
+    editor = Editor(store, History(store), ReviewMarks(ds.root / "review.json", dataset.root))
+    editor.apply(intent(ds.img("camA/0001.jpg"), AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    after = read_exact(ds.lbl("camA/0001"))
+    ds.lbl("camA/0001").chmod(0o444)
+    try:
+        with pytest.raises(Refused, match="read-only"):
+            editor.undo()
+        assert read_exact(ds.lbl("camA/0001")) == after and editor.history.depth == 1
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)
+
+
+def test_an_undo_whose_put_back_fails_too_keeps_both_halves_undoable(ds, monkeypatch):
+    from deeplabeling.core.editor import Editor
+    from deeplabeling.core.history import History
+    from deeplabeling.core.review import ReviewMarks
+
+    dataset = Dataset.open(ds.yaml)
+    store, changed = LabelStore(dataset), []
+    editor = Editor(store, History(store), ReviewMarks(ds.root / "review.json", dataset.root),
+                    on_labels_changed=changed.append)
+    names = ("camA/0001.jpg", "weird/имя пробел.jpg", "crlf/c.jpg")
+    edit = editor.apply_many([intent(ds.img(n), AddBox(1, (0.5, 0.5, 0.1, 0.1))) for n in names], "three")
+    after = ds.snapshot()
+    real, calls = store_module.write_atomic, []
+
+    def failing(path, data):
+        calls.append(path)
+        if len(calls) in (3, 4):                            # C's undo fails, then B's put-back
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", failing)
+    changed.clear()
+    with pytest.raises(Refused, match="could not be put back"):
+        editor.undo()
+    monkeypatch.setattr(store_module, "write_atomic", real)
+    # A put back, B stuck undone, C never undone: B's undo is redoable, A and C's still undoable.
+    assert read_exact(ds.lbl("weird/имя пробел")) == "0 0.500000 0.500000 0.100000 0.100000\n"
+    assert editor.history.peek_redo().images == (ds.img(names[1]),)
+    assert set(editor.history.peek_undo().images) == {ds.img(names[0]), ds.img(names[2])}
+    assert changed and ds.img(names[1]) in changed[-1]
+    editor.undo()                                            # the disk freed: the rest goes back
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and read_exact(ds.lbl("crlf/c")) == CRLF
+    assert edit is not None

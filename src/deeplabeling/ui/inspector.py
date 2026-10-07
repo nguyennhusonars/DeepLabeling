@@ -68,8 +68,9 @@ class Inspector(QWidget):
         layout.addWidget(self.classes, 1)
         layout.addWidget(QLabel("Boxes"))
         layout.addWidget(self.boxes, 1)
-        for signal in (session.cursorChanged, session.reviewChanged, session.opened, session.closed):
+        for signal in (session.cursorChanged, session.opened, session.closed):
             signal.connect(self.refresh)
+        session.reviewChanged.connect(self._show_reviewed)     # an edit marks it: the boxes are redrawn already
         session.labelsChanged.connect(self._labels_event)
         session.images.ready.connect(self._image_event)
         session.images.failed.connect(lambda path, why: self._image_event(path))
@@ -86,6 +87,13 @@ class Inspector(QWidget):
         # *_label names: a field called `size` would shadow QWidget.size()
         return (self.path_label, self.size_label, self.state_label, self.unparsed_label, self.reviewed_label,
                 self.predictions_label, self.finding_label)
+
+    def _show_reviewed(self) -> None:
+        session, item = self._session, self._session.current()
+        if session.workspace is None or item is None:
+            return
+        marked = session.workspace.review.marked_at(item.entry.rel)
+        self.reviewed_label.setText(time.strftime("%Y-%m-%d %H:%M", time.localtime(marked)) if marked else "not yet")
 
     def _labels_event(self, images) -> None:
         item = self._session.current()
@@ -146,8 +154,7 @@ class Inspector(QWidget):
                           f"{image.width()} × {image.height()}" if image is not None else "decoding…")
         self.state_label.setText(self._state_text(labels))
         self.unparsed_label.setText(str(labels.unparsed))
-        marked = ws.review.marked_at(entry.rel)
-        self.reviewed_label.setText(time.strftime("%Y-%m-%d %H:%M", time.localtime(marked)) if marked else "not yet")
+        self._show_reviewed()
         self.predictions_label.setText(self._predictions_text(session.model, entry))
         self.finding_label.setText("—" if item.finding is None else
                                    finding_detail(item.finding, ws.dataset, session.model.names))
@@ -188,7 +195,7 @@ class Inspector(QWidget):
     def _state_text(labels) -> str:
         if labels.state is LabelState.ERROR:
             return labels.error
-        if labels.state is LabelState.SHARED:
+        if labels.state is LabelState.SHARED or not labels.writable:
             return f"read-only: {labels.error}"
         if labels.raw is None:
             return "no label file"

@@ -35,6 +35,7 @@ RECENT_MAX = 8
 SHUTDOWN_MS = 2000      #: the longest closing waits for a prediction in hand
 NEIGHBOURS = (1, 2, -1)  #: queue offsets predicted after the image on screen, as images are kept
 PASS_BATCH = 8          #: images a pass asks the model for at once, decoded in parallel
+PASS_WALK = 500         #: images a pass step looks at, at most: a resumed pass over 45k inferred took 0.16 s
 
 Wanted = tuple[str, Path, Stamp]   #: (dataset-relative path, file, stamp)
 
@@ -196,12 +197,13 @@ class _Worker(QThread):
         store, key = self._pass_store, self._predictor.key
         if self._known is None:
             self._known = store.inferred(key)
-        todo = []
-        while len(todo) < PASS_BATCH:
+        todo, looked = [], 0
+        while len(todo) < PASS_BATCH and looked < PASS_WALK:
             with self._cond:
-                if not self._pass:
-                    break
+                if not self._pass or (self._screen and looked):
+                    break                           # the image on screen goes ahead of the walk
                 rel, path = self._pass.popleft()
+            looked += 1
             self._walked += 1
             try:
                 stamp = image_stamp(path)
@@ -254,6 +256,7 @@ class ModelSession(QObject):
         self.factory: Callable = UltralyticsPredictor
         self.state = "none"             # none, loading, ready or failed
         self.path: Path | None = None
+        self._on_screen: Path | None = None     # the image want_screen last saw on screen
         self.key: str | None = None
         self.names: tuple[str, ...] = ()
         self.error = ""
@@ -345,9 +348,12 @@ class ModelSession(QObject):
         stored = self.session.workspace.opening_settings.get(MODEL_PATH)
         if stored and Path(stored).is_file():
             self.load(stored)
-        elif self.key is not None:
-            self.class_map = load_class_map(self.session.workspace.root_settings, self.names,
-                                            self.session.workspace.dataset.names)
+        elif self.key is not None:                  # loaded before this dataset opened: it is this one's now
+            ws = self.session.workspace
+            self.class_map = load_class_map(ws.root_settings, self.names, ws.dataset.names)
+            ws.opening_settings.set(MODEL_PATH, str(self.path))
+            self._known = set(ws.predictions.inferred(self.key))
+            self.session.saver.schedule()
             self.changed.emit()
 
     def release(self) -> None:
@@ -410,12 +416,16 @@ class ModelSession(QObject):
                 or queue.position() is None):
             return
         i, items = queue.position(), queue.items
+        arrived, before = items[i].entry.path, self._on_screen   # re-shown, not arrived: said already
         wanted = []
         for j in (i, *(i + d for d in NEIGHBOURS)):
             if not 0 <= j < len(items):
                 continue
             entry = items[j].entry
             if entry.path in self._failures:
+                if j == i and entry.path != before:  # failed out of sight: said on arrival
+                    session.notice.emit("error", f"{entry.rel}: the model could not predict "
+                                        f"({self._failures[entry.path]})", entry.path)
                 continue
             try:
                 stamp = image_stamp(entry.path)
@@ -423,6 +433,7 @@ class ModelSession(QObject):
                 continue
             if ws.predictions.get(self.key, entry.rel, stamp) is None:
                 wanted.append((entry.rel, entry.path, stamp))
+        self._on_screen = arrived
         self._worker.want(ws.predictions, wanted)
 
     # -- the dataset pass ---------------------------------------------------------------------
@@ -460,20 +471,37 @@ class ModelSession(QObject):
         self.progress.emit()
 
     def _pass_ended(self, inferred: int, failed: int, cancelled: bool) -> None:
+        if not self.passing:
+            return                                    # queued before a switch: a pass of a dataset gone
         self.passing = False
         images = f"{inferred:,} image" + ("" if inferred == 1 else "s")
         self.session.notice.emit("info", f"inferring stopped: {images} inferred, {failed:,} failed"
                                  if cancelled else f"inferred {images}; {failed:,} failed", None)
         self.changed.emit()
 
-    def _ready(self, path) -> None:
+    def _current(self, path):
+        """The open dataset's entry for an answer's image, or None for a stale answer: the
+        thread answers in order, so one queued before a switch comes while the next model
+        loads, or names an image of a dataset since closed."""
         ws = self.session.workspace
-        if ws is not None:
-            self._known.add(ws.dataset.entry(path).rel)
+        if ws is None or self.state != "ready":
+            return None
+        try:
+            return ws.dataset.entry(path)
+        except KeyError:
+            return None
+
+    def _ready(self, path) -> None:
+        entry = self._current(path)
+        if entry is None:
+            return
+        self._known.add(entry.rel)
         self._failures.pop(path, None)                # stored since: no longer failed
         self.ready.emit(path)
 
     def _failed(self, path, why: str) -> None:
+        if self._current(path) is None:
+            return
         self._failures[path] = why
         item = self.session.current()
         if item is not None and item.entry.path == path:

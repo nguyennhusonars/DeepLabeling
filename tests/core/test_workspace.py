@@ -134,3 +134,13 @@ def test_names_changed():
     assert not names_changed(None, ("a",))
     assert not names_changed(["a"], ("a",))
     assert names_changed(["a"], ("a", "b"))
+
+
+
+def test_the_out_of_range_message_counts_in_words(ds):
+    from deeplabeling.core.dataset import Dataset
+    from deeplabeling.core.taxonomy import OutOfRange
+
+    dataset = Dataset.open(ds.yaml)
+    assert OutOfRange(1, 1, (9,)).message(dataset) == (
+        "1 box in 1 image has class id 9 that data.yaml does not name. Is it the right yaml for these labels?")
