@@ -216,3 +216,15 @@ def test_a_recent_model_whose_file_is_gone_is_shown_but_not_offered(qtbot, windo
     actions = menu(window)
     assert not actions[f"yolov8n.pt — {gone.parent} (missing)"].isEnabled()
     assert actions[f"best.pt — {weights.parent}"].isEnabled()
+
+
+def test_answers_queued_before_a_switch_are_dropped(qtbot, window, ds, tmp_path):
+    model = window.session.model
+    load(qtbot, window)
+    notices = []
+    window.session.notice.connect(lambda *args: notices.append(args))
+    model._pass_ended(3, 0, False)                          # a pass that ended for another dataset
+    model._ready(tmp_path / "elsewhere.jpg")                # an image of another dataset: no KeyError
+    model.load(model.path)                                  # a model switch: loading again
+    model._failed(ds.img("camA/0001.jpg"), "the old model failed")
+    assert notices == [] and model._failures == {}

@@ -463,20 +463,37 @@ class ModelSession(QObject):
         self.progress.emit()
 
     def _pass_ended(self, inferred: int, failed: int, cancelled: bool) -> None:
+        if not self.passing:
+            return                                    # queued before a switch: a pass of a dataset gone
         self.passing = False
         images = f"{inferred:,} image" + ("" if inferred == 1 else "s")
         self.session.notice.emit("info", f"inferring stopped: {images} inferred, {failed:,} failed"
                                  if cancelled else f"inferred {images}; {failed:,} failed", None)
         self.changed.emit()
 
-    def _ready(self, path) -> None:
+    def _current(self, path):
+        """The open dataset's entry for an answer's image, or None for a stale answer: the
+        thread answers in order, so one queued before a switch comes while the next model
+        loads, or names an image of a dataset since closed."""
         ws = self.session.workspace
-        if ws is not None:
-            self._known.add(ws.dataset.entry(path).rel)
+        if ws is None or self.state != "ready":
+            return None
+        try:
+            return ws.dataset.entry(path)
+        except KeyError:
+            return None
+
+    def _ready(self, path) -> None:
+        entry = self._current(path)
+        if entry is None:
+            return
+        self._known.add(entry.rel)
         self._failures.pop(path, None)                # stored since: no longer failed
         self.ready.emit(path)
 
     def _failed(self, path, why: str) -> None:
+        if self._current(path) is None:
+            return
         self._failures[path] = why
         item = self.session.current()
         if item is not None and item.entry.path == path:
