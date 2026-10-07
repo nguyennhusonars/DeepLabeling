@@ -38,7 +38,7 @@ def test_the_box_sizes_table_ends_with_the_images_it_could_not_size(stats):
     assert header == ["class", "< 8", "8–16", "16–32", "32–64", "64–128", "128–256", "≥ 256"]
     assert rows[:3] == [["person", "4", "7", "0", "0", "0", "0", "0"], ["car", "3", "2", "0", "0", "0", "0", "0"],
                         ["bus_m", "0", "3", "0", "0", "0", "0", "0"]]
-    assert rows[-2:] == [["images whose header cannot be read: 1"], ["boxes with no size or place that can be read: 0"]]
+    assert rows[-2:] == [["unsized images: 1"], ["unreadable boxes: 0"]]
 
 
 def test_the_boxes_per_image_table_runs_to_twenty_or_more(stats):

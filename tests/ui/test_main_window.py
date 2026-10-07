@@ -98,7 +98,7 @@ def test_ids_the_yaml_does_not_name_stay_on_screen(qtbot, window):
 def test_an_undecodable_image_says_so_on_the_canvas_and_the_strip(qtbot, window):
     window.session.go_to("bad/images/corrupt.jpg")
     qtbot.waitUntil(lambda: window.canvas.message.startswith("Cannot decode bad/images/corrupt.jpg"))
-    assert any("cannot be decoded" in t for t in window.notices.texts())
+    assert any("cannot decode" in t for t in window.notices.texts())
 
 
 def test_layers_toggle_from_their_keys_and_persist(qtbot, window, ds):

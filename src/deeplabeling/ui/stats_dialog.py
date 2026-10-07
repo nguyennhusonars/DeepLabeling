@@ -124,7 +124,7 @@ class StatsDialog(QDialog):
     def _failed(self, token, why: str) -> None:
         if token and token[0] is self._job:
             self._job = None
-            self.status.setText(f"the statistics could not be computed: {why}")
+            self.status.setText(f"statistics failed: {why}")
 
     def closeEvent(self, event) -> None:
         if self._job is not None:

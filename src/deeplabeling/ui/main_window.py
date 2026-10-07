@@ -155,17 +155,17 @@ class MainWindow(QMainWindow):
         session, item = self.session, self.session.current()
         if session.workspace is None:
             self._shown = None
-            self.canvas.set_image(None, "No dataset is open: click the dataset chip to open one.")
+            self.canvas.set_image(None, "📁 No dataset open — click the dataset chip")
         elif item is None:
             self._shown = None
             queue = session.queue
             if queue is not None and queue.waiting:
                 message = ("Waiting for the model…" if session.model.state == "loading"
-                           else "This queue needs a model: load one.")
+                           else "🧠 This queue needs a model — load one")
             elif queue is not None and not queue.complete:
                 message = "Building the queue…"
             else:
-                message = "No images in this queue."
+                message = "No images in this queue"
             self.canvas.set_image(None, message)
         else:
             path = item.entry.path
@@ -173,8 +173,7 @@ class MainWindow(QMainWindow):
             if why is not None:
                 self._shown = None
                 self.canvas.set_image(None, f"Cannot decode {item.entry.rel}: {why}")
-                self.notices.add("error", f"{item.entry.rel}: the image cannot be decoded ({why}); "
-                                 "its labels are not edited", image=path, key=f"decode:{item.entry.rel}")
+                self.notices.add("error", f"{item.entry.rel}: cannot decode ({why}) — not edited", image=path, key=f"decode:{item.entry.rel}")
             elif image is None:
                 self._shown = None
                 self.canvas.set_image(None, "Loading…")

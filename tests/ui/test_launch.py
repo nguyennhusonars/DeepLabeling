@@ -102,13 +102,13 @@ def test_a_dataset_that_cannot_open_says_why(qtbot, ds):
     w = start(qtbot, [str(ds.root / "frames")], prompter)
     assert w.session.workspace is None
     assert "label folder" in prompter.errors[0][1]
-    assert w.canvas.message.startswith("No dataset is open")
+    assert w.canvas.message.startswith("📁 No dataset open")
     w.close()
 
 
 def test_the_real_taxonomy_question_names_both_yamls(monkeypatch):
     text = taxonomy_question("/d/data_13class.yaml", ["a"] * 13, "/d/data_7class.yaml", ("b",) * 7)
-    assert "data_13class.yaml (13 classes" in text and "data_7class.yaml (7 classes" in text
+    assert "data_13class.yaml: 13 classes" in text and "data_7class.yaml: 7 classes" in text
     from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     assert QtPrompter().confirm_taxonomy("/d/a.yaml", ["a"], "/d/b.yaml", ("b",)) is True

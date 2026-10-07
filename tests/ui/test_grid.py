@@ -302,7 +302,7 @@ def test_mark_page_leaves_the_tiles_not_showing_their_picture(qtbot, grid, sessi
     session.thumbs.clear()                                  # as just after a jump: none decoded yet
     with qtbot.waitSignal(session.status) as said:
         grid.mark_page()
-    assert said.args == ["no tile in view shows its picture yet; nothing was marked"]
+    assert said.args == ["no tile in view has loaded yet: nothing marked"]
     assert not session.workspace.review.keys()
     session.thumbs.want([path[whole[0]]])                   # one of the two arrives
     qtbot.waitUntil(lambda: session.thumbs.get(path[whole[0]]) is not None)
