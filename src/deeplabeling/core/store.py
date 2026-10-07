@@ -24,7 +24,7 @@ from .labelio import LabelLine, parse_label_bytes
 #: change keeps the size, and a chmod changes no mtime, so all four are compared.
 Stamp = tuple[int, int, int, bool]
 
-_SHARED = "another image uses the same label file, so it is not edited here"
+_SHARED = "shared with another image: not edited"
 
 
 class LabelState(enum.Enum):
@@ -155,7 +155,7 @@ class LabelStore:
             raw = entry.label_path.read_bytes()
         except OSError as e:
             return _error(entry, e)
-        why = _SHARED if shared else "" if writable else f"{entry.label_path.name} is read-only, so it is not edited here"
+        why = _SHARED if shared else "" if writable else f"{entry.label_path.name} is read-only: not edited"
         snap = ImageLabels(entry.path, entry.label_path,
                            LabelState.SHARED if shared else LabelState.OK,
                            raw, parse_label_bytes(raw), stamp, why, writable)
@@ -257,16 +257,15 @@ class LabelStore:
         for change in changes:
             expected = change.after if undo else change.before
             if _read_or_none(change.path) != expected:
-                raise Conflict(f"{change.path.name} has changed since, so it is left as it is")
+                raise Conflict(f"{change.path.name} changed since: left as it is")
             if expected is not None and not os.access(change.path, os.W_OK):     # made read-only since
-                raise Refused(f"{change.path.name} is read-only, so it is left as it is")
+                raise Refused(f"{change.path.name} is read-only: left as it is")
 
     def _write(self, path: Path, data: bytes) -> None:
         try:
             write_atomic(path, data)
         except OSError as e:
-            raise Refused(f"could not write {path.name}: {e.strerror or e}; "
-                          "the file is unchanged") from e
+            raise Refused(f"could not write {path.name} ({e.strerror or e}): unchanged") from e
 
     def _check_thread(self) -> None:
         if threading.get_ident() != self._owner:

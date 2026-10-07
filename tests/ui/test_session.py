@@ -357,7 +357,7 @@ def test_a_label_file_made_read_only_says_so_in_its_row_and_the_inspector(qtbot,
         session = open_session(qtbot, ds.yaml)
         item = session.current()
         assert item.entry.rel == "camA/images/0001.jpg" and session.badge(item) == "read-only · 2 boxes"
-        assert Inspector._state_text(session.labels(item.entry)) == "read-only: 0001.txt is read-only, so it is not edited here"
+        assert Inspector._state_text(session.labels(item.entry)) == "🔒 0001.txt is read-only: not edited"
         session.close()
     finally:
         ds.lbl("camA/0001").chmod(0o644)

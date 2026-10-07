@@ -51,7 +51,7 @@ class Inspector(QWidget):
         form.addRow("Image", self.path_label)
         form.addRow("Size", self.size_label)
         form.addRow("Labels", self.state_label)
-        form.addRow("Unparsable lines", self.unparsed_label)
+        form.addRow("Bad lines", self.unparsed_label)
         form.addRow("Reviewed", self.reviewed_label)
         form.addRow("Predictions", self.predictions_label)
         form.addRow("Finding", self.finding_label)
@@ -196,10 +196,10 @@ class Inspector(QWidget):
         if labels.state is LabelState.ERROR:
             return labels.error
         if labels.state is LabelState.SHARED or not labels.writable:
-            return f"read-only: {labels.error}"
+            return f"🔒 {labels.error}"
         if labels.raw is None:
             return "no label file"
         if labels.negative:
-            return "negative sample (no boxes)"
+            return "negative (no objects)"
         n = len(labels.boxes)
         return f"{n} box" if n == 1 else f"{n} boxes"

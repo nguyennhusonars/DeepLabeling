@@ -94,7 +94,7 @@ def test_new_rows_do_not_scroll_the_list(panel, session, monkeypatch):
 
 def test_the_inspector_says_a_shared_label_file_is_read_only(qtbot, inspector, session):
     session.go_to("camB/images/twin.jpg")
-    assert inspector.state_label.text().startswith("read-only: another image uses the same label file")
+    assert inspector.state_label.text() == "🔒 shared with another image: not edited"
 
 
 def test_the_inspector_ignores_changes_to_other_images(qtbot, inspector, session, monkeypatch):

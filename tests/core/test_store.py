@@ -293,7 +293,7 @@ def test_a_label_file_made_read_only_is_not_edited(store, ds):
     path.chmod(0o444)
     try:
         labels = store.get(ds.img("camA/0001.jpg"))
-        assert not labels.editable and labels.error == "0001.txt is read-only, so it is not edited here"
+        assert not labels.editable and labels.error == "0001.txt is read-only: not edited"
         with pytest.raises(Refused, match="read-only"):
             store.apply(intent(ds.img("camA/0001.jpg"), AddBox(1, (0.5, 0.5, 0.1, 0.1))))
     finally:
