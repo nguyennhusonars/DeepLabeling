@@ -78,7 +78,7 @@ def test_every_thread_reads_through_its_own_connection(store, image):
 def test_a_store_that_cannot_be_read_is_set_aside_and_started_again(tmp_path, image):
     (tmp_path / STORE_NAME).write_bytes(b"not a database, " * 200)
     store = PredictionStore(tmp_path / STORE_NAME)
-    assert "predictions.sqlite could not be read" in store.warning
+    assert "predictions.sqlite unreadable" in store.warning
     assert list(tmp_path.glob(f"{STORE_NAME}.unreadable-*"))
     store.put(MODEL, "a.jpg", image_stamp(image), [CAR])
     assert store.get(MODEL, "a.jpg", image_stamp(image)) == [CAR]

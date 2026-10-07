@@ -29,8 +29,7 @@ def dataset_state_dir(root: Path) -> Path:
 class Locked(Exception):
     def __init__(self, pid: int | None, path: Path):
         holder = f"process {pid}" if pid is not None else "another process"
-        super().__init__(f"this dataset is already open in DeepLabeling ({holder}); "
-                         "close it there first")
+        super().__init__(f"already open in DeepLabeling ({holder}) — close it there first")
         self.pid = pid
         self.path = path
 
@@ -89,10 +88,8 @@ def set_aside(path: Path, error: Exception) -> tuple[str, bool]:
     try:
         os.replace(path, aside)
     except OSError:
-        return (f"{path.name} could not be read ({error}) or moved aside; it is left as "
-                "it is, and nothing will be saved to it", False)
-    return (f"{path.name} could not be read ({error}); it was kept as {aside.name}, "
-            "and its contents start empty", True)
+        return (f"{path.name} unreadable ({error}) and not movable aside: left as is, nothing saved to it", False)
+    return (f"{path.name} unreadable ({error}): kept as {aside.name}, starting empty", True)
 
 
 def _read_pid(path: Path) -> int | None:

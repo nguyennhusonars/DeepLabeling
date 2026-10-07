@@ -156,7 +156,7 @@ def test_a_file_changed_between_its_check_and_its_write_drops_the_rest_and_says_
     undoing.check(4)                                        # every file as the accept left it
     undoing.write(1)
     ds.lbl("camA/0004").write_text("2 0.1 0.1 0.1 0.1\n")   # someone else, between check and write
-    with pytest.raises(Refused, match="2 of 4 files were undone; the rest has been dropped from the history"):
+    with pytest.raises(Refused, match="2 of 4 files undone; the rest dropped from the history"):
         undoing.write(4)
     assert undoing.dropped
     assert editor.history.peek_undo() is None              # nothing left that undo would refuse

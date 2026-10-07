@@ -124,7 +124,7 @@ def test_an_undo_that_cannot_write_keeps_the_edit_for_a_retry(editor, ds, monkey
     editor.apply(Intent(img, tuple(DeleteLine(snap.ref(i)) for i, _ in snap.boxes), "delete both"))
     with monkeypatch.context() as m:
         m.setattr(store_module, "write_atomic", full_disk)
-        with pytest.raises(Refused, match="still in the history"):
+        with pytest.raises(Refused, match="— try again$"):
             editor.undo()
     assert editor.history.can_undo and ds.lbl("camA/0001").read_bytes() == b""
     editor.undo()
@@ -138,7 +138,7 @@ def test_a_redo_that_cannot_write_keeps_the_edit_for_a_retry(editor, ds, monkeyp
     editor.undo()
     with monkeypatch.context() as m:
         m.setattr(store_module, "write_atomic", full_disk)
-        with pytest.raises(Refused, match="still in the history"):
+        with pytest.raises(Refused, match="— try again$"):
             editor.redo()
     assert editor.history.can_redo and read_exact(ds.lbl("camA/0001")) == CAMA_0001
     editor.redo()

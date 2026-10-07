@@ -167,7 +167,7 @@ def test_files_that_cannot_be_put_back_are_said_to_stay_written(qtbot, session, 
         accept_queue(session)
     qtbot.waitUntil(lambda: session.running is None)
     assert said.args[1].startswith("the accept failed part-way: camA/images/0004.JPG: could not write")
-    assert "could not be put back and stay as written" in said.args[1]
+    assert "stay as written" in said.args[1]
     assert session.workspace.history.depth == 1               # undo puts them back once there is room
 
 

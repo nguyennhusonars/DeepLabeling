@@ -117,8 +117,7 @@ def _from_yaml(path: Path) -> Dataset:
 def _from_folder(folder: Path, labels: Path | None) -> Dataset:
     folder = folder.resolve()
     if labels is None and "images" not in folder.parts:
-        raise DatasetError(f"{folder} has no 'images' folder in its path, so where its labels "
-                           "are cannot be worked out: give the label folder too")
+        raise DatasetError(f"{folder}: no 'images' folder in its path — give the label folder too")
     files = _list_images(folder) or []
     if not files:
         raise DatasetError(f"no images in {folder}")

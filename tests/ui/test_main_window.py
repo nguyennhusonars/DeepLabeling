@@ -91,7 +91,7 @@ def test_a_refusal_appears_in_the_visible_notice_strip(qtbot, window):
 
 
 def test_ids_the_yaml_does_not_name_stay_on_screen(qtbot, window):
-    qtbot.waitUntil(lambda: any("does not name" in t for t in window.notices.texts()))
+    qtbot.waitUntil(lambda: any("not named in" in t for t in window.notices.texts()))
     assert window.notices.isVisible()
 
 

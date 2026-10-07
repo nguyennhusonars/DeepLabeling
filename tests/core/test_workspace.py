@@ -117,7 +117,7 @@ def test_out_of_range_ids_are_counted(ds):
     dataset = Dataset.open(ds.yaml)
     found = count_out_of_range(dataset, LabelStore(dataset))
     assert found == OutOfRange(boxes=2, images=1, ids=(-1, 99))
-    assert "data.yaml does not name" in found.message(dataset)
+    assert "not named in data.yaml" in found.message(dataset)
 
 
 def test_nothing_is_out_of_range_without_names(ds):
@@ -143,4 +143,4 @@ def test_the_out_of_range_message_counts_in_words(ds):
 
     dataset = Dataset.open(ds.yaml)
     assert OutOfRange(1, 1, (9,)).message(dataset) == (
-        "1 box in 1 image has class id 9 that data.yaml does not name. Is it the right yaml for these labels?")
+        "1 box in 1 image: class id 9 not named in data.yaml — the wrong yaml?")

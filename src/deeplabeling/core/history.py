@@ -60,17 +60,14 @@ class History:
         except Conflict as e:
             self._undo.pop()
             self._bytes -= edit.nbytes
-            raise Refused(f"cannot undo “{edit.description}”: {e}. "
-                          "It has been dropped from the history.") from e
+            raise Refused(f"cannot undo “{edit.description}”: {e} — dropped from the history") from e
         except PartlyRestored as e:
             stuck, rest = self._part(edit, e.stuck), self._part(edit, [c for c in edit.changes if c not in e.stuck])
             self._undo[-1] = rest
             self._redo.append(stuck)
-            raise PartlyRestored(f"cannot undo “{edit.description}”: {e}. Those stay undone; "
-                                 "the rest is still in the history; try again.", e.stuck, stuck.images) from e
+            raise PartlyRestored(f"cannot undo “{edit.description}”: {e} — those stay undone; try again for the rest", e.stuck, stuck.images) from e
         except Refused as e:
-            raise Refused(f"cannot undo “{edit.description}”: {e}. "
-                          "It is still in the history; try again.") from e
+            raise Refused(f"cannot undo “{edit.description}”: {e} — try again") from e
         self._redo.append(self._undo.pop())
         return edit
 
@@ -83,17 +80,14 @@ class History:
         except Conflict as e:
             self._redo.pop()
             self._bytes -= edit.nbytes
-            raise Refused(f"cannot redo “{edit.description}”: {e}. "
-                          "It has been dropped from the history.") from e
+            raise Refused(f"cannot redo “{edit.description}”: {e} — dropped from the history") from e
         except PartlyRestored as e:
             stuck, rest = self._part(edit, e.stuck), self._part(edit, [c for c in edit.changes if c not in e.stuck])
             self._redo[-1] = rest
             self._undo.append(stuck)
-            raise PartlyRestored(f"cannot redo “{edit.description}”: {e}. Those stay redone; "
-                                 "the rest is still in the history; try again.", e.stuck, stuck.images) from e
+            raise PartlyRestored(f"cannot redo “{edit.description}”: {e} — those stay redone; try again for the rest", e.stuck, stuck.images) from e
         except Refused as e:
-            raise Refused(f"cannot redo “{edit.description}”: {e}. "
-                          "It is still in the history; try again.") from e
+            raise Refused(f"cannot redo “{edit.description}”: {e} — try again") from e
         self._undo.append(self._redo.pop())
         return edit
 

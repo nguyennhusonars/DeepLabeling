@@ -46,7 +46,7 @@ class ReviewMarks:
             except (TypeError, ValueError):
                 bad += 1
         if bad:
-            self.warning = f"{bad} review mark(s) in {self.path.name} could not be read and were skipped"
+            self.warning = f"{bad} unreadable review mark(s) in {self.path.name} skipped"
 
     def is_marked(self, rel: str) -> bool:
         return rel in self.marks
