@@ -28,6 +28,7 @@ from .notices import NoticeStrip
 from .queue_accept import accept_queue
 from .queue_panel import QueuePanel
 from .reassign import reassign_queue
+from .stats_dialog import StatsDialog
 from .session import Session
 from .settings_ui import (QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_GRID,
                           SHOW_PREDICTIONS,
@@ -66,6 +67,7 @@ class MainWindow(QMainWindow):
         self._shown: Path | None = None
         self._written: float | None = None
         self._help: HelpDialog | None = None
+        self.statistics: StatsDialog | None = None
         self.actions = build_actions(self, {
             "next": lambda: session.move(1),
             "previous": lambda: session.move(-1),
@@ -357,11 +359,21 @@ class MainWindow(QMainWindow):
         menu, queue = self.state_bar.queue.menu(), self.session.queue
         menu.clear()
         menu.addAction("Edit queue…", self.edit_queue).setEnabled(queue is not None)
-        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(
-            not self.session.queue_not_whole())
+        whole = not self.session.queue_not_whole()
+        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(whole)
+        menu.addAction("Statistics of this queue…", self.show_statistics).setEnabled(whole)
 
     def reassign_queue(self) -> None:
         reassign_queue(self.session)
+
+    def show_statistics(self) -> None:
+        """A Statistics window for the queue in force; an earlier one makes way for it."""
+        if self.statistics is not None:
+            self.statistics.close()
+            self.statistics.deleteLater()           # a child of the window until deleted
+        self.statistics = StatsDialog(self.session, self.prompter, self)
+        self.statistics.resize(900, 700)
+        self.statistics.show()
 
     def load_model(self) -> None:
         path = self.prompter.choose_weights()
