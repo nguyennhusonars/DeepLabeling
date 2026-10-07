@@ -51,15 +51,15 @@ class Chip(QToolButton):
 
 
 def model_text(model) -> str:
-    """The model chip: 🧠, the weights, the threshold and how much of the queue is inferred."""
+    """The model chip: ◎, the weights, the threshold and how much of the queue is inferred."""
     if model.state == "none":
-        return "🧠 load a model"
+        return "◎ load a model"
     name = model.path.name
     if model.state == "loading":
-        return f"🧠 {name} · loading…"
+        return f"◎ {name} · loading…"
     if model.state == "failed":
-        return f"🧠 {name} · failed"
-    text = f"🧠 {name} · ≥{model.conf:.2f}"
+        return f"◎ {name} · failed"
+    text = f"◎ {name} · ≥{model.conf:.2f}"
     if model.passing:
         return text + f" · inferring {model.pass_walked:,}/{model.pass_total:,}"
     counted = model.inferred_count()
@@ -122,12 +122,12 @@ class StateBar(QWidget):
     def refresh(self) -> None:
         session, ws = self._session, self._session.workspace
         if ws is None:
-            self.dataset.set_full_text("📁 open a dataset", "No dataset open. Click to open a yaml or an image folder.")
+            self.dataset.set_full_text("🗀 open a dataset", "No dataset open. Click to open a yaml or an image folder.")
             self.queue.set_full_text("☰ —", "The queue: open a dataset first.")
             self.reviewed.set_full_text("✓ —", "Images reviewed: open a dataset first.")
         else:
             d = ws.dataset
-            self.dataset.set_full_text(f"📁 {d.root.name} · {'+'.join(d.splits)} · {len(d.images):,}",
+            self.dataset.set_full_text(f"🗀 {d.root.name} · {'+'.join(d.splits)} · {len(d.images):,}",
                                        f"{d.root}\n{d.source.name}: {' + '.join(d.splits)}, {len(d.images):,} images"
                                        "\nClick to open another.")
             q = session.queue

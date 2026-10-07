@@ -47,7 +47,7 @@ def menu(window) -> dict:
 
 
 def load(qtbot, window):
-    menu(window)["📂 Load…"].trigger()
+    menu(window)["🗁 Load…"].trigger()
     qtbot.waitUntil(lambda: len(window.canvas._predictions) == 3, timeout=5000)
 
 
@@ -56,22 +56,22 @@ def captions(window):
 
 
 def test_without_a_model_the_chip_invites_one(window):
-    assert window.state_bar.model.full_text == "🧠 load a model"
+    assert window.state_bar.model.full_text == "◎ load a model"
     assert not menu(window)["⇄ Class map…"].isEnabled()
 
 
 def test_loading_from_the_chip_names_the_model_and_draws_its_predictions(qtbot, window):
     load(qtbot, window)
     qtbot.waitUntil(lambda: window.state_bar.model.full_text
-                    == "🧠 best.pt · ≥0.25 · 3/15 inferred")   # and its neighbours
+                    == "◎ best.pt · ≥0.25 · 3/15 inferred")   # and its neighbours
     assert captions(window) == ["car 0.90", "human? 0.70"]
 
 
 def test_while_it_loads_the_chip_says_so(qtbot, window, weights):
     gate = threading.Event()
     window.session.model.factory = lambda path: (gate.wait(5), fake(path))[1]
-    menu(window)["📂 Load…"].trigger()
-    assert window.state_bar.model.full_text == "🧠 best.pt · loading…"
+    menu(window)["🗁 Load…"].trigger()
+    assert window.state_bar.model.full_text == "◎ best.pt · loading…"
     gate.set()
     qtbot.waitUntil(lambda: window.session.model.state == "ready")
 
@@ -80,8 +80,8 @@ def test_a_model_that_does_not_load_says_why(qtbot, window, prompter, tmp_path):
     prompter.weights = tmp_path / "broken.pt"
     prompter.weights.write_bytes(b"not a model")
     window.session.model.factory = FakePredictor
-    menu(window)["📂 Load…"].trigger()
-    qtbot.waitUntil(lambda: window.state_bar.model.full_text == "🧠 broken.pt · failed")
+    menu(window)["🗁 Load…"].trigger()
+    qtbot.waitUntil(lambda: window.state_bar.model.full_text == "◎ broken.pt · failed")
     assert "broken.pt failed to load: not a model" in window.notices.texts()
 
 
@@ -90,7 +90,7 @@ def test_recent_models_are_listed_newest_first_and_load_again(qtbot, window, pro
     other = tmp_path / "other.pt"
     other.write_bytes(b"other")
     prompter.weights = other
-    menu(window)["📂 Load…"].trigger()
+    menu(window)["🗁 Load…"].trigger()
     qtbot.waitUntil(lambda: window.session.model.state == "ready" and window.session.model.path == other)
     texts = list(menu(window))
     first, second = texts.index(f"other.pt — {tmp_path}"), texts.index(f"best.pt — {weights.parent}")
@@ -105,7 +105,7 @@ def test_the_threshold_hides_weaker_predictions(qtbot, window, prompter):
     menu(window)["⚖ Threshold…"].trigger()
     assert ("threshold", 0.25) in prompter.asked
     qtbot.waitUntil(lambda: window.state_bar.model.full_text
-                    == "🧠 best.pt · ≥0.80 · 3/15 inferred")   # and its neighbours
+                    == "◎ best.pt · ≥0.80 · 3/15 inferred")   # and its neighbours
     assert captions(window) == ["car 0.90"]         # the person's is faint: no caption
 
 
@@ -129,7 +129,7 @@ def test_the_model_its_threshold_and_its_map_survive_a_relaunch(qtbot, window, p
     again = start(qtbot, [str(ds.yaml)], FakePrompter())
     qtbot.waitUntil(lambda: len(again.canvas._predictions) == 3, timeout=5000)
     qtbot.waitUntil(lambda: again.state_bar.model.full_text
-                    == "🧠 best.pt · ≥0.50 · 3/15 inferred")   # and its neighbours
+                    == "◎ best.pt · ≥0.50 · 3/15 inferred")   # and its neighbours
     assert captions(again) == ["car 0.90", "person 0.70"]
     again.close()
 
@@ -138,7 +138,7 @@ def test_without_a_dataset_only_loading_is_offered(qtbot, monkeypatch, prompter)
     monkeypatch.setattr(model_module, "UltralyticsPredictor", fake)
     w = start(qtbot, [], prompter)
     actions = menu(w)
-    assert actions["📂 Load…"].isEnabled()
+    assert actions["🗁 Load…"].isEnabled()
     assert not actions["⚖ Threshold…"].isEnabled() and not actions["⇄ Class map…"].isEnabled()
     w.close()
 
@@ -149,14 +149,14 @@ def test_a_remembered_model_that_is_gone_is_not_loaded(qtbot, window, weights, d
     weights.unlink()
     again = start(qtbot, [str(ds.yaml)], FakePrompter())
     assert again.session.model.state == "none"
-    assert again.state_bar.model.full_text == "🧠 load a model"
+    assert again.state_bar.model.full_text == "◎ load a model"
     again.close()
 
 
 def test_quitting_with_no_dataset_open_lets_the_model_go(qtbot, monkeypatch, prompter):
     monkeypatch.setattr(model_module, "UltralyticsPredictor", fake)
     w = start(qtbot, [], prompter)
-    menu(w)["📂 Load…"].trigger()
+    menu(w)["🗁 Load…"].trigger()
     qtbot.waitUntil(lambda: w.session.model.state == "ready", timeout=5000)
     worker = w.session.model._worker
     w.close()
@@ -177,10 +177,10 @@ def test_infer_this_queue_runs_from_the_menu_and_can_be_cancelled_there(qtbot, w
     assert not menu(window)["▶ Infer the queue"].isEnabled()
     load(qtbot, window)
     with qtbot.waitSignal(window.session.notice, timeout=5000,
-                          check_params_cb=lambda level, text, image: level == "info") as said:
+                          check_params_cb=lambda level, text, image: text.endswith(" failed")) as said:
         menu(window)["▶ Infer the queue"].trigger()
-    assert said.args[1] == "✓ 12 inferred, 0 failed"   # the screen had done the first three
-    assert window.state_bar.model.full_text == "🧠 best.pt · ≥0.25 · 15/15 inferred"
+    assert said.args[:2] == ["info", "12 inferred, 0 failed"]   # the screen had done the first three
+    assert window.state_bar.model.full_text == "◎ best.pt · ≥0.25 · 15/15 inferred"
     cancelled = []
     monkeypatch.setattr(window.session.model, "cancel_pass", lambda: cancelled.append(1))
     window.session.model.passing = True                      # as while a pass runs

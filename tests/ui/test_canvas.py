@@ -467,3 +467,12 @@ def test_a_drag_from_the_margin_previews_only_what_it_will_draw(canvas):
     drag(canvas, (20, -20), (80, 50), release=False)        # pressed above the image, moved into it
     rect = canvas._preview.rect()
     assert rect.top() >= 0 and rect.left() > 19 and rect.bottom() < 51     # the start pulled in, as the box is
+
+
+def test_a_message_is_centred_and_wholly_in_view(canvas):
+    canvas.set_image(None, "🗀 No dataset open — click the dataset chip")
+    item = canvas._message
+    shown = canvas.mapFromScene(item.mapToScene(item.boundingRect())).boundingRect()
+    view = canvas.viewport().rect()
+    assert view.contains(shown)
+    assert abs(shown.center().x() - view.center().x()) <= 2 and abs(shown.center().y() - view.center().y()) <= 2

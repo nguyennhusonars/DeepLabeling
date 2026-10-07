@@ -138,10 +138,11 @@ class Canvas(QGraphicsView):
             self._size = None
             self._message.setText(message)
             self._message.setVisible(bool(message))
-            self.scene().setSceneRect(QRectF(0, 0, 1, 1))
             self.resetTransform()
             self._message.setPos(0, 0)
-            self.centerOn(0, 0)
+            # The scene is the message alone: a scene smaller than the view is centred in it.
+            self.scene().setSceneRect(self._message.boundingRect() if message else QRectF(0, 0, 1, 1))
+            self.centerOn(self.sceneRect().center())
             return
         self._message.setVisible(False)
         self._pixmap.setPixmap(QPixmap.fromImage(image))

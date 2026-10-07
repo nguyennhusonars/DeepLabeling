@@ -474,8 +474,8 @@ class ModelSession(QObject):
             return                                    # queued before a switch: a pass of a dataset gone
         self.passing = False
         said = f"{inferred:,} inferred, {failed:,} failed"
-        self.session.notice.emit("info", f"inferring stopped: {said}" if cancelled
-                                 else f"{'⚠' if failed else '✓'} {said}", None)
+        self.session.notice.emit("warning" if failed else "info",
+                                 f"inferring stopped: {said}" if cancelled else said, None)
         self.changed.emit()
 
     def _current(self, path):

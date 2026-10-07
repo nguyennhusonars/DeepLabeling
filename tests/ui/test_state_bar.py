@@ -21,12 +21,12 @@ def chips(bar):
 
 def test_the_chips_say_what_is_in_force(qtbot, session):
     bar = shown(qtbot, StateBar(session), 1400)
-    assert bar.dataset.full_text == "📁 ds · train+val · 15"
+    assert bar.dataset.full_text == "🗀 ds · train+val · 15"
     assert "data.yaml: train + val, 15 images" in bar.dataset.toolTip()   # the whole of it, on hover
     assert bar.queue.full_text == "☰ all images · 15 left of 15"
     assert bar.reviewed.full_text == "✓ 0/15"
     assert bar.layers.full_text == "👁 none"
-    assert bar.model.full_text == "🧠 load a model"
+    assert bar.model.full_text == "◎ load a model"
     session.done_and_next()
     assert bar.reviewed.full_text == "✓ 1/15"
     assert bar.queue.full_text == "☰ all images · 14 left of 15"
@@ -34,7 +34,7 @@ def test_the_chips_say_what_is_in_force(qtbot, session):
 
 def test_without_a_dataset_the_chip_invites_one(qtbot):
     bar = shown(qtbot, StateBar(Session(FakePrompter())))
-    assert bar.dataset.full_text == "📁 open a dataset"
+    assert bar.dataset.full_text == "🗀 open a dataset"
 
 
 def test_a_narrow_bar_elides_but_shows_every_chip(qtbot, session):

@@ -102,7 +102,7 @@ def test_a_dataset_that_cannot_open_says_why(qtbot, ds):
     w = start(qtbot, [str(ds.root / "frames")], prompter)
     assert w.session.workspace is None
     assert "label folder" in prompter.errors[0][1]
-    assert w.canvas.message.startswith("📁 No dataset open")
+    assert w.canvas.message.startswith("🗀 No dataset open")
     w.close()
 
 

@@ -244,7 +244,7 @@ def test_written_is_stamped_only_when_files_are_written(qtbot, ds):
     w._written = None
     ds.lbl("camA/0001").write_text("1 0.1 0.1 0.1 0.1\n")     # changed outside: the undo is refused
     s.undo()
-    assert w._written is None and "💾" not in w.status_text.text()
+    assert w._written is None and "🖫" not in w.status_text.text()
     w.close()
 
 

@@ -159,7 +159,7 @@ def test_a_model_queue_says_it_waits_on_the_chip_the_panel_and_the_canvas(qtbot,
     window.session.set_queue(UNLABELLED)                       # no model at all
     assert window.state_bar.queue.full_text.endswith(" · needs a model")
     assert window.queue_panel.title.text() == "Queue · 0 · needs a model"
-    assert window.canvas.message == "🧠 This queue needs a model — load one"
+    assert window.canvas.message == "◎ This queue needs a model — load one"
     gate = threading.Event()
     window.session.model.factory = lambda path: (gate.wait(5), FakePredictor(path))[1]
     window.session.model.load(weights)                         # loading: now it waits

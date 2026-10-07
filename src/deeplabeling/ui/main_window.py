@@ -155,13 +155,13 @@ class MainWindow(QMainWindow):
         session, item = self.session, self.session.current()
         if session.workspace is None:
             self._shown = None
-            self.canvas.set_image(None, "📁 No dataset open — click the dataset chip")
+            self.canvas.set_image(None, "🗀 No dataset open — click the dataset chip")
         elif item is None:
             self._shown = None
             queue = session.queue
             if queue is not None and queue.waiting:
                 message = ("Waiting for the model…" if session.model.state == "loading"
-                           else "🧠 This queue needs a model — load one")
+                           else "◎ This queue needs a model — load one")
             elif queue is not None and not queue.complete:
                 message = "Building the queue…"
             else:
@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
             parts.append("{}×{}".format(*self.canvas.image_size))
         parts.append(f"{session.queue.position() + 1:,}/{len(session.queue):,}")
         if self._written is not None:
-            parts.append("💾 " + time.strftime("%H:%M:%S", time.localtime(self._written)))
+            parts.append("🖫 " + time.strftime("%H:%M:%S", time.localtime(self._written)))
         parts.append(f"↶{session.workspace.history.depth}")
         self.status_text.setText(" · ".join(parts))
 
@@ -332,8 +332,8 @@ class MainWindow(QMainWindow):
     def _fill_dataset_menu(self) -> None:
         menu = self.state_bar.dataset.menu()
         menu.clear()
-        self._item(menu, "📄 Open a yaml…", self.open_yaml, "Open a dataset from its yaml")
-        self._item(menu, "📂 Open an image folder…", self.open_folder, "Open a folder of images, and its labels")
+        self._item(menu, "🗎 Open a yaml…", self.open_yaml, "Open a dataset from its yaml")
+        self._item(menu, "🗁 Open an image folder…", self.open_folder, "Open a folder of images, and its labels")
         recent = self.session.settings.get(RECENT)
         if recent:
             menu.addSeparator()
@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
     def _fill_model_menu(self) -> None:
         menu, model, ws = self.state_bar.model.menu(), self.session.model, self.session.workspace
         menu.clear()
-        self._item(menu, "📂 Load…", self.load_model, "Load a model's weights file")
+        self._item(menu, "🗁 Load…", self.load_model, "Load a model's weights file")
         recent = self.session.settings.get(RECENT_MODELS)
         if recent:
             menu.addSeparator()
