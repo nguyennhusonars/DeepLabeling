@@ -262,9 +262,9 @@ def test_arriving_at_an_image_the_model_failed_on_says_so_once(qtbot, ds, tmp_pa
     s.go_to("camA/images/0002.jpg")
     s.go_to("camA/images/0001.jpg")
     s.go_to("camA/images/0002.jpg")
-    said = [t for t in w.notices.texts() if "could not predict" in t]
-    assert said == ["camA/images/0002.jpg: the model could not predict (0002.jpg: CUDA out of memory)"]
+    said = [t for t in w.notices.texts() if "prediction failed" in t]
+    assert said == ["camA/images/0002.jpg: prediction failed — 0002.jpg: CUDA out of memory"]
     w.notices.clear()                                        # dismissed
     s.cursorChanged.emit()                                   # the same image, re-shown (a rebuild)
-    assert not [t for t in w.notices.texts() if "could not predict" in t]
+    assert not [t for t in w.notices.texts() if "prediction failed" in t]
     w.close()

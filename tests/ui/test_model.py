@@ -58,7 +58,7 @@ def test_a_file_that_does_not_load_says_why_and_leaves_no_model(qtbot, session, 
     broken.write_bytes(b"x")
     with qtbot.waitSignal(session.notice, timeout=5000) as said:
         session.model.load(broken)
-    assert said.args[1] == "broken.pt could not be loaded: not a model"
+    assert said.args[1] == "broken.pt failed to load: not a model"
     assert session.model.state == "failed" and session.model.key is None
 
 
@@ -156,7 +156,7 @@ def test_a_store_that_cannot_be_written_fails_that_image_and_the_model_goes_on(q
     session.model.factory = factory
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda *a: "disk is full" in a[1]) as said:
         session.model.load(weights)
-    assert said.args[1] == ("camA/images/0001.jpg: the model could not predict "
-                            "(its predictions could not be stored: database or disk is full)")
+    assert said.args[1] == ("camA/images/0001.jpg: prediction failed — "
+                            "predictions not stored: database or disk is full")
     session.move(1)                                          # the thread still answers
     qtbot.waitUntil(lambda: session.model.predictions(session.current().entry) == [], timeout=5000)

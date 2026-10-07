@@ -360,7 +360,7 @@ class FakePredictor:
         from deeplabeling.core.inference import ModelError
 
         if "broken" in Path(path).name:
-            raise ModelError(f"{Path(path).name} could not be loaded: not a model")
+            raise ModelError(f"{Path(path).name} failed to load: not a model")
         self.key, self.names = f"fake:{Path(path).name}", tuple(names)
         self.found, self.fail, self.gate = dict(found or {}), set(fail), gate
         self.asked: list[str] = []

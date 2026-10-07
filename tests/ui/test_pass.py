@@ -57,7 +57,7 @@ def test_a_pass_infers_the_rest_of_the_queue_in_order_and_says_how_it_went(qtbot
     assert model_text(session.model) == "🧠 best.pt · ≥0.25 · 3/15 inferred"
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.infer_queue()
-    assert said.args[1] == "inferred 11 images; 1 failed"
+    assert said.args[1] == "⚠ 11 inferred, 1 failed"
     assert made[-1].asked == QUEUE                           # the first three by the screen, each once
     assert model_text(session.model) == "🧠 best.pt · ≥0.25 · 14/15 inferred"
 
@@ -79,11 +79,11 @@ def test_a_cancelled_pass_keeps_its_batches_and_a_second_resumes(qtbot, session,
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.cancel_pass()
         gate.set()
-    assert said.args[1] == "inferring stopped: 2 images inferred, 0 failed"
+    assert said.args[1] == "inferring stopped: 2 inferred, 0 failed"
     assert made[-1].asked == QUEUE[:5]
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.infer_queue()
-    assert said.args[1] == "inferred 9 images; 1 failed"
+    assert said.args[1] == "⚠ 9 inferred, 1 failed"
     assert made[-1].asked == QUEUE                           # nothing inferred twice
 
 
@@ -116,7 +116,7 @@ def test_a_store_that_cannot_be_written_fails_the_pass_images_and_the_pass_goes_
     monkeypatch.setattr(session.workspace.predictions, "put_many", full)
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.infer_queue()
-    assert said.args[1] == "inferred 0 images; 12 failed"
+    assert said.args[1] == "⚠ 0 inferred, 12 failed"
 
 
 def test_an_image_changed_on_disk_since_is_inferred_again(qtbot, session, made, ds):
@@ -126,7 +126,7 @@ def test_an_image_changed_on_disk_since_is_inferred_again(qtbot, session, made, 
     image.write_bytes(image.read_bytes() + b"\0")             # edited elsewhere: a new stamp
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.infer_queue()
-    assert said.args[1] == "inferred 1 image; 1 failed"      # it; and ok.jpg failed again
+    assert said.args[1] == "⚠ 1 inferred, 1 failed"      # it; and ok.jpg failed again
     assert made[-1].asked.count("0004.JPG") == 2
 
 

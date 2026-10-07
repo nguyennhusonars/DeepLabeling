@@ -82,7 +82,7 @@ def test_a_model_that_does_not_load_says_why(qtbot, window, prompter, tmp_path):
     window.session.model.factory = FakePredictor
     menu(window)["📂 Load…"].trigger()
     qtbot.waitUntil(lambda: window.state_bar.model.full_text == "🧠 broken.pt · failed")
-    assert "broken.pt could not be loaded: not a model" in window.notices.texts()
+    assert "broken.pt failed to load: not a model" in window.notices.texts()
 
 
 def test_recent_models_are_listed_newest_first_and_load_again(qtbot, window, prompter, weights, tmp_path):
@@ -179,7 +179,7 @@ def test_infer_this_queue_runs_from_the_menu_and_can_be_cancelled_there(qtbot, w
     with qtbot.waitSignal(window.session.notice, timeout=5000,
                           check_params_cb=lambda level, text, image: level == "info") as said:
         menu(window)["▶ Infer the queue"].trigger()
-    assert said.args[1] == "inferred 12 images; 0 failed"   # the screen had done the first three
+    assert said.args[1] == "✓ 12 inferred, 0 failed"   # the screen had done the first three
     assert window.state_bar.model.full_text == "🧠 best.pt · ≥0.25 · 15/15 inferred"
     cancelled = []
     monkeypatch.setattr(window.session.model, "cancel_pass", lambda: cancelled.append(1))
