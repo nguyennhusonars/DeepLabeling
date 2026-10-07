@@ -38,6 +38,7 @@ from .workers import Jobs
 OUT_OF_RANGE = "out-of-range"
 #: How often the image on screen has its label file re-checked for outside changes.
 WATCH_MS = 1500
+_UNREAD = object()      #: crop_of's size, when the caller has not read it
 
 
 #: What a build could not settle, as the queue chip says it.
@@ -472,13 +473,15 @@ class Session(QObject):
         else:
             self.status.emit("the dismissal is taken back")
 
-    def crop_of(self, item: QueueItem) -> Crop | None:
+    def crop_of(self, item: QueueItem, size=_UNREAD) -> Crop | None:
         """The crop a finding's tile shows; None for an image item, or when the image's
-        header cannot be read -- its crop could not be decoded either."""
+        header cannot be read -- its crop could not be decoded either. `size`: the image's,
+        when the caller has read it already (None: it cannot be read)."""
         f = item.finding
         if f is None:
             return None
-        size = self._require().sizes.get(item.entry.path)
+        if size is _UNREAD:
+            size = self._require().sizes.get(item.entry.path)
         rect = None if size is None else crop_rect(f.label_box, f.model_box, *size)
         return None if rect is None else Crop(item.entry.path, rect)
 
