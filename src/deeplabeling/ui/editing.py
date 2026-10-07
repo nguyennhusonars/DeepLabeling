@@ -42,6 +42,7 @@ class Editing(QObject):
         self._shown: ImageLabels | None = None      # what the canvas draws; its indices mean these
         self._predicted: tuple[Path, list[Shown] | None] | None = None    # the predictions it draws
         self._applying: tuple | None = None         # (image, what to select) while an edit applies
+        self._arriving = False                      # the cursor is moving: the window redraws the new item
         self._copied: tuple[str, tuple[str, ...]] | None = None    # (text, the class names it used)
         canvas.drawn.connect(self.draw)
         canvas.picked.connect(self.pick)
@@ -57,15 +58,20 @@ class Editing(QObject):
     # -- the image being edited ----------------------------------------------------------
 
     def _cursor_changed(self) -> None:
-        """A new item: a finding arrives with its label selected; anything else with none."""
-        self.selection.clear()
-        item = self.session.current()
-        if item is None or item.focus is None or self.session.workspace is None:
-            return
-        labels = self.session.labels(item.entry)
-        index = locate_line(labels.lines, item.focus.cls_id, item.focus.bbox, item.focus.index)
-        if index is not None:
-            self.selection.select(labels, [index])
+        """A new item: a finding arrives with its label selected; anything else with none.
+        The window draws the new item with its selection, so the canvas is not redrawn here."""
+        self._arriving = True
+        try:
+            self.selection.clear()
+            item = self.session.current()
+            if item is None or item.focus is None or self.session.workspace is None:
+                return
+            labels = self.session.labels(item.entry)
+            index = locate_line(labels.lines, item.focus.cls_id, item.focus.bbox, item.focus.index)
+            if index is not None:
+                self.selection.select(labels, [index])
+        finally:
+            self._arriving = False
 
     def _on_finding(self, labels: ImageLabels, indices) -> bool:
         """Whether these lines include the current finding's: fixing it moves on."""
@@ -101,8 +107,8 @@ class Editing(QObject):
         return self.selection.indices(current[1]) if current else []
 
     def _selection_changed(self) -> None:
-        if self._applying is not None:
-            return                                  # the edit's own redraw shows it
+        if self._applying is not None or self._arriving:
+            return                                  # the edit's own redraw, or the new item's, shows it
         self.canvas.set_selected(self.selection.indices(self._shown) if self._shown is not None else [])
 
     def _apply(self, intent: Intent | None, select=None) -> bool:
@@ -296,6 +302,11 @@ class Editing(QObject):
         box = item.finding.model_box and actions.clamp_box(item.finding.model_box)
         if box is None:
             self.session.status.emit("this finding has no model box")
+            return
+        labels, f = self._current()[1], item.focus
+        index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
+        if index is not None and all(abs(a - b) < 5e-7 for a, b in zip(box, labels.lines[index].bbox)):
+            self.session.status.emit("the label has the model's box already: D dismisses the finding")
             return
         if self._apply(Intent(item.entry.path, (SetBox(item.focus, box),), "take the model's box"), select=[]):
             self.session.move(1)

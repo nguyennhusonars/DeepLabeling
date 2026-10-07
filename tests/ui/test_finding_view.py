@@ -137,3 +137,13 @@ def test_a_tile_caption_is_short(ds, finding, text):
     from deeplabeling.ui.findview import finding_caption
 
     assert finding_caption(finding, Dataset.open(ds.yaml)) == text
+
+
+def test_paging_to_a_finding_on_another_image_draws_the_canvas_once(qtbot, window, monkeypatch):
+    nxt = window.session.queue.items[2]                                # camB/0001: not the image on screen
+    qtbot.waitUntil(lambda: window.session.images.get(nxt.entry.path) is not None, timeout=5000)
+    redraws, redraw = [], window.canvas._redraw
+    monkeypatch.setattr(window.canvas, "_redraw", lambda: (redraws.append(1), redraw()))
+    window.session.go_to(nxt.key)
+    assert window._shown == nxt.entry.path and window.canvas.spotlight is not None and len(redraws) == 1
+    assert len(window.canvas.handle_items()) == 8                      # its label arrived selected, and drawn so

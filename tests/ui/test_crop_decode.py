@@ -19,7 +19,8 @@ def pattern(path, orientation, size=(64, 48)):
     im.putdata([(255 * x // (w - 1), 255 * y // (h - 1), 128) for y in range(h) for x in range(w)])
     exif = Image.Exif()
     exif[274] = orientation
-    im.save(path, quality=95, exif=exif.tobytes())
+    im.save(path, **({"quality": 95} if path.suffix == ".jpg" else {"lossless": True} if path.suffix == ".webp" else {}),
+            exif=exif.tobytes())
     return path
 
 
@@ -33,13 +34,30 @@ def difference(a, b) -> float:
     return total / (3 * a.width() * a.height())
 
 
+@pytest.mark.parametrize("suffix", [".jpg", ".png", ".webp", ".tif"])
 @pytest.mark.parametrize("orientation", range(1, 9))
-def test_a_crop_is_the_shown_image_cut_and_scaled(tmp_path, orientation):
-    path = pattern(tmp_path / f"o{orientation}.jpg", orientation)
+def test_a_crop_is_the_shown_image_cut_and_scaled(tmp_path, orientation, suffix):
+    """Qt turns a JPEG by its EXIF and shows the other formats as stored: either way the crop
+    is cut from what the canvas shows."""
+    path = pattern(tmp_path / f"o{orientation}{suffix}", orientation)
     shown = decode_image(path)                                  # the canvas's picture
     rect = (4, 2, 40, 30)                                       # in the shown image's pixels
     crop = decode_crop(path, rect, (160, 120))
     want = shown.copy(QRect(4, 2, 36, 28)).scaled(QSize(160, 120), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    assert crop.size() == want.size() and difference(crop, want) < 6
+
+
+@pytest.mark.parametrize("orientation", [1, 3, 6, 8])
+@pytest.mark.parametrize("corner", ["the whole frame", "bottom right", "left edge"])
+def test_a_crop_at_the_frame_s_edge_is_cut_from_there(tmp_path, orientation, corner):
+    path = pattern(tmp_path / "o.jpg", orientation)
+    shown = decode_image(path)
+    w, h = shown.width(), shown.height()
+    rect = {"the whole frame": (0, 0, w, h), "bottom right": (w - 12, h - 10, w, h), "left edge": (0, 8, 10, h - 8)}[corner]
+    crop = decode_crop(path, rect, (160, 120))
+    x1, y1, x2, y2 = rect
+    want = shown.copy(QRect(x1, y1, x2 - x1, y2 - y1)).scaled(QSize(160, 120), Qt.KeepAspectRatio,
+                                                               Qt.SmoothTransformation)
     assert crop.size() == want.size() and difference(crop, want) < 6
 
 

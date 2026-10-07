@@ -24,12 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.findings import Findings
-from ..core.geometry import norm_to_px
+from ..core.labelio import locate_line
 from ..core.queue import QueueItem
 from ..core.workspace import CLASS_COLORS
 from .boxes import box_views
-from .findview import finding_caption, label_color, spotlight
-from .images import TILE_PICTURE
+from .findview import finding_caption, spotlight
+from .images import TILE_PICTURE, Crop
 from .session import Session
 
 TILE = QSize(176, 150)                      #: one grid cell
@@ -140,7 +140,8 @@ class TileDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor(TILE_CURRENT), 3))
             painter.drawRect(cell.adjusted(3, 3, -4, -4))
         painter.setPen(QColor(TILE_TEXT))
-        crop = session.crop_of(item)
+        size = None if item.finding is None else session.workspace.sizes.get(item.entry.path)
+        crop = session.crop_of(item, size)
         cache, key = (session.thumbs, item.entry.path) if item.finding is None else (session.crops, crop)
         picture = None if key is None else cache.get(key)
         if picture is None:
@@ -153,7 +154,7 @@ class TileDelegate(QStyledItemDelegate):
             if item.finding is None:
                 self._draw_boxes(painter, labels, target)
             else:
-                self._draw_finding(painter, item, crop.rect, target)
+                self._draw_finding(painter, item, labels, size, crop.rect, target)
         caption = QRect(cell.x() + 8, cell.y() + THUMB_AREA.bottom() + 4, cell.width() - 16,
                         cell.height() - THUMB_AREA.bottom() - 8)
         painter.setPen(QColor(TILE_TEXT))
@@ -182,32 +183,37 @@ class TileDelegate(QStyledItemDelegate):
                 painter.drawRect(QRectF(target.x() + x1, target.y() + y1, x2 - x1, y2 - y1))
         painter.restore()
 
-
-    def _draw_finding(self, painter, item, rect, target: QRect) -> None:
-        """The label in its class colour and the model's box dashed, as the spotlight draws
-        them, mapped from the crop `rect` (pixels of the image as shown) onto `target`."""
+    def _draw_finding(self, painter, item, labels, size, rect, target: QRect) -> None:
+        """The labels as they are now -- the finding's line thicker -- and the model's box
+        dashed, as the spotlight draws it, mapped from the crop `rect` (pixels of the image
+        as shown) onto `target`. A fixed finding shows its fix."""
         session, ws, f = self._session, self._session.workspace, item.finding
-        size = ws.sizes.get(item.entry.path)
-        if size is None:
-            return
         colors = ws.root_settings.get(CLASS_COLORS)
         scale = target.width() / (rect[2] - rect[0])
 
-        def on_tile(r) -> QRectF:
-            return QRectF(target.x() + (r[0] - rect[0]) * scale, target.y() + (r[1] - rect[1]) * scale,
-                          (r[2] - r[0]) * scale, (r[3] - r[1]) * scale)
+        def at(x, y) -> QPointF:
+            return QPointF(target.x() + (x - rect[0]) * scale, target.y() + (y - rect[1]) * scale)
 
+        focus = locate_line(labels.lines, f.label_cls, f.label_box, f.line)
         painter.save()
         painter.setBrush(Qt.NoBrush)
         painter.setClipRect(target)
-        painter.setPen(QPen(QColor(label_color(f, ws.dataset, colors)), 2))
-        painter.drawRect(on_tile(norm_to_px(f.label_box, *size)))
+        for view in box_views(labels, ws.dataset, size, colors):
+            pen = QPen(QColor(view.color), 2 if view.index == focus else 1)
+            if not view.known:
+                pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            if view.polygon:
+                painter.drawPolygon(QPolygonF([at(x, y) for x, y in view.polygon]))
+            else:
+                painter.drawRect(QRectF(at(view.rect[0], view.rect[1]), at(view.rect[2], view.rect[3])))
         lit = spotlight(f, ws.dataset, size, colors, session.model.names)
         if lit is not None and lit[1] is not None:
             pen = QPen(QColor(lit[1].color), 2)
             pen.setStyle(Qt.DashLine)
             painter.setPen(pen)
-            painter.drawRect(on_tile(lit[1].rect))
+            x1, y1, x2, y2 = lit[1].rect
+            painter.drawRect(QRectF(at(x1, y1), at(x2, y2)))
         painter.restore()
 
 
@@ -251,6 +257,7 @@ class QueuePanel(QWidget):
         # Follow cursor moves only. Following every batch scrolled the view as each one
         # arrived, re-laying out every row so far: 5 s of a 9 s launch on pvn-vehicle.
         session.cursorChanged.connect(self._follow)
+        self._crop_rows: dict = {}                  # each crop wanted -> the rows in view that show it
         # Thumbnails are decoded only for the tiles in view: wanted a moment after the
         # view moves, and a scroll cancels those that left it.
         self._want = QTimer(self)
@@ -386,14 +393,22 @@ class QueuePanel(QWidget):
     def _want_thumbs(self) -> None:
         session, queue = self._session, self._session.queue
         if self.grid and queue is not None:
-            items = [queue.items[row] for row in self._visible_rows(partial=True) if row < len(queue)]
-            session.thumbs.want([item.entry.path for item in items if item.finding is None])
-            session.crops.want([crop for crop in map(session.crop_of, items) if crop is not None])
+            rows = [row for row in self._visible_rows(partial=True) if row < len(queue)]
+            session.thumbs.want([queue.items[row].entry.path for row in rows if queue.items[row].finding is None])
+            self._crop_rows = {}
+            for row in rows:
+                crop = session.crop_of(queue.items[row])
+                if crop is not None:
+                    self._crop_rows.setdefault(crop, []).append(row)
+            session.crops.want(list(self._crop_rows))
 
     def _crop_arrived(self, crop, *_) -> None:
-        """Repaint the tiles in view: those showing this crop are among them."""
-        if self.grid:
-            self.view.viewport().update()
+        """Repaint the tiles that wanted this crop: those in view when it was asked for."""
+        if not self.grid:
+            return
+        for row in self._crop_rows.get(Crop.of(crop), ()):
+            if row < self.model.rowCount():
+                self.view.update(self.model.index(row))
 
     def _thumb_arrived(self, path, *_) -> None:
         """Repaint the one tile whose thumbnail came, if it is in the queue."""

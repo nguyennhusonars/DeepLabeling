@@ -23,12 +23,6 @@ def _model_name(f: Finding, dataset: Dataset, model_names: tuple[str, ...]) -> s
     return f"{model_names[raw] if raw is not None and 0 <= raw < len(model_names) else raw}?"
 
 
-def label_color(f: Finding, dataset: Dataset, colors: dict[str, str]) -> str:
-    """The colour the label is drawn in: its class's, grey for an id the names lack."""
-    return class_color(f.label_cls, _name(f.label_cls, dataset), colors) if 0 <= f.label_cls < len(dataset.names) \
-        else UNKNOWN
-
-
 def finding_text(f: Finding, dataset: Dataset) -> str:
     """`wrong class: car → truck 0.82`, `not an object: bus_m (nearest 0.03)`, `weakly seen: car 0.41`."""
     label = _name(f.label_cls, dataset)

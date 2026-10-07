@@ -91,10 +91,13 @@ class FindSettings:
     def from_json(cls, data) -> FindSettings:
         try:
             lo, hi = data["band"]
-            return cls(float(data["floor"]), float(data["match_iou"]), bool(data["wrong_class"]),
-                       float(data["ceiling"]), bool(data["not_object"]),
-                       (float(lo), None if hi is None else float(hi)), bool(data["weak"]), float(data["cutoff"]))
-        except (KeyError, TypeError, ValueError) as e:
+            switches = [data[k] for k in ("wrong_class", "not_object", "weak")]
+            if not all(isinstance(v, bool) for v in switches):
+                raise TypeError("a switch is not true or false")      # bool("false") is True
+            wrong, not_object, weak = switches
+            return cls(float(data["floor"]), float(data["match_iou"]), wrong, float(data["ceiling"]), not_object,
+                       (float(lo), None if hi is None else float(hi)), weak, float(data["cutoff"]))
+        except (KeyError, TypeError, ValueError, OverflowError) as e:
             raise ValueError(f"not Find Bad settings: {data!r}") from e
 
 

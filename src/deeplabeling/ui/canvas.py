@@ -175,13 +175,16 @@ class Canvas(QGraphicsView):
         """(the crop, the model's box) a finding is shown with, or None."""
         return self._spotlight
 
-    def set_spotlight(self, rect: tuple[int, int, int, int] | None, view: PredictionView | None = None) -> None:
+    def set_spotlight(self, rect: tuple[int, int, int, int] | None, view: PredictionView | None = None,
+                      *, redraw: bool = True) -> None:
         """Dim everything outside `rect` and draw the model's box `view` dashed; None: no spotlight.
-        The view keeps its zoom (docs/design/2026-10-06-find-bad.md#the-full-frame)."""
+        The view keeps its zoom (docs/design/2026-10-06-find-bad.md#the-full-frame). Without
+        `redraw`, it is drawn by the set_boxes that follows: the canvas is drawn once."""
         spot = None if rect is None else (rect, view)
         if spot != self._spotlight:                 # an edit re-shows the same one: drawn once
             self._spotlight = spot
-            self._redraw()
+            if redraw:
+                self._redraw()
 
     def prediction_caption_items(self) -> list[CaptionItem]:
         return [it for it in self._pred_items if isinstance(it, CaptionItem)]

@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
             "help": self.show_help,
             **{f"class_{key}": self._either(lambda items, k=key: self._tiles_class(items, k),
                                             lambda k=key: self.editing.class_key(k)) for key in DEFAULT_HOTKEYS},
-            "pick_class": self.editing.pick_class,
+            "pick_class": self._either(self._tiles_pick_class, self.editing.pick_class),
             "delete": self._either(lambda items: grid_actions.delete(session, items), self.editing.delete),
             "select_next": lambda: self.editing.select_step(1),
             "select_previous": lambda: self.editing.select_step(-1),
@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self.editing.show(labels)
         lit = None if item.finding is None else spotlight(
             item.finding, ws.dataset, self.canvas.image_size, ws.root_settings.get(CLASS_COLORS), session.model.names)
-        self.canvas.set_spotlight(*(lit or (None,)))
+        self.canvas.set_spotlight(*(lit or (None,)), redraw=False)        # set_boxes draws it
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels),
@@ -395,6 +395,12 @@ class MainWindow(QMainWindow):
             else:
                 otherwise()
         return run
+
+    def _tiles_pick_class(self, items) -> None:
+        infos = self.editing.classes()
+        chosen = self.prompter.pick_class(infos) if infos else None
+        if chosen is not None:
+            grid_actions.set_class(self.session, items, chosen.cls_id, chosen.name)
 
     def _tiles_class(self, items, key: str) -> None:
         info = class_with_hotkey(self.editing.classes(), key)

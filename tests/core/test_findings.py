@@ -148,3 +148,14 @@ def test_a_finding_keeps_the_model_s_own_class_even_when_it_is_unmapped(labels, 
     far = (0.33, 0.25, 0.1, 0.1)                                 # a truck near the car: unmapped
     [f] = judge(labels("camA/images/0001.jpg"), [P(1, PERSON, 0.9), P(3, far, 0.9)], cmap, dataset, FindSettings())
     assert f.kind == "not an object" and f.model_cls is None and f.model_raw == 3
+
+
+@pytest.mark.parametrize("change", [
+    {"wrong_class": "false"},                   # a hand-edited string is not a switch
+    {"weak": 1},
+    {"floor": 10 ** 400},                       # float() raises OverflowError
+    {"band": [0, 10 ** 400]},
+])
+def test_settings_json_that_is_not_settings_is_refused(change):
+    with pytest.raises(ValueError, match="not Find Bad settings"):
+        FindSettings.from_json({**FindSettings().to_json(), **change})
