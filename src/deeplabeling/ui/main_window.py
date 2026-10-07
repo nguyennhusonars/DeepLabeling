@@ -312,51 +312,64 @@ class MainWindow(QMainWindow):
             return
         parts = [item.entry.rel]
         if self.canvas.image_size is not None and self._shown == item.entry.path:
-            parts.append("{} × {}".format(*self.canvas.image_size))
-        parts.append(f"item {session.queue.position() + 1:,} / {len(session.queue):,}")
+            parts.append("{}×{}".format(*self.canvas.image_size))
+        parts.append(f"{session.queue.position() + 1:,}/{len(session.queue):,}")
         if self._written is not None:
-            parts.append("written " + time.strftime("%H:%M:%S", time.localtime(self._written)))
-        parts.append(f"↶ {session.workspace.history.depth}")
+            parts.append("💾 " + time.strftime("%H:%M:%S", time.localtime(self._written)))
+        parts.append(f"↶{session.workspace.history.depth}")
         self.status_text.setText(" · ".join(parts))
 
     # -- what the chips and keys do --------------------------------------------------
 
+    @staticmethod
+    def _item(menu, text: str, slot, tip: str = "", enabled: bool = True):
+        """A menu item: a few words behind an icon, what it does in full in its tooltip."""
+        action = menu.addAction(text, slot)
+        action.setToolTip(tip or text)
+        action.setEnabled(enabled)
+        menu.setToolTipsVisible(True)
+        return action
+
     def _fill_dataset_menu(self) -> None:
         menu = self.state_bar.dataset.menu()
         menu.clear()
-        menu.addAction("Open dataset yaml…", self.open_yaml)
-        menu.addAction("Open image folder…", self.open_folder)
+        self._item(menu, "📄 Open a yaml…", self.open_yaml, "Open a dataset from its yaml")
+        self._item(menu, "📂 Open an image folder…", self.open_folder, "Open a folder of images, and its labels")
         recent = self.session.settings.get(RECENT)
         if recent:
             menu.addSeparator()
         for entry in recent:
             name = Path(entry["source"])
-            menu.addAction(f"{name.name} — {name.parent}",
-                           lambda e=entry: self.session.open(e["source"], e["labels"]))
+            self._item(menu, f"{name.name} — {name.parent}", lambda e=entry: self.session.open(e["source"], e["labels"]),
+                       f"Open {name} again")
 
     def _fill_model_menu(self) -> None:
         menu, model, ws = self.state_bar.model.menu(), self.session.model, self.session.workspace
         menu.clear()
-        menu.addAction("Load a model…", self.load_model)
+        self._item(menu, "📂 Load…", self.load_model, "Load a model's weights file")
         recent = self.session.settings.get(RECENT_MODELS)
         if recent:
             menu.addSeparator()
         for path in map(Path, recent):
             there = path.is_file()                  # a file gone is shown, never handed to the loader
-            menu.addAction(f"{path.name} — {path.parent}" + ("" if there else " (missing)"),
-                           lambda p=path: model.load(p)).setEnabled(there)
+            self._item(menu, f"{path.name} — {path.parent}" + ("" if there else " (missing)"),
+                       lambda p=path: model.load(p), f"Load {path}" if there else f"{path} is not there", there)
         menu.addSeparator()
-        menu.addAction("Threshold…", self.ask_threshold).setEnabled(ws is not None)
-        menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
+        self._item(menu, "⚖ Threshold…", self.ask_threshold, "The confidence predictions are shown and accepted at",
+                   ws is not None)
+        self._item(menu, "⇄ Class map…", self.edit_class_map, "Which dataset class each model class stands for",
+                   ws is not None and model.state == "ready")
         menu.addSeparator()
         queue = self.session.queue
         whole = model.state == "ready" and queue is not None and queue.complete
         if model.passing:
-            menu.addAction("Cancel inferring", model.cancel_pass)
+            self._item(menu, "■ Stop inferring", model.cancel_pass, "Stop the pass; what it inferred is kept")
         else:
-            menu.addAction("Infer this queue", model.infer_queue).setEnabled(whole)
-        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(
-            model.state == "ready" and not self.session.queue_not_whole())
+            self._item(menu, "▶ Infer the queue", model.infer_queue,
+                       "Run the model over every image of the queue it has not seen", whole)
+        self._item(menu, "✚ Accept missing boxes…", self.accept_queue,
+                   "Add every prediction no label covers, across the queue, as one edit",
+                   model.state == "ready" and not self.session.queue_not_whole())
 
     def accept_queue(self) -> None:
         accept_queue(self.session)
@@ -364,10 +377,13 @@ class MainWindow(QMainWindow):
     def _fill_queue_menu(self) -> None:
         menu, queue = self.state_bar.queue.menu(), self.session.queue
         menu.clear()
-        menu.addAction("Edit queue…", self.edit_queue).setEnabled(queue is not None)
+        self._item(menu, "✎ Edit…", self.edit_queue, "Choose the images, or findings, the queue holds",
+                   queue is not None)
         whole = not self.session.queue_not_whole()
-        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(whole)
-        menu.addAction("Statistics of this queue…", self.show_statistics).setEnabled(whole)
+        self._item(menu, "⇄ Reassign a class…", self.reassign_queue,
+                   "Turn every box of one class in the queue into another, as one edit", whole)
+        self._item(menu, "📊 Statistics…", self.show_statistics,
+                   "Counts and charts of the queue's labels", whole)
 
     def reassign_queue(self) -> None:
         reassign_queue(self.session)

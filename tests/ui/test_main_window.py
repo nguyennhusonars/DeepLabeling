@@ -78,7 +78,7 @@ def test_n_marks_a_missing_image_negative_and_ctrl_z_takes_it_back(qtbot, window
     qtbot.waitUntil(lambda: window._shown == ds.img("camA/0003.jpg"))     # edits wait for the image
     qtbot.keyClick(window, Qt.Key_N)
     assert ds.lbl("camA/0003").read_bytes() == b""
-    assert "↶ 1" in window.status_text.text()
+    assert "↶1" in window.status_text.text()
     qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
     assert not ds.lbl("camA/0003").exists()
 
@@ -244,7 +244,7 @@ def test_written_is_stamped_only_when_files_are_written(qtbot, ds):
     w._written = None
     ds.lbl("camA/0001").write_text("1 0.1 0.1 0.1 0.1\n")     # changed outside: the undo is refused
     s.undo()
-    assert w._written is None and "written" not in w.status_text.text()
+    assert w._written is None and "💾" not in w.status_text.text()
     w.close()
 
 
