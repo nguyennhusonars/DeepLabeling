@@ -59,3 +59,9 @@ def test_the_chip_shows_its_arrow_inside_the_bar(qtbot, window):
 def test_reassign_is_offered_only_once_the_queue_is_built(qtbot, window):
     window.session.queue.complete = False
     assert not menu(window)["Reassign a class in this queue…"].isEnabled()
+
+
+
+def test_reassign_is_not_offered_on_a_queue_whose_build_failed(qtbot, window):
+    window.session.queue.fail("could not read the store")
+    assert not menu(window)["Reassign a class in this queue…"].isEnabled()

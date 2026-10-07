@@ -59,13 +59,15 @@ class Chunked(QObject):
         self._end(cancelled, error)
 
 
-def write_as_one_edit(session, intents, description: str, title: str, said, *, failed: str, undone: str) -> None:
+def write_as_one_edit(session, intents, description: str, title: str, said, *, failed: str, undone: str,
+                      after: Callable[[], None] | None = None) -> None:
     """Write `intents` a chunk at a time, behind a progress dialog titled `title`, as one edit
     that marks nothing: what both bulk actions -- accepting across a queue, reassigning a
     class -- end with. At the end the status bar says `said(written, cancelled)`, `written`
     being the intents written. A write that fails has put every file back, and the notice
     begins `undone` ("nothing was accepted"); when some could not be put back, it begins
-    `failed` ("the accept failed part-way") and they stay as an edit undo can retry."""
+    `failed` ("the accept failed part-way") and they stay as an edit undo can retry. `after`
+    is called once the edit is recorded, cancelled or not."""
     history = session.workspace.history
     batch, last = session.workspace.editor.batch(description), history.peek_undo()
     written = 0
@@ -85,5 +87,7 @@ def write_as_one_edit(session, intents, description: str, title: str, said, *, f
             return
         batch.finish()
         session.status.emit(said(intents[:written], cancelled))
+        if after is not None:
+            after()
 
     session.run_chunked(title, len(intents), step, end)

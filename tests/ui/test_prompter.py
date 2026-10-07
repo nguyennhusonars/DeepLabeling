@@ -92,3 +92,24 @@ def test_esc_on_the_progress_dialog_cancels_it(qtbot):
     qtbot.keyClick(dialog, Qt.Key_Escape)
     assert progress.cancelled()
     progress.close()
+
+
+
+def test_the_reassign_is_confirmed_with_yes_and_declined_otherwise(qtbot):
+    from PySide6.QtWidgets import QMessageBox
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    prompter = QtPrompter(parent)
+
+    def press(button):
+        box = QApplication.activeModalWidget()
+        if box is None:
+            QTimer.singleShot(10, lambda: press(button))     # not shown yet
+        else:
+            box.button(button).click()
+
+    QTimer.singleShot(0, lambda: press(QMessageBox.Yes))
+    assert prompter.confirm_reassign("Reassign 1 car box on 1 image to bus_m?") is True
+    QTimer.singleShot(0, lambda: press(QMessageBox.No))
+    assert prompter.confirm_reassign("Reassign 1 car box on 1 image to bus_m?") is False

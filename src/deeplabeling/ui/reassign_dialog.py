@@ -23,6 +23,8 @@ class ReassignDialog(QDialog):
             self.target.addItem(name, cls_id)
         for combo in (self.source, self.target):
             combo.setMinimumWidth(160)
+        if self.target.count() > 1:
+            self.target.setCurrentIndex(1)          # OK at once is not a class onto itself
         self.error = QLabel()
         self.error.setStyleSheet("color: #e05252;")
         self.error.hide()

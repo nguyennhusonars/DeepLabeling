@@ -77,12 +77,11 @@ class LabelLine:
     def with_class(self, cls_id: int) -> LabelLine:
         """This line with another class id, spliced into the raw text.
 
-        Every coordinate keeps its exact digits. A last line without a line
-        ending gains "\\n", so nothing appended later can run into it.
+        Every coordinate keeps its exact digits, and the line keeps its ending -- or its
+        lack of one: whatever is appended after it gives it the file's own ending first
+        (`src/deeplabeling/core/edits.py::materialize`).
         """
         raw = _FIRST_TOKEN.sub(lambda m: f"{m.group(1)}{int(cls_id)}", self.raw, count=1)
-        if not self.terminator:
-            raw += "\n"
         return LabelLine(int(cls_id), self.coords, raw)
 
     def with_bbox(self, bbox: Box) -> LabelLine:

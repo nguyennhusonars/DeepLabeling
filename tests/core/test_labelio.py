@@ -75,9 +75,9 @@ def test_with_class_keeps_polygon_points():
     assert poly.with_class(3).raw == "3" + POLY1.splitlines(keepends=True)[0][1:]
 
 
-def test_with_class_gives_a_last_line_its_newline():
+def test_with_class_keeps_a_last_line_without_its_newline_so():
     line = parse_label_bytes(b"0 0.5 0.5 0.2 0.2")[0]
-    assert line.with_class(1).raw == "1 0.5 0.5 0.2 0.2\n"
+    assert line.with_class(1).raw == "1 0.5 0.5 0.2 0.2"       # an append gives it the file's ending
 
 
 def test_with_bbox_writes_a_plain_box_and_keeps_crlf():

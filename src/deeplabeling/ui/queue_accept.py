@@ -45,8 +45,9 @@ def accept_queue(session) -> None:
     if model.state != "ready":
         session.status.emit("the model is still loading" if model.state == "loading" else "no model is loaded")
         return
-    if queue is None or not queue.complete:
-        session.status.emit("the queue is still being built")
+    why = session.queue_not_whole()
+    if why:
+        session.status.emit(why)
         return
     entries = session.queue_images()
     key, preds, cmap, conf = model.key, ws.predictions, model.class_map, model.conf
@@ -88,6 +89,8 @@ def _write(session, plan: QueueAccept) -> None:
     def said(written, cancelled) -> str:
         boxes = sum(len(intent.ops) for intent in written)
         what = f"{_count(boxes, 'box', 'boxes')} on {_count(len(written), 'image', 'images')}"
+        if cancelled and not written:
+            return "accept cancelled: nothing was written"
         return f"accept stopped: {what} kept, as one edit" if cancelled else f"accepted {what}"
 
     chunked.write_as_one_edit(

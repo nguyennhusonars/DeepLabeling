@@ -88,3 +88,75 @@ def test_a_queue_still_waiting_is_refused(qtbot, session, ds):
     with qtbot.waitSignal(session.status) as said:
         reassign_queue(session)
     assert said.args == ["the queue waits for a model"] and ds.snapshot() == before
+
+
+
+def test_a_queue_whose_build_failed_is_refused(qtbot, session, ds):
+    session.queue.fail("could not read the store")
+    before = ds.snapshot()
+    with qtbot.waitSignal(session.status) as said:
+        reassign_queue(session)
+    assert said.args == ["the queue's build failed: rebuild it first"] and ds.snapshot() == before
+
+
+def test_a_dataset_that_names_no_classes_is_refused(qtbot, ds, prompter):
+    s = open_session(qtbot, ds.root / "camA" / "images", prompter)
+    try:
+        assert s.workspace.dataset.names == ()
+        with qtbot.waitSignal(s.status) as said:
+            reassign_queue(s)
+        assert said.args == ["this dataset names no classes"]
+    finally:
+        s.close()
+
+
+def test_repairing_an_unnamed_id_counts_them_again(qtbot, session, prompter):
+    qtbot.waitUntil(lambda: session.unnamed_ids == (-1, 99), timeout=5000)
+    prompter.reassign = (99, 1)
+    reassigned(qtbot, session)
+    qtbot.waitUntil(lambda: session.unnamed_ids == (-1,), timeout=5000)
+
+
+def test_a_findings_queue_with_two_findings_on_an_image_reassigns_it_once(qtbot, ds, prompter, tmp_path, monkeypatch):
+    import deeplabeling.ui.model as model_module
+    from finding_rows import FOUND_TWO, TWO, factory, load, put_rows
+
+    monkeypatch.setattr(model_module, "UltralyticsPredictor", factory)
+    s = open_session(qtbot, ds.yaml, prompter)
+    try:
+        weights = tmp_path / "best.pt"
+        weights.write_bytes(b"weights")
+        load(qtbot, s, weights)
+        put_rows(s, TWO)
+        s.set_queue(Findings())
+        qtbot.waitUntil(lambda: s.queue.complete, timeout=5000)
+        assert [i.key for i in s.queue.items][:3] == FOUND_TWO[:3]           # camA/0001 twice
+        prompter.reassign = (1, 2)                                         # car -> bus_m
+        assert reassigned(qtbot, s) == "reassigned 1 car box on 1 image to bus_m"
+        assert read_exact(ds.lbl("camA/0001")).splitlines()[1] == "2 0.250000 0.250000 0.100000 0.100000"
+    finally:
+        s.close()
+
+
+def test_a_queue_of_the_class_shows_its_images_no_longer_matching(qtbot, session):
+    from deeplabeling.core.queue import HasClass
+
+    session.set_queue(ImageFilter(conditions=(HasClass(("bus_m",)),)))
+    qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
+    session.prompter.reassign = (2, 1)
+    reassigned(qtbot, session)
+    assert all(session.badge(item).endswith("· no longer matches") for item in session.queue.items)
+
+
+def test_cancelled_before_its_first_chunk_it_says_nothing_was_written(qtbot, session, prompter, ds):
+    real = prompter.progress
+
+    class Cancelled:
+        def set(self, value): pass
+        def cancelled(self): return True
+        def close(self): pass
+
+    prompter.progress = lambda title, total: Cancelled() if title.startswith("Reassigning") else real(title, total)
+    before = ds.snapshot()
+    assert reassigned(qtbot, session) == "reassign cancelled: nothing was written"
+    assert ds.snapshot() == before and session.workspace.history.depth == 0

@@ -347,7 +347,8 @@ class MainWindow(QMainWindow):
             menu.addAction("Cancel inferring", model.cancel_pass)
         else:
             menu.addAction("Infer this queue", model.infer_queue).setEnabled(whole)
-        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(whole)
+        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(
+            model.state == "ready" and not self.session.queue_not_whole())
 
     def accept_queue(self) -> None:
         accept_queue(self.session)
@@ -356,8 +357,8 @@ class MainWindow(QMainWindow):
         menu, queue = self.state_bar.queue.menu(), self.session.queue
         menu.clear()
         menu.addAction("Edit queue…", self.edit_queue).setEnabled(queue is not None)
-        built = queue is not None and queue.complete
-        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(built)
+        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(
+            not self.session.queue_not_whole())
 
     def reassign_queue(self) -> None:
         reassign_queue(self.session)

@@ -51,3 +51,9 @@ def test_its_rows_are_visible_and_do_not_overlap(qtbot):
         assert w.isVisible() and w.width() >= 80 and d.rect().contains(rect)
         assert not any(rect.intersects(r) for r in rects)
         rects.append(rect)
+
+
+
+def test_to_starts_on_another_class_than_from(qtbot):
+    d = dialog(qtbot)
+    assert d.source.currentText() == "person" and d.target.currentText() == "car"

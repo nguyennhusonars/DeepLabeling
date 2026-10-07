@@ -60,6 +60,10 @@ class Prompter(Protocol):
 
     def confirm_queue_accept(self, text: str) -> bool: ...
 
+    def ask_reassign(self, names, unnamed_ids) -> tuple[int, int] | None: ...
+
+    def confirm_reassign(self, text: str) -> bool: ...
+
 
 class Session(QObject):
     opened = Signal()
@@ -474,6 +478,24 @@ class Session(QObject):
             self.move(1)
         else:
             self.status.emit("the dismissal is taken back")
+
+    def queue_not_whole(self) -> str:
+        """Why the queue cannot stand for its images yet -- waiting for a model, building,
+        or its build failed part-way -- or "" when it is whole."""
+        queue = self.queue
+        if queue is None:
+            return "there is no queue"
+        if queue.waiting:
+            return "the queue waits for a model"
+        if queue.failed is not None:
+            return "the queue's build failed: rebuild it first"
+        if not queue.complete:
+            return "the queue is still being built"
+        return ""
+
+    def recount_unnamed(self) -> None:
+        """Count the class ids the yaml does not name again: after a reassign repaired some."""
+        self._count_out_of_range()
 
     def queue_images(self) -> list[ImageEntry]:
         """The queue's images, each once, in queue order: a findings queue has an item per

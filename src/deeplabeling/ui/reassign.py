@@ -34,13 +34,14 @@ def reassign_question(plan: Reassign, source: str, target: str) -> str:
 def reassign_queue(session) -> None:
     """Ask, look, confirm and write; each step says how it ended in the status bar."""
     ws, queue = session.workspace, session.queue
-    if ws is None or session._busy():
+    if ws is None or queue is None or session._busy():
         return
-    if queue is None or queue.waiting:
-        session.status.emit("the queue waits for a model")
+    if not ws.dataset.names:
+        session.status.emit("this dataset names no classes")
         return
-    if not queue.complete:
-        session.status.emit("the queue is still being built")
+    why = session.queue_not_whole()
+    if why:
+        session.status.emit(why)
         return
     names = ws.dataset.names
     chosen = session.prompter.ask_reassign(names, session.unnamed_ids)
@@ -70,14 +71,18 @@ def reassign_queue(session) -> None:
         elif not session.prompter.confirm_reassign(reassign_question(plan, source_name, target_name)):
             session.status.emit("reassign cancelled: nothing was written")
         else:
-            _write(session, plan, description, source_name, target_name, skipped)
+            # A stray id repaired: once written, the warning about it is counted again.
+            after = session.recount_unnamed if not 0 <= source < len(names) else None
+            _write(session, plan, description, source_name, target_name, skipped, after)
 
     session.run_chunked(f"Looking at {len(entries):,} images", len(entries), step, end)
 
 
-def _write(session, plan: Reassign, description: str, source: str, target: str, skipped: str) -> None:
+def _write(session, plan: Reassign, description: str, source: str, target: str, skipped: str, after=None) -> None:
     def said(written, cancelled) -> str:
         boxes = sum(len(intent.ops) for intent in written)
+        if cancelled and not written:
+            return "reassign cancelled: nothing was written"
         if cancelled:
             return (f"reassign stopped: {_count(boxes, 'box', 'boxes')} on "
                     f"{_count(len(written), 'image', 'images')} kept, as one edit")
@@ -88,4 +93,4 @@ def _write(session, plan: Reassign, description: str, source: str, target: str, 
         session, plan.intents, description,
         f"Reassigning {_count(plan.boxes, source + ' box', source + ' boxes')} on "
         f"{_count(len(plan.intents), 'image', 'images')}", said,
-        failed="the reassign failed part-way", undone="nothing was reassigned")
+        failed="the reassign failed part-way", undone="nothing was reassigned", after=after)

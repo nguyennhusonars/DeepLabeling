@@ -134,3 +134,12 @@ def test_after_a_failed_batch_the_store_serves_the_files_as_they_are_again(edito
         editor.apply_many(adds(ds), "accept")
     assert editor.store.get(ds.img("camA/0001.jpg")).raw == CAMA_0001.encode()
     assert editor.store.get(ds.img("camA/0003.jpg")).raw is None
+
+
+
+def test_a_refusal_names_the_image_it_came_from(editor, ds):
+    from deeplabeling.core.edits import LineRef, SetClass
+
+    moved = Intent(ds.img("camA/0001.jpg"), (SetClass(LineRef(1, 1, (0.9, 0.9, 0.1, 0.1)), 0),), "reassign")
+    with pytest.raises(Refused, match=r"^camA/images/0001\.jpg: "):
+        editor.batch("reassign").apply([moved])

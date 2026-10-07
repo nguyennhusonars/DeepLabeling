@@ -25,7 +25,7 @@ GAUNTLET_AFTER = (
     "abc 0.5 0.5 0.2 0.2\n"
     "\n"
     "   \n"
-    "3 0.5 0.5 0.2 0.2\n"           # a reclassified last line gains its ending (labelio.py::LabelLine.with_class)
+    "3 0.5 0.5 0.2 0.2"             # still no final newline: only the class token changes
 )
 
 
@@ -85,3 +85,12 @@ def test_a_class_onto_itself_is_refused(ds, setup):
     dataset, store, _ = setup
     with pytest.raises(ValueError, match="the same class"):
         plan_reassign(dataset.images, store.get, 1, 1, "r")
+
+
+
+def test_a_crlf_file_without_a_final_newline_stays_crlf(ds, setup):
+    dataset, store, editor = setup
+    ds.lbl("crlf/c").write_bytes(b"0 0.5 0.5 0.2 0.2\r\n0 0.3 0.3 0.1 0.1")
+    plan = plan_reassign(dataset.images, LabelStore(dataset).get, 0, 3, "r")
+    editor.apply_many(plan.intents, "r")
+    assert ds.lbl("crlf/c").read_bytes() == b"3 0.5 0.5 0.2 0.2\r\n3 0.3 0.3 0.1 0.1"
