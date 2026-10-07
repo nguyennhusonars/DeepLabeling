@@ -240,7 +240,7 @@ class FakePrompter:
 
     def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None,
                  weights=None, threshold=None, class_map=None, cancel_at=None, accept_queue=True,
-                 reassign=None, accept_reassign=True):
+                 reassign=None, accept_reassign=True, save_path=None):
         self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
         self.class_name = class_name
         self.weights, self.threshold = weights, threshold
@@ -250,6 +250,7 @@ class FakePrompter:
         self.accept_queue = accept_queue    #: the answer to the queue accept's confirmation
         self.reassign = reassign            #: (from, to) the reassign dialog answers, or None
         self.accept_reassign = accept_reassign
+        self.save_path = save_path          #: where a save dialog answers to save, or None
         self.folders = list(folders)
         self.errors: list[tuple[str, str]] = []
         self.asked: list[tuple] = []
@@ -296,6 +297,10 @@ class FakePrompter:
     def ask_reassign(self, names, unnamed_ids):
         self.asked.append(("reassign", tuple(names), tuple(unnamed_ids)))
         return self.reassign
+
+    def choose_save_path(self, title, filter):
+        self.asked.append(("save", title))
+        return None if self.save_path is None else str(self.save_path)
 
     def confirm_reassign(self, text):
         self.asked.append(("reassign question", text))
