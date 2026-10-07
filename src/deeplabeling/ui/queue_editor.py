@@ -255,11 +255,15 @@ class QueueEditor(QDialog):
         """The queue the dialog describes. All splits checked means every split. ValueError,
         naming the row and the field, when a row cannot be used."""
         checked = tuple(name for name, box in self.splits.items() if box.isChecked())
+        if self.splits and not checked:
+            raise ValueError("Splits — choose at least one")        # never quietly "every split"
         splits = () if len(checked) == len(self.splits) else checked
         conditions = []
         names = tuple(self.classes.item(i).text() for i in range(self.classes.count())
                       if self.classes.item(i).checkState() == Qt.Checked)
         mode = self.class_mode.currentText()
+        if mode != "any class" and not names:
+            raise ValueError("Classes — choose a class, or any class")    # never quietly dropped
         size = self._size()
         if size is not None:
             if mode == "lacks":

@@ -4,6 +4,8 @@ reversed range is a normal state while typing; it is refused, by name, when used
 
 from __future__ import annotations
 
+import math
+
 
 def range_error(lo, hi, name: str, *, lo_min: float = 0.0, hi_max: float | None = 1.0,
                 open_ends: bool = False) -> str | None:
@@ -11,6 +13,10 @@ def range_error(lo, hi, name: str, *, lo_min: float = 0.0, hi_max: float | None 
     `open_ends`; `hi_max` None means no upper bound."""
     if not open_ends and (lo is None or hi is None):
         return f"{name}: both ends must be numbers"
+    # A hand-edited or corrupt saved queue: NaN compares false with everything, and a
+    # string end failed only later, in every build.
+    if any(end is not None and not _finite(end) for end in (lo, hi)):
+        return f"{name}: an end is not a number"
     if lo is not None and lo < lo_min:
         return f"{name}: the lower end cannot be below {lo_min:g}"
     if hi is not None and hi_max is not None and hi > hi_max:
@@ -18,3 +24,7 @@ def range_error(lo, hi, name: str, *, lo_min: float = 0.0, hi_max: float | None 
     if lo is not None and hi is not None and lo > hi:
         return f"{name}: {lo:g} is above {hi:g}: put the lower end first"
     return None
+
+
+def _finite(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
