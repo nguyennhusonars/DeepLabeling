@@ -160,3 +160,16 @@ def test_cancelled_before_its_first_chunk_it_says_nothing_was_written(qtbot, ses
     before = ds.snapshot()
     assert reassigned(qtbot, session) == "reassign cancelled: nothing was written"
     assert ds.snapshot() == before and session.workspace.history.depth == 0
+
+
+def test_an_undo_that_cannot_read_a_file_keeps_the_edit_and_says_so(qtbot, session, ds):
+    reassigned(qtbot, session)                              # 7 files, more than a chunk: undone in chunks
+    ds.lbl("camA/0001").chmod(0o000)
+    try:
+        with qtbot.waitSignal(session.notice, timeout=5000) as said:
+            session.undo()
+            qtbot.waitUntil(lambda: session.running is None, timeout=5000)
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)
+    assert said.args[1].endswith("it is still in the history: undo again")
+    assert session.workspace.history.depth == 1

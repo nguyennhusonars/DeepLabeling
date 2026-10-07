@@ -688,8 +688,11 @@ class Session(QObject):
             if error is None and not cancelled:
                 restoring.finish()
                 self.status.emit(f"{'undid' if undo else 'redid'} {edit.description}: {n:,} files")
-            elif error is not None and restoring.checked < n:
-                self.notice.emit("error", str(error), None)     # a file changed since: dropped
+            elif error is not None and restoring.dropped:
+                self.notice.emit("error", str(error), None)     # a file changed since: it says what was dropped
+            elif error is not None and restoring.checked < n:   # a file could not be read: nothing written
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}; "
+                                 f"it is still in the history: {verb} again", None)
             elif error is not None:
                 restoring.stop()
                 self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error}. {w:,} of {n:,} "

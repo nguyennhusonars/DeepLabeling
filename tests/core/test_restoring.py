@@ -149,3 +149,15 @@ def test_stopped_after_the_last_file_it_is_done_whole(editor, ds, accepted):
     undoing.stop()                                          # a cancel just after the last chunk
     assert_only_changed(before, ds.snapshot(), set())
     assert not editor.history.can_undo and len(editor.history.peek_redo().changes) == 4
+
+
+def test_a_file_changed_between_its_check_and_its_write_drops_the_rest_and_says_so(editor, ds, accepted):
+    undoing = editor.restoring(undo=True)
+    undoing.check(4)                                        # every file as the accept left it
+    undoing.write(1)
+    ds.lbl("camA/0004").write_text("2 0.1 0.1 0.1 0.1\n")   # someone else, between check and write
+    with pytest.raises(Refused, match="2 of 4 files were undone; the rest has been dropped from the history"):
+        undoing.write(4)
+    assert undoing.dropped
+    assert editor.history.peek_undo() is None              # nothing left that undo would refuse
+    assert editor.history.peek_redo().images == (ds.img(IMAGES[0]), ds.img(IMAGES[1]))    # what was undone
