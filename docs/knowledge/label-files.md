@@ -99,6 +99,12 @@ label file.
   when the last box goes (`legacy/yolo_labeling/app.py::YOLOLabelingTool.save_labels`,
   `legacy/yolo_labeling/app.py::YOLOLabelingTool._delete_label_line`).
 
+- A file holding only lines that cannot be parsed has no box, and the app counts it as
+  negative. Training does not: ultralytics refuses a whole image as corrupt when any line
+  is not five numbers (`ultralytics/data/utils.py`, `verify_image_label`, in the editable
+  install), so such an image -- or any image with one bad line -- is skipped, not trained
+  as a negative.
+
 **Rule:** an emptied label file is written as zero bytes, never deleted. Only an explicit
 "delete this image" removes a label file.
 

@@ -207,7 +207,11 @@ image folder plus an optional label folder.
 - a listed `.txt` file is a list of image paths;
 - extensions are matched case-insensitively against ultralytics' image formats;
 - each split is sorted by path, and splits keep yaml order;
-- an image listed in two splits appears once, under the first.
+- an image listed in two splits appears once, under the first;
+- a relative `path:` in the yaml, and a relative line in an image-list file, are resolved
+  against the yaml's or the list's folder (`src/deeplabeling/core/dataset.py::_from_yaml`,
+  `src/deeplabeling/core/dataset.py::_list_images`). Ultralytics resolves them against the
+  working directory, then its datasets folder, so the two differ for a relative path only.
 
 Legacy discovery was top-level only.
 
