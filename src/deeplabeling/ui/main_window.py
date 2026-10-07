@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         self.editing.show(labels)
         lit = None if item.finding is None else spotlight(
             item.finding, ws.dataset, self.canvas.image_size, ws.root_settings.get(CLASS_COLORS), session.model.names)
-        self.canvas.set_spotlight(*(lit or (None,)))
+        self.canvas.set_spotlight(*(lit or (None,)), redraw=False)        # set_boxes draws it
         self.canvas.set_boxes(box_views(labels, ws.dataset, self.canvas.image_size,
                                         ws.root_settings.get(CLASS_COLORS), highlight),
                               selected=self.editing.selection.indices(labels),

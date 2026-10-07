@@ -69,3 +69,14 @@ def test_a_workspace_keeps_and_saves_its_dataset_s_dismissals(ds):
         assert again.dismissals.has(*CAR) and again.dismissals.path.name == "dismissals.json"
     finally:
         again.close()
+
+
+def test_a_snapshot_is_made_once_until_a_dismissal_changes(tmp_path):
+    d = dismissals(tmp_path)
+    d.dismiss(*CAR)
+    first = d.snapshot()
+    assert d.snapshot() is first                    # a build, and every late join, share it
+    d.dismiss(*CAR)                                 # already: nothing changed
+    assert d.snapshot() is first
+    d.undismiss(*CAR)
+    assert d.snapshot() == frozenset() and d.snapshot() is not first

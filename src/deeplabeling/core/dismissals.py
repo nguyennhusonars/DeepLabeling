@@ -24,6 +24,7 @@ class Dismissals:
         self.path = Path(path)
         self.root = Path(root)
         self._items: set[Dismissal] = set()
+        self._frozen: frozenset[Dismissal] | None = None     #: the last snapshot, until a change
         self.dirty = False
         self.warning = ""
         self.writable = True
@@ -53,22 +54,24 @@ class Dismissals:
         return (rel, line, kind) in self._items
 
     def snapshot(self) -> frozenset[Dismissal]:
-        """A copy, safe to hand to a worker thread."""
-        return frozenset(self._items)
+        """A copy, safe to hand to a worker thread: made once, and again after a change."""
+        if self._frozen is None:
+            self._frozen = frozenset(self._items)
+        return self._frozen
 
     def dismiss(self, rel: str, line: str, kind: str) -> bool:
         """False when it already was."""
         if (rel, line, kind) in self._items:
             return False
         self._items.add((rel, line, kind))
-        self.dirty = True
+        self.dirty, self._frozen = True, None
         return True
 
     def undismiss(self, rel: str, line: str, kind: str) -> bool:
         if (rel, line, kind) not in self._items:
             return False
         self._items.discard((rel, line, kind))
-        self.dirty = True
+        self.dirty, self._frozen = True, None
         return True
 
     def toggle(self, rel: str, line: str, kind: str) -> bool:
