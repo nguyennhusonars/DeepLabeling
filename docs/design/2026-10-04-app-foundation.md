@@ -52,7 +52,7 @@ slice 3's IoU filter and slice 4 both read slice 2's prediction cache.
 | 2 | [Model assist](2026-10-05-model-assist.md): prediction cache and worker, a predictions layer, accept, a dataset inference pass, the class-map editor | pre-labeling |
 | 3 | Filters as queue conditions: size, name, overlap, Label/Prediction IoU | hunting with filters |
 | 4 | Find Bad as a queue source: findings in the queue, crop tiles in the grid, the finding spotlighted in the full frame, dismissals that persist | cleaning with the model |
-| 5 | Bulk reassign, statistics, crop export and the Qwen round trip | the rest |
+| 5 | [Bulk reassign and statistics](2026-10-07-bulk-and-stats.md); crop export and the Qwen round trip dropped | the rest |
 
 ## Architecture
 
@@ -592,9 +592,7 @@ What each later spec starts from. None of this is designed yet.
 - **2 · Model assist.** Designed: [2026-10-05-model-assist.md](2026-10-05-model-assist.md).
 - **3 · Filters.** Designed: [2026-10-06-filters.md](2026-10-06-filters.md).
 - **4 · Find Bad.** Designed: [2026-10-06-find-bad.md](2026-10-06-find-bad.md).
-- **5 · Bulk and the rest.** Bulk reassign is one multi-file Edit, applied in chunks and
-  undoable. Then statistics, crop export with unique names (legacy #7), and the Qwen round
-  trip.
+- **5 · Bulk and the rest.** Designed: [2026-10-07-bulk-and-stats.md](2026-10-07-bulk-and-stats.md).
 
 ## Out of scope
 

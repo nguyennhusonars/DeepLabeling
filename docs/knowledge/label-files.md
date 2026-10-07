@@ -78,11 +78,12 @@ empty one ([why](#empty-file-is-a-negative-sample)).
 - **Line endings.** A re-serialised line keeps a CRLF ending, and an appended line uses
   the file's last line ending (`src/deeplabeling/core/edits.py::materialize`), so a CRLF
   file stays CRLF.
-- **Trailing newline.** Every line the writer emits ends with a newline, or the next line
-  appended later runs into it. A dirty line always gets `\n`; a spliced class change adds
-  one to a last line that had none. An untouched last line without a terminator stays
-  byte-identical only while it stays last: anything appended after it must give it its
-  newline first.
+- **Trailing newline.** A line followed by another ends with a newline, or the two run
+  together. A dirty line always gets one. A spliced class change keeps the line's ending,
+  or its lack of one, so a reassign across a dataset rewrites only class tokens. A last
+  line without a terminator stays byte-identical only while it stays last: anything
+  appended after it gives it the file's line ending first
+  (`src/deeplabeling/core/edits.py::materialize`).
 - **Clamped.** Coordinates converted from pixels are clamped to [0, 1]
   (`legacy/yolo_labeling/core/geometry.py::pixel_to_yolo`).
 

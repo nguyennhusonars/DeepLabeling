@@ -93,7 +93,10 @@ class EditBatch:
         store, touched = self._editor.store, []
         try:
             for intent in intents:
-                edit = store.apply(intent)
+                try:
+                    edit = store.apply(intent)
+                except Refused as e:                # which of thousands of files said no
+                    raise Refused(f"{store.dataset.entry(intent.image).rel}: {e}") from e
                 if edit is None:
                     continue
                 for change in edit.changes:

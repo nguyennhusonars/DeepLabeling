@@ -27,6 +27,7 @@ from .model import RECENT_MODELS
 from .notices import NoticeStrip
 from .queue_accept import accept_queue
 from .queue_panel import QueuePanel
+from .reassign import reassign_queue
 from .session import Session
 from .settings_ui import (QUEUE_GRID_WIDTH, QUEUE_LIST_WIDTH, RECENT, SHOW_CAPTIONS, SHOW_CROSSHAIR, SHOW_GRID,
                           SHOW_PREDICTIONS,
@@ -116,6 +117,7 @@ class MainWindow(QMainWindow):
         self.state_bar.dataset.menu().aboutToShow.connect(self._fill_dataset_menu)
         self.state_bar.model.menu().aboutToShow.connect(self._fill_model_menu)
         self.state_bar.queue.clicked.connect(self.edit_queue)
+        self.state_bar.queue.menu().aboutToShow.connect(self._fill_queue_menu)
         session.cursorChanged.connect(self.show_current)
         session.opened.connect(self.show_current)
         session.closed.connect(self._closed)
@@ -345,10 +347,21 @@ class MainWindow(QMainWindow):
             menu.addAction("Cancel inferring", model.cancel_pass)
         else:
             menu.addAction("Infer this queue", model.infer_queue).setEnabled(whole)
-        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(whole)
+        menu.addAction("Accept missing boxes in this queue…", self.accept_queue).setEnabled(
+            model.state == "ready" and not self.session.queue_not_whole())
 
     def accept_queue(self) -> None:
         accept_queue(self.session)
+
+    def _fill_queue_menu(self) -> None:
+        menu, queue = self.state_bar.queue.menu(), self.session.queue
+        menu.clear()
+        menu.addAction("Edit queue…", self.edit_queue).setEnabled(queue is not None)
+        menu.addAction("Reassign a class in this queue…", self.reassign_queue).setEnabled(
+            not self.session.queue_not_whole())
+
+    def reassign_queue(self) -> None:
+        reassign_queue(self.session)
 
     def load_model(self) -> None:
         path = self.prompter.choose_weights()

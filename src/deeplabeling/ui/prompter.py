@@ -17,6 +17,7 @@ from .class_map_dialog import ClassMapDialog
 from .class_picker import ClassPicker
 from .classes import ClassInfo
 from .queue_editor import QueueEditor
+from .reassign_dialog import ReassignDialog
 
 
 def _names(names) -> str:
@@ -117,6 +118,18 @@ class QtPrompter:
 
     def progress(self, title: str, total: int) -> Progress:
         return Progress(QProgressDialog(title, "Cancel", 0, total, self.parent))
+
+    def ask_reassign(self, names, unnamed_ids) -> tuple[int, int] | None:
+        dialog = ReassignDialog(names, unnamed_ids, self.parent)
+        try:
+            return dialog.chosen if dialog.exec() == QDialog.Accepted else None
+        finally:
+            dialog.deleteLater()
+
+    def confirm_reassign(self, text: str) -> bool:
+        answer = QMessageBox.question(self.parent, "Reassign a class in this queue", text,
+                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        return answer == QMessageBox.Yes
 
     def confirm_queue_accept(self, text: str) -> bool:
         answer = QMessageBox.question(self.parent, "Accept missing boxes in this queue", text,

@@ -74,6 +74,10 @@ class StateBar(QWidget):
         for chip in (self.dataset, self.model, self.layers):
             chip.setPopupMode(QToolButton.InstantPopup)
             chip.setMenu(QMenu(chip))
+        # A click on the queue chip edits the queue; its arrow offers what acts on the queue
+        # (docs/design/2026-10-07-bulk-and-stats.md#the-queue-chip).
+        self.queue.setPopupMode(QToolButton.MenuButtonPopup)
+        self.queue.setMenu(QMenu(self.queue))
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(6)

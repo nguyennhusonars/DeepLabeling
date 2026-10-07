@@ -60,6 +60,10 @@ class Prompter(Protocol):
 
     def confirm_queue_accept(self, text: str) -> bool: ...
 
+    def ask_reassign(self, names, unnamed_ids) -> tuple[int, int] | None: ...
+
+    def confirm_reassign(self, text: str) -> bool: ...
+
 
 class Session(QObject):
     opened = Signal()
@@ -91,6 +95,7 @@ class Session(QObject):
         self.saver = Saver(self._save, parent=self)
         self._build = None
         self._by_rel: dict[str, ImageEntry] = {}
+        self.unnamed_ids: tuple[int, ...] = ()      #: class ids the labels hold that the yaml does not name
         self._follow: ImageEntry | QueueItem | None = None  # where a rebuilding queue must land
         self._seen: tuple | None = None             # (image, raw, state) last reported on screen
         self._keys: frozenset[str] | None = None    # review marks, snapshotted until they change
@@ -178,6 +183,7 @@ class Session(QObject):
         self.io.wait(2000)
         self.workspace, self.queue, self._build, self._by_rel = None, None, None, {}
         self._follow = self._seen = self._keys = None
+        self.unnamed_ids = ()
         try:
             ws.close()
         except OSError as e:
@@ -473,6 +479,31 @@ class Session(QObject):
         else:
             self.status.emit("the dismissal is taken back")
 
+    def queue_not_whole(self) -> str:
+        """Why the queue cannot stand for its images yet -- waiting for a model, building,
+        or its build failed part-way -- or "" when it is whole."""
+        queue = self.queue
+        if queue is None:
+            return "there is no queue"
+        if queue.waiting:
+            return "the queue waits for a model"
+        if queue.failed is not None:
+            return "the queue's build failed: rebuild it first"
+        if not queue.complete:
+            return "the queue is still being built"
+        return ""
+
+    def recount_unnamed(self) -> None:
+        """Count the class ids the yaml does not name again: after a reassign repaired some."""
+        self._count_out_of_range()
+
+    def queue_images(self) -> list[ImageEntry]:
+        """The queue's images, each once, in queue order: a findings queue has an item per
+        finding, several to an image (docs/design/2026-10-07-bulk-and-stats.md#the-queues-images)."""
+        if self.queue is None:
+            return []
+        return list({item.entry.rel: item.entry for item in self.queue.items}.values())
+
     def crop_of(self, item: QueueItem, size=_UNREAD) -> Crop | None:
         """The crop a finding's tile shows; None for an image item, or when the image's
         header cannot be read -- its crop could not be decoded either. `size`: the image's,
@@ -696,6 +727,7 @@ class Session(QObject):
 
         def found(result) -> None:
             if self.workspace is ws and result is not None:
+                self.unnamed_ids = result.ids
                 self.standing.emit(OUT_OF_RANGE, result.message(dataset))
 
         self.io.start(lambda emit, cancelled: count_out_of_range(dataset, store, cancelled),

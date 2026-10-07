@@ -129,7 +129,7 @@ def test_a_write_failing_part_way_puts_every_file_back_and_says_why(qtbot, sessi
     with qtbot.waitSignal(session.notice, timeout=5000) as said:
         accept_queue(session)
     qtbot.waitUntil(lambda: session.running is None)
-    assert said.args[1].startswith("nothing was accepted: could not write") and "No space left" in said.args[1]
+    assert said.args[1].startswith("nothing was accepted: camA/images/0004.JPG: could not write") and "No space left" in said.args[1]
     monkeypatch.setattr(store_module, "write_atomic", real)
     assert_only_changed(before, ds.snapshot(), set())
     assert session.workspace.history.depth == 0
@@ -168,6 +168,15 @@ def test_files_that_cannot_be_put_back_are_said_to_stay_written(qtbot, session, 
     with qtbot.waitSignal(session.notice, timeout=5000) as said:
         accept_queue(session)
     qtbot.waitUntil(lambda: session.running is None)
-    assert said.args[1].startswith("the accept failed part-way: could not write")
+    assert said.args[1].startswith("the accept failed part-way: camA/images/0004.JPG: could not write")
     assert "could not be put back and stay as written" in said.args[1]
     assert session.workspace.history.depth == 1               # undo puts them back once there is room
+
+
+
+def test_a_queue_whose_build_failed_is_not_accepted_across(qtbot, session, ds):
+    session.queue.fail("could not read the store")
+    before = ds.snapshot()
+    with qtbot.waitSignal(session.status) as said:
+        accept_queue(session)
+    assert said.args == ["the queue's build failed: rebuild it first"] and ds.snapshot() == before
