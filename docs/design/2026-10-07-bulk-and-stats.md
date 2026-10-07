@@ -1,6 +1,6 @@
 # DeepLabeling — slice 5: bulk reassign and statistics
 
-**Status:** approved 2026-10-07 · plan 5a (bulk reassign) implemented; 5b (statistics) next
+**Status:** approved 2026-10-07 · implemented: plans 5a (bulk reassign) and 5b (statistics)
 **Scope:** slice 5 of [the app foundation](2026-10-04-app-foundation.md#slices), the last:
 one class rewritten to another across a queue, as one edit; and the statistics of a queue,
 as tables and charts. Everything slices 1–4 built stays as it is, except where this spec
@@ -89,7 +89,8 @@ On a worker, from the label store and the header-only, EXIF-aware image sizes
 - While it computes: `reading 12,000 / 45,252`, and the window stays responsive.
 - **Tables**, one tab each — Classes, Label files, Box sizes, Boxes per image. Each copies
   as TSV (a button, or Ctrl+C).
-- **Charts**, drawn with matplotlib from the result:
+- **Charts**, drawn with matplotlib from the result, when their tab is shown — never as
+  the numbers come in, so a recompute does not hold the window up:
   - class balance: bars per class, train and val side by side;
   - box sizes: the buckets above, with a log count axis;
   - box centres: the 20 × 20 grid as a heatmap;
@@ -125,12 +126,24 @@ A click still opens the queue editor. The chip gains a menu (its arrow):
 Measured on `data_13class.yaml`, on this machine. A missed target is recorded with its
 measured value, not quietly dropped.
 
-| Action | Target |
-|---|---|
-| reassign over 45k images: looking / writing 10k boxes | ≤ 30 s / ≤ 30 s, with progress, the window responsive |
-| statistics over 45k images, complete: cold / warm | ≤ 30 s / ≤ 5 s |
-| the window while statistics compute | the event loop never waits more than 100 ms |
-| the dialog, its charts drawn, once the numbers are in | ≤ 1 s |
+| Action | Target | Measured 2026-10-07 |
+|---|---|---|
+| reassign over 45k images: looking / writing 10k boxes | ≤ 30 s / ≤ 30 s, with progress, the window responsive | 750 ms / 938 ms (the write on a generated dataset) |
+| statistics over 45k images, complete: cold / warm | ≤ 30 s / ≤ 5 s | 3.50 s / 1.64 s; cold was 8.2–9.6 s in two runs that day with a colder page cache |
+| the window while statistics compute | the event loop never waits more than 100 ms | **missed intermittently, cold:** 200 ms and 221 ms in 2 of 4 runs of the script (16–17 ms in the others; 15–18 ms in 9 of 10 probe runs). Each stall came near the end of a cold run, the window waiting for the GIL; its cause is not found. Warm: 11–21 ms |
+| the dialog, its charts drawn, once the numbers are in | ≤ 1 s | 580–825 ms the first time (matplotlib imported), 217–221 ms after |
+
+- "Cold" is the first computation after opening. The label files are already in the store
+  by then — the open-time check of class ids reads every one — so cold reads the image
+  headers; the OS page cache varied between runs.
+- A warm computation is all Python on a worker, and held the GIL long enough to stall the
+  window 177–223 ms; it pauses 0.5 ms every 256 images (`src/deeplabeling/core/stats.py::stats_of`).
+- The reassign write is timed on a dataset generated in a temporary folder, never on the
+  real one. Reproduce, read-only (app state goes to a temporary folder, deleted at the end):
+
+```sh
+/home/sonnn/miniconda3/bin/python3 tools/measure_bulk_stats.py /home/sonnn/Videos/tmp_dataset/pvn-dataset/pvn-vehicle/data_13class.yaml
+```
 
 ## Testing
 
