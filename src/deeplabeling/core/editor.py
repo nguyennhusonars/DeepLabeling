@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .edits import Conflict, Edit, FileChange, Intent, Refused
+from .edits import Conflict, Edit, FileChange, Intent, PartlyRestored, Refused
 from .history import History
 from .review import ReviewMarks
 from .store import LabelStore
@@ -56,6 +56,9 @@ class Editor:
     def undo(self) -> Edit | None:
         try:
             edit = self.history.undo()
+        except PartlyRestored as e:
+            self._labels_changed(e.images)          # files that stayed restored: the views follow
+            raise
         finally:
             self._history_changed()     # a refused undo still dropped an edit
         if edit is not None:
@@ -65,6 +68,9 @@ class Editor:
     def redo(self) -> Edit | None:
         try:
             edit = self.history.redo()
+        except PartlyRestored as e:
+            self._labels_changed(e.images)          # files that stayed restored: the views follow
+            raise
         finally:
             self._history_changed()
         if edit is not None:

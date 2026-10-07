@@ -326,3 +326,11 @@ def test_each_item_of_a_changed_image_is_rechecked_by_its_source(dataset, ctx):
     queue.extend([QueueItem(f"{e.rel}#keep", e, rank=(0,)), QueueItem(f"{e.rel}#gone", e, rank=(1,))])
     queue.recheck(e, ctx)
     assert queue.stale == {f"{e.rel}#gone"}
+
+
+
+def test_a_class_named_with_a_vowel_takes_an(dataset):
+    from deeplabeling.core.queue import HasClass
+
+    assert HasClass(("ambulance",)).describe(dataset) == "has an ambulance"
+    assert HasClass(("car",), present=False).describe(dataset) == "lacks a car"

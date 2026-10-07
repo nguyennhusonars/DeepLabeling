@@ -256,6 +256,7 @@ class ModelSession(QObject):
         self.factory: Callable = UltralyticsPredictor
         self.state = "none"             # none, loading, ready or failed
         self.path: Path | None = None
+        self._on_screen: Path | None = None     # the image want_screen last saw on screen
         self.key: str | None = None
         self.names: tuple[str, ...] = ()
         self.error = ""
@@ -415,13 +416,14 @@ class ModelSession(QObject):
                 or queue.position() is None):
             return
         i, items = queue.position(), queue.items
+        arrived, before = items[i].entry.path, self._on_screen   # re-shown, not arrived: said already
         wanted = []
         for j in (i, *(i + d for d in NEIGHBOURS)):
             if not 0 <= j < len(items):
                 continue
             entry = items[j].entry
             if entry.path in self._failures:
-                if j == i:                          # failed out of sight: said now it is on screen
+                if j == i and entry.path != before:  # failed out of sight: said on arrival
                     session.notice.emit("error", f"{entry.rel}: the model could not predict "
                                         f"({self._failures[entry.path]})", entry.path)
                 continue
@@ -431,6 +433,7 @@ class ModelSession(QObject):
                 continue
             if ws.predictions.get(self.key, entry.rel, stamp) is None:
                 wanted.append((entry.rel, entry.path, stamp))
+        self._on_screen = arrived
         self._worker.want(ws.predictions, wanted)
 
     # -- the dataset pass ---------------------------------------------------------------------

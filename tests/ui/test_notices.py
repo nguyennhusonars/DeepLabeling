@@ -94,3 +94,10 @@ def test_a_very_long_notice_leaves_the_canvas_its_room(qtbot, ds):
     row = w.notices.rows[0]
     assert row.toolTip() == text and text in w.notices.texts()
     w.close()
+
+
+def test_a_notice_said_again_comes_back_to_the_top(strip):
+    strip.add("error", "first")
+    strip.add("error", "second")
+    strip.add("error", "first")
+    assert strip.texts() == ["first", "second"]

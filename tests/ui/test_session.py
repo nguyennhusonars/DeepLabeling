@@ -375,3 +375,26 @@ def test_holding_an_arrow_leaves_no_backlog_of_skipped_decodes(qtbot, ds):
     waiting = {p for p, job in s.images._pending.items() if not job.cancelled}
     assert waiting <= {item.entry.path for item in s.queue.items[-4:]}      # the screen and its neighbours
     s.close()
+
+
+def test_a_shared_file_also_made_read_only_says_read_only_once(qtbot, ds):
+    ds.lbl("camB/twin").chmod(0o444)
+    try:
+        session = open_session(qtbot, ds.yaml)
+        item = next(it for it in session.queue.items if it.key == "camB/images/twin.jpg")
+        assert session.badge(item) == "read-only (shared)"
+        session.close()
+    finally:
+        ds.lbl("camB/twin").chmod(0o644)
+
+
+def test_a_chmod_of_the_image_on_screen_is_seen(qtbot, ds):
+    session = open_session(qtbot, ds.yaml)
+    changed = record(session.labelsChanged)
+    ds.lbl("camA/0001").chmod(0o444)
+    try:
+        session.check_current()
+        assert changed and session.badge(session.current()).startswith("read-only")
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)
+        session.close()

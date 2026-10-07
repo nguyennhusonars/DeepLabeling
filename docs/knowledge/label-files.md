@@ -71,6 +71,10 @@ empty one ([why](#empty-file-is-a-negative-sample)).
   original untouched. A crash leaves the old file or the new one, never a truncated one:
   `legacy/yolo_labeling/core/labelio.py::write_label_file`. It opens with `newline=""`, so
   terminators pass through untranslated.
+- **Read-only respected.** A label file the user made read-only is neither edited nor
+  restored by undo or redo (`src/deeplabeling/core/store.py::LabelStore.check`). The
+  atomic replace needs only the folder's write permission, so without this check a 0444
+  file was rewritten.
 - **Permissions kept.** The replacement keeps the target's permission bits, and a new
   file gets `0o666` less the umask: `src/deeplabeling/core/atomic.py::write_atomic`. A
   bare `mkstemp` creates `0600`, as the legacy writer's did

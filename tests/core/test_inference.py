@@ -174,3 +174,10 @@ def test_importing_the_ui_does_not_import_ultralytics():
                          env={**os.environ, "PYTHONPATH": str(SRC), "QT_QPA_PLATFORM": "offscreen"})
     assert out.returncode == 0, out.stderr
     assert out.stdout.split() == ["False", "False", "False"]
+
+
+def test_a_float32_confidence_keeps_its_three_decimals():
+    import numpy as np
+
+    [p] = predictions_from(Result((0.0, [0.5, 0.5, 0.1, 0.1], float(np.float32(0.7)))))
+    assert p.conf == 0.7                                    # not 0.699: a 0.70 threshold keeps it, as ultralytics does

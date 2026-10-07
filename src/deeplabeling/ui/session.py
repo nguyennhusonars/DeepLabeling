@@ -390,7 +390,7 @@ class Session(QObject):
                 self.saver.schedule()
             self.workspace.store.pin(item.entry.path)
             labels = self.workspace.store.get(item.entry.path)
-            self._seen = (item.entry.path, labels.raw, labels.state)
+            self._seen = (item.entry.path, labels.raw, labels.state, labels.writable)
             i, items = self.queue.position(), self.queue.items
             # want, not keep: an arrow held down passes images whose decodes, still waiting,
             # are cancelled -- otherwise the image on screen waits behind every one skipped.
@@ -408,7 +408,7 @@ class Session(QObject):
         if item is None or self.workspace is None:
             return
         labels = self.workspace.store.get(item.entry.path)      # may report a reload itself
-        seen = (item.entry.path, labels.raw, labels.state)
+        seen = (item.entry.path, labels.raw, labels.state, labels.writable)
         if self._seen is not None and self._seen[0] == seen[0] and self._seen != seen:
             self._seen = seen
             self.labelsChanged.emit((item.entry.path,))
@@ -460,7 +460,7 @@ class Session(QObject):
         else:
             n = len(labels.boxes)
             text = f"{n} box" if n == 1 else f"{n} boxes"
-        if not labels.writable:
+        if not labels.writable and labels.state is not LabelState.SHARED:   # shared says read-only already
             text = f"read-only · {text}"
         if self.queue is not None and item.key in self.queue.stale:
             text += " · no longer matches"
@@ -716,7 +716,7 @@ class Session(QObject):
         item = self.current()
         if item is not None and item.entry.path in images:
             labels = self.workspace.store.get(item.entry.path)
-            self._seen = (item.entry.path, labels.raw, labels.state)
+            self._seen = (item.entry.path, labels.raw, labels.state, labels.writable)
         if self.queue is None:
             return
         ctx, keys = None, []

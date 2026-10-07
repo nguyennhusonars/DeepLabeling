@@ -81,9 +81,15 @@ class PredictionStore:
                 version = conn.execute("PRAGMA user_version").fetchone()[0]
                 if version not in (0, VERSION):     # 0: made before versions, this same schema
                     raise sqlite3.DatabaseError(f"a store of version {version}, this app reads {VERSION}")
-                conn.execute(SCHEMA)
-                conn.execute(f"PRAGMA user_version = {VERSION}")
-                conn.commit()
+                if version == 0:                    # new, or made before versions: stamped once
+                    try:
+                        conn.execute(SCHEMA)
+                        conn.execute(f"PRAGMA user_version = {VERSION}")
+                        conn.commit()
+                    except sqlite3.OperationalError as e:
+                        if "readonly" not in str(e):
+                            raise
+                        conn.rollback()             # a store made read-only: read as it is
             except sqlite3.DatabaseError:
                 conn.close()
                 raise

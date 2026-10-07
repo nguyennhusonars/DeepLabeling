@@ -75,8 +75,9 @@ def _inside(box) -> Box | None:
 
 
 def _down(conf: float) -> float:
-    """Three decimals, rounded down: a 0.2496 stored as 0.250 passed a 0.25 threshold."""
-    return math.floor(conf * 1000 + 1e-9) / 1000
+    """Three decimals, rounded down: a 0.2496 stored as 0.250 passed a 0.25 threshold. The
+    margin is float32's: the model's 0.7 is 0.69999999 and must stay 0.700."""
+    return math.floor(conf * 1000 + 1e-4) / 1000
 
 
 def predictions_from(result) -> list[Prediction]:

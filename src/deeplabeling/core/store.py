@@ -17,12 +17,12 @@ from pathlib import Path
 
 from .atomic import write_atomic
 from .dataset import Dataset, ImageEntry
-from .edits import Conflict, Edit, FileChange, Intent, LineRef, Refused, materialize
+from .edits import Conflict, Edit, FileChange, Intent, LineRef, PartlyRestored, Refused, materialize
 from .labelio import LabelLine, parse_label_bytes
 
-#: (inode, mtime_ns, size). An atomic replace changes the inode, and a class
-#: change keeps the size, so all three are compared.
-Stamp = tuple[int, int, int, bool]       #: (inode, mtime_ns, size, writable)
+#: (inode, mtime_ns, size, writable). An atomic replace changes the inode, a class
+#: change keeps the size, and a chmod changes no mtime, so all four are compared.
+Stamp = tuple[int, int, int, bool]
 
 _SHARED = "another image uses the same label file, so it is not edited here"
 
@@ -221,14 +221,19 @@ class LabelStore:
             for change in edit.changes:
                 self._put(change.path, change.before if undo else change.after)
                 done.append(change)
-        except Refused:
-            # Put back the files already restored, so the edit is whole again and the
-            # undo can be tried again -- never left half undone.
+        except Refused as cause:
+            # Put back every file already restored, so the edit is whole again and can be
+            # tried again. One that cannot be put back (a full disk) stays restored: the
+            # history splits the edit around it, and both halves stay undoable.
+            stuck = []
             for change in reversed(done):
                 try:
                     self._put(change.path, change.after if undo else change.before)
-                except Refused as e:
-                    raise Refused(f"{e}; and {change.path.name} could not be put back as it was") from e
+                except Refused:
+                    stuck.append(change)
+            if stuck:
+                names = ", ".join(c.path.name for c in stuck)
+                raise PartlyRestored(f"{cause}; {names} could not be put back", tuple(stuck)) from cause
             raise
         finally:
             for image in edit.images:
@@ -253,6 +258,8 @@ class LabelStore:
             expected = change.after if undo else change.before
             if _read_or_none(change.path) != expected:
                 raise Conflict(f"{change.path.name} has changed since, so it is left as it is")
+            if expected is not None and not os.access(change.path, os.W_OK):     # made read-only since
+                raise Refused(f"{change.path.name} is read-only, so it is left as it is")
 
     def _write(self, path: Path, data: bytes) -> None:
         try:

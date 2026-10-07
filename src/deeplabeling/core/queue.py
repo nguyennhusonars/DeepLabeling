@@ -160,7 +160,9 @@ class HasClass(Condition):
         return found == self.present
 
     def describe(self, dataset):
-        return ("has a " if self.present else "lacks a ") + " or ".join(self.names)
+        first = self.names[0] if self.names else ""
+        article = "an" if first[:1].lower() in tuple("aeiou") else "a"
+        return f"{'has' if self.present else 'lacks'} {article} " + " or ".join(self.names)
 
     def highlight(self, labels, dataset, seen=NOTHING_SEEN):
         if not self.present:

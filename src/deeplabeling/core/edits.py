@@ -23,6 +23,15 @@ class Refused(Exception):
     """An edit or undo that would be wrong, so it was not done. The message is for the user."""
 
 
+class PartlyRestored(Refused):
+    """An undo or redo whose writes failed, and whose put-back failed too: `stuck` are the
+    changes left restored. The history splits the edit around them (history.py::History.undo)."""
+
+    def __init__(self, message: str, stuck: tuple, images: tuple = ()):
+        super().__init__(message)
+        self.stuck, self.images = stuck, images
+
+
 class Conflict(Refused):
     """A file no longer holds what an edit expects: something else changed it since.
 

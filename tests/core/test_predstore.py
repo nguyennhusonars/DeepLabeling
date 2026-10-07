@@ -196,3 +196,17 @@ def test_a_connection_opened_while_the_store_closes_is_not_kept(tmp_path, monkey
     worker.start()
     worker.join()
     assert store._all == []
+
+
+def test_a_read_only_store_still_opens_and_answers(tmp_path, image):
+    path = tmp_path / STORE_NAME
+    store = PredictionStore(path)
+    store.put(MODEL, "a.jpg", image_stamp(image), [CAR])
+    store.close()
+    path.chmod(0o444)
+    try:
+        again = PredictionStore(path)
+        assert again.get(MODEL, "a.jpg", image_stamp(image)) == [CAR]
+        again.close()
+    finally:
+        path.chmod(0o644)
