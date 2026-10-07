@@ -20,7 +20,7 @@ from .edits import LineRef
 from .inference import FLOOR, Prediction
 from .queue import BuildContext, ImageFilter, QueueItem
 from .ranges import range_error
-from .store import ImageLabels
+from .store import ImageLabels, LabelState
 
 KINDS = ("wrong class", "not an object", "weakly seen")     #: also the order findings are walked in
 NEAREST_MIN_IOU = 0.10      #: a not-an-object finding keeps its nearest box from this IoU
@@ -170,7 +170,11 @@ class Findings:
         if preds is None:
             ctx.count("not inferred", entry)
             return []
-        found = judge(ctx.labels(entry), preds, ctx.model.class_map, ctx.dataset, self.settings)
+        labels = ctx.labels(entry)
+        if labels.state is LabelState.ERROR:
+            ctx.count("labels unreadable", entry)    # its labels cannot be judged
+            return []
+        found = judge(labels, preds, ctx.model.class_map, ctx.dataset, self.settings)
         return [QueueItem(f"{entry.rel}#{f.line}#{f.kind}", entry,
                           rank=(KINDS.index(f.kind), -f.score, entry.order, f.line),
                           focus=LineRef(f.line, f.label_cls, f.label_box), finding=f)

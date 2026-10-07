@@ -45,6 +45,7 @@ _UNREAD = object()      #: crop_of's size, when the caller has not read it
 UNSETTLED = {
     "could not be sized": lambda n: f"{n:,} image could not be sized" if n == 1 else f"{n:,} images could not be sized",
     "not inferred": lambda n: f"{n:,} not inferred",
+    "labels unreadable": lambda n: f"{n:,} image's labels unreadable" if n == 1 else f"{n:,} images' labels unreadable",
 }
 
 

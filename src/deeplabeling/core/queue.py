@@ -392,6 +392,9 @@ class ModelDisagrees(Condition):
             ctx.count("not inferred", entry)
             return False
         labels, cmap = ctx.labels(entry), ctx.model.class_map
+        if labels.state is LabelState.ERROR:
+            ctx.count("labels unreadable", entry)    # what it holds is unknown, not "nobody labelled"
+            return False
         return bool(self._unseen(labels, preds, cmap, ctx.dataset)
                     or self._unlabelled(labels, preds, cmap, ctx.dataset))
 
