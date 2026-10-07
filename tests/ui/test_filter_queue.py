@@ -195,7 +195,7 @@ def test_on_a_model_queue_the_model_chip_counts_what_the_queue_left_out(qtbot, s
     qtbot.waitUntil(lambda: all(session.model.predictions(session.queue.items[i].entry) is not None
                                 for i in range(3)), timeout=5000)
     built(qtbot, session, UNLABELLED)
-    assert model_text(session.model).endswith(" · 1 / 13 inferred")      # 1 in the queue, 12 left out
+    assert model_text(session.model).endswith(" · 1/13 inferred")      # 1 in the queue, 12 left out
 
 
 def test_closing_the_dataset_leaves_its_model_queue_alone(qtbot, ds, weights):

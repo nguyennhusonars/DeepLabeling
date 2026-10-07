@@ -76,7 +76,7 @@ def test_p_hides_the_predictions_and_the_choice_persists(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_P)
     assert not any(map(is_car_green, colours_at(window, 48, 38.4)))
     assert window.session.settings.get(SHOW_PREDICTIONS) is False
-    assert window.state_bar.layers.full_text == "Layers: labels, captions"
+    assert window.state_bar.layers.full_text == "👁 labels · captions"
 
 
 def test_with_the_labels_hidden_predictions_show_but_none_is_accepted(qtbot, window, ds):

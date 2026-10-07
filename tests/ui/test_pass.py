@@ -54,19 +54,19 @@ def ended(qtbot, session):
 
 
 def test_a_pass_infers_the_rest_of_the_queue_in_order_and_says_how_it_went(qtbot, session, made):
-    assert model_text(session.model) == "Model: best.pt · 3 classes · conf 0.25 · 3 / 15 inferred"
+    assert model_text(session.model) == "🧠 best.pt · ≥0.25 · 3/15 inferred"
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info") as said:
         session.model.infer_queue()
     assert said.args[1] == "inferred 11 images; 1 failed"
     assert made[-1].asked == QUEUE                           # the first three by the screen, each once
-    assert model_text(session.model) == "Model: best.pt · 3 classes · conf 0.25 · 14 / 15 inferred"
+    assert model_text(session.model) == "🧠 best.pt · ≥0.25 · 14/15 inferred"
 
 
 def test_the_chip_shows_a_pass_under_way(qtbot, session, gate):
     gate.clear()
     session.model.infer_queue()
     assert session.model.passing
-    assert model_text(session.model) == "Model: best.pt · 3 classes · conf 0.25 · inferring 0 / 15"
+    assert model_text(session.model) == "🧠 best.pt · ≥0.25 · inferring 0/15"
     gate.set()
     qtbot.waitUntil(lambda: not session.model.passing, timeout=5000)
 

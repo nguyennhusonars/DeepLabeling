@@ -13,8 +13,8 @@ REFRESH_MS = 250
 
 
 class Chip(QToolButton):
-    """Its whole text when it fits, elided when not, and the whole text as its tooltip:
-    a chip squeezed by a narrow window still shows that its setting exists."""
+    """Its short text when it fits, elided when not, and the setting in full words as its
+    tooltip: a chip squeezed by a narrow window still shows that its setting exists."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,9 +28,9 @@ class Chip(QToolButton):
     def full_text(self) -> str:
         return self._full
 
-    def set_full_text(self, text: str) -> None:
+    def set_full_text(self, text: str, tip: str | None = None) -> None:
         self._full = text
-        self.setToolTip(text)
+        self.setToolTip(tip or text)
         self._elide()
         self.updateGeometry()
 
@@ -51,18 +51,29 @@ class Chip(QToolButton):
 
 
 def model_text(model) -> str:
+    """The model chip: 🧠, the weights, the threshold and how much of the queue is inferred."""
     if model.state == "none":
-        return "Model: none · load one"
+        return "🧠 load a model"
     name = model.path.name
     if model.state == "loading":
-        return f"Model: {name} · loading…"
+        return f"🧠 {name} · loading…"
     if model.state == "failed":
-        return f"Model: {name} · not loaded"
-    text = f"Model: {name} · {len(model.names)} classes · conf {model.conf:.2f}"
+        return f"🧠 {name} · failed"
+    text = f"🧠 {name} · ≥{model.conf:.2f}"
     if model.passing:
-        return text + f" · inferring {model.pass_walked:,} / {model.pass_total:,}"
+        return text + f" · inferring {model.pass_walked:,}/{model.pass_total:,}"
     counted = model.inferred_count()
-    return text if counted is None else text + f" · {counted[0]:,} / {counted[1]:,} inferred"
+    return text if counted is None else text + f" · {counted[0]:,}/{counted[1]:,} inferred"
+
+
+def model_tip(model) -> str:
+    """The model chip in full words."""
+    if model.state == "none":
+        return "No model loaded. Click to load one."
+    if model.state != "ready":
+        return f"Model {model.path} — {model.state}" + (f": {model.error}" if model.error else "")
+    return (f"Model {model.path}\n{len(model.names)} classes · predictions shown at confidence ≥ {model.conf:.2f}"
+            "\nClick for the threshold, the class map, inferring and accepting.")
 
 
 class StateBar(QWidget):
@@ -106,26 +117,30 @@ class StateBar(QWidget):
             self._soon.start()
 
     def _refresh_model(self, _=None) -> None:
-        self.model.set_full_text(model_text(self._session.model))
+        self.model.set_full_text(model_text(self._session.model), model_tip(self._session.model))
 
     def refresh(self) -> None:
         session, ws = self._session, self._session.workspace
         if ws is None:
-            self.dataset.set_full_text("No dataset · open one")
-            self.queue.set_full_text("Queue: —")
-            self.reviewed.set_full_text("Reviewed —")
+            self.dataset.set_full_text("📁 open a dataset", "No dataset open. Click to open a yaml or an image folder.")
+            self.queue.set_full_text("☰ —", "The queue: open a dataset first.")
+            self.reviewed.set_full_text("✓ —", "Images reviewed: open a dataset first.")
         else:
             d = ws.dataset
-            self.dataset.set_full_text(f"{d.root.name} · {d.source.name} · {' + '.join(d.splits)}"
-                                       f" · {len(d.images):,} images")
+            self.dataset.set_full_text(f"📁 {d.root.name} · {'+'.join(d.splits)} · {len(d.images):,}",
+                                       f"{d.root}\n{d.source.name}: {' + '.join(d.splits)}, {len(d.images):,} images"
+                                       "\nClick to open another.")
             q = session.queue
             if q is None:
-                self.queue.set_full_text("Queue: —")
+                self.queue.set_full_text("☰ —", "The queue: none yet.")
             else:
-                self.queue.set_full_text(f"Queue: {q.source.describe(d)} · {len(q):,} · "
-                                         f"{session.left():,} left{session.progress_text()}")
+                left, progress = session.left(), session.progress_text()
+                self.queue.set_full_text(f"☰ {q.source.describe(d)} · {left:,} left of {len(q):,}{progress}",
+                                         f"Queue: {q.source.describe(d)}\n{len(q):,} items, {left:,} not reviewed"
+                                         f"{progress}\nClick to edit it; ▾ to reassign a class or see statistics.")
             marked, total = session.reviewed_counts()
-            self.reviewed.set_full_text(f"Reviewed {marked:,} / {total:,}")
-        self.model.set_full_text(model_text(session.model))
+            self.reviewed.set_full_text(f"✓ {marked:,}/{total:,}", f"{marked:,} of {total:,} images reviewed")
+        self.model.set_full_text(model_text(session.model), model_tip(session.model))
         shown = [a.text().lower() for a in self.layers.menu().actions() if a.isChecked()]
-        self.layers.set_full_text("Layers: " + (", ".join(shown) if shown else "none"))
+        self.layers.set_full_text("👁 " + (" · ".join(shown) if shown else "none"),
+                                  "Layers shown on the canvas: " + (", ".join(shown) if shown else "none"))

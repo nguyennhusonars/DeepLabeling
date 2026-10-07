@@ -68,9 +68,9 @@ def test_arrow_keys_page_without_marking(qtbot, window):
 def test_space_marks_and_moves_and_k_toggles(qtbot, window):
     qtbot.keyClick(window, Qt.Key_Space)
     assert window.session.current().key == "camA/images/0002.jpg"
-    assert window.state_bar.reviewed.full_text == "Reviewed 1 / 15"
+    assert window.state_bar.reviewed.full_text == "✓ 1/15"
     qtbot.keyClick(window, Qt.Key_K)
-    assert window.state_bar.reviewed.full_text == "Reviewed 2 / 15"
+    assert window.state_bar.reviewed.full_text == "✓ 2/15"
 
 
 def test_n_marks_a_missing_image_negative_and_ctrl_z_takes_it_back(qtbot, window, ds):
@@ -105,9 +105,9 @@ def test_layers_toggle_from_their_keys_and_persist(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_L)
     assert not window.canvas.show_labels and window.canvas.caption_items() == []
     assert window.session.settings.get(SHOW_LABELS) is False
-    assert window.state_bar.layers.full_text == "Layers: captions, predictions"
+    assert window.state_bar.layers.full_text == "👁 captions · predictions"
     qtbot.keyClick(window, Qt.Key_T)
-    assert window.state_bar.layers.full_text == "Layers: predictions"
+    assert window.state_bar.layers.full_text == "👁 predictions"
     window.close()
     again = start(qtbot, [str(ds.yaml)])
     assert not again.actions["toggle_labels"].isChecked() and not again.canvas.show_labels
@@ -137,7 +137,7 @@ def test_the_queue_chip_edits_the_queue(qtbot, ds):
     with qtbot.waitSignal(w.session.queueDone, timeout=5000):
         qtbot.mouseClick(w.state_bar.queue, Qt.LeftButton)
     assert len(w.session.queue) == 3
-    assert w.state_bar.queue.full_text.startswith("Queue: has a bus_m · 3 · 3 left")
+    assert w.state_bar.queue.full_text.startswith("☰ has a bus_m · 3 left of 3")
     w.close()
 
 
@@ -218,7 +218,7 @@ def test_a_closed_panel_can_be_shown_again(qtbot, window):
     action = next(a for a in window.panels_menu.actions() if a.text() == "Queue")
     action.trigger()
     qtbot.waitUntil(window.queue_dock.isVisible)
-    assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions"
+    assert window.state_bar.layers.full_text == "👁 labels · captions · predictions"
 
 
 
