@@ -43,8 +43,13 @@ def test_the_model_key_names_the_file_its_size_and_its_time(tmp_path):
 
 def test_a_result_becomes_normalised_predictions_strongest_first():
     result = Result((2.0, [0.5, 0.5, 0.2, 0.3], 0.40004), (0.0, [0.25, 0.25, 0.1, 0.1], 0.87654))
-    assert predictions_from(result) == [Prediction(0, (0.25, 0.25, 0.1, 0.1), 0.877),
+    assert predictions_from(result) == [Prediction(0, (0.25, 0.25, 0.1, 0.1), 0.876),
                                         Prediction(2, (0.5, 0.5, 0.2, 0.3), 0.4)]
+
+
+def test_a_confidence_is_stored_rounded_down_so_a_threshold_never_lets_in_a_weaker_one():
+    [p] = predictions_from(Result((0.0, [0.5, 0.5, 0.1, 0.1], 0.2496)))
+    assert p.conf == 0.249                                  # 0.250 would pass a 0.25 threshold
 
 
 def test_a_result_is_cut_at_the_floor_and_capped():
