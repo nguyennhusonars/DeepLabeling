@@ -35,6 +35,7 @@ RECENT_MAX = 8
 SHUTDOWN_MS = 2000      #: the longest closing waits for a prediction in hand
 NEIGHBOURS = (1, 2, -1)  #: queue offsets predicted after the image on screen, as images are kept
 PASS_BATCH = 8          #: images a pass asks the model for at once, decoded in parallel
+PASS_WALK = 500         #: images a pass step looks at, at most: a resumed pass over 45k inferred took 0.16 s
 
 Wanted = tuple[str, Path, Stamp]   #: (dataset-relative path, file, stamp)
 
@@ -196,12 +197,13 @@ class _Worker(QThread):
         store, key = self._pass_store, self._predictor.key
         if self._known is None:
             self._known = store.inferred(key)
-        todo = []
-        while len(todo) < PASS_BATCH:
+        todo, looked = [], 0
+        while len(todo) < PASS_BATCH and looked < PASS_WALK:
             with self._cond:
-                if not self._pass:
-                    break
+                if not self._pass or (self._screen and looked):
+                    break                           # the image on screen goes ahead of the walk
                 rel, path = self._pass.popleft()
+            looked += 1
             self._walked += 1
             try:
                 stamp = image_stamp(path)

@@ -175,3 +175,14 @@ def test_an_image_a_pass_could_not_store_is_no_longer_failed_once_a_later_pass_s
     with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info"):
         session.model.infer_queue()
     assert session.model.failure(entry) is None and session.model.predictions(entry) == []
+
+
+def test_a_pass_over_images_already_inferred_walks_them_a_few_at_a_time(qtbot, session, monkeypatch):
+    with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info"):
+        session.model.infer_queue()                         # everything inferred but ok.jpg
+    monkeypatch.setattr(model_module, "PASS_WALK", 4)
+    walked = []
+    session.model.progress.connect(lambda: walked.append(session.model.pass_walked))
+    with qtbot.waitSignal(session.notice, timeout=5000, check_params_cb=lambda level, text, image: level == "info"):
+        session.model.infer_queue()                         # a resumed pass: a walk, and ok.jpg again
+    assert walked[:3] == [4, 8, 12] and walked[-1] == 15    # the thread free between, for the screen
