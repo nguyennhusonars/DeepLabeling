@@ -14,6 +14,9 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLay
 COLORS = {"error": "#5c1f1f", "warning": "#5c4a1f", "info": "#1f3a5c"}
 #: The most notices shown at once; older ones go first.
 MAX_ROWS = 6
+#: A notice longer than this shows shortened, the whole of it in its tooltip: a 6,000-character
+#: notice once left the canvas 70 px at 1024 x 640.
+MAX_CHARS = 400
 
 
 class NoticeRow(QFrame):
@@ -27,7 +30,8 @@ class NoticeRow(QFrame):
                            " QLabel { color: #f0f0f0; }")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 3, 4, 3)
-        self.label = QLabel(text)
+        self.label = QLabel(text if len(text) <= MAX_CHARS else text[:MAX_CHARS].rstrip() + " …")
+        self.setToolTip(text)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         close = QToolButton()
