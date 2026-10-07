@@ -167,9 +167,9 @@ def test_the_queue_accept_waits_for_a_model_and_runs_from_the_menu(qtbot, window
     assert not menu(window)["✚ Accept missing boxes…"].isEnabled()
     load(qtbot, window)
     with qtbot.waitSignal(window.session.status, timeout=5000,
-                          check_params_cb=lambda text: text.startswith("accepted")) as said:
+                          check_params_cb=lambda text: text.startswith("✚ accepted")) as said:
         menu(window)["✚ Accept missing boxes…"].trigger()
-    assert said.args == ["accepted 1 box on 1 image"]
+    assert said.args == ["✚ accepted 1 box on 1 image"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + "1 0.800000 0.800000 0.100000 0.100000\n"
 
 
