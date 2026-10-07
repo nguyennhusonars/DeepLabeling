@@ -21,6 +21,7 @@ from .state import set_aside
 STORE_NAME = "predictions.sqlite"
 Stamp = tuple[int, int]             #: (size, mtime_ns) of an image file
 
+VERSION = 1             #: PRAGMA user_version: a file of another version is set aside, as a corrupt one is
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS preds (
     model TEXT NOT NULL,            -- the weights' name:size:mtime
@@ -77,14 +78,21 @@ class PredictionStore:
             try:
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (0, VERSION):     # 0: made before versions, this same schema
+                    raise sqlite3.DatabaseError(f"a store of version {version}, this app reads {VERSION}")
                 conn.execute(SCHEMA)
+                conn.execute(f"PRAGMA user_version = {VERSION}")
                 conn.commit()
             except sqlite3.DatabaseError:
                 conn.close()
                 raise
-            self._local.conn = conn
             with self._lock:
+                if self._closed:                    # closed while this one opened: not kept
+                    conn.close()
+                    raise sqlite3.ProgrammingError("the store is closed")
                 self._all.append(conn)
+            self._local.conn = conn
         return conn
 
     def get(self, model: str, img: str, stamp: Stamp, conf: float = FLOOR) -> list[Prediction] | None:

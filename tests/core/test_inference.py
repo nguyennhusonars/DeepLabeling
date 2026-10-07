@@ -164,3 +164,13 @@ def test_a_weights_file_that_is_not_there_is_refused_before_ultralytics_sees_it(
 
     with pytest.raises(ModelError, match=r"^yolov8n\.pt is not there"):
         UltralyticsPredictor(tmp_path / "yolov8n.pt")       # an official asset name: never downloaded
+
+
+
+def test_importing_the_ui_does_not_import_ultralytics():
+    code = ("import sys\nimport deeplabeling.ui.main_window, deeplabeling.ui.model, deeplabeling.ui.stats_dialog\n"
+            "print('ultralytics' in sys.modules, 'torch' in sys.modules, 'matplotlib' in sys.modules)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env={**os.environ, "PYTHONPATH": str(SRC), "QT_QPA_PLATFORM": "offscreen"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.split() == ["False", "False", "False"]
