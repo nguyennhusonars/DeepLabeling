@@ -160,7 +160,7 @@ class HasClass(Condition):
         return found == self.present
 
     def describe(self, dataset):
-        return ("has " if self.present else "lacks ") + " or ".join(self.names)
+        return ("has a " if self.present else "lacks a ") + " or ".join(self.names)
 
     def highlight(self, labels, dataset, seen=NOTHING_SEEN):
         if not self.present:
@@ -307,6 +307,11 @@ class Boxes(Condition):
 SCOPE_WORDS = {"different": "different classes", "same": "same class", "any": "any class"}
 
 
+def _iou(value: float) -> str:
+    """Two decimals, unless that hides the value typed: 0.995 is not 0.99."""
+    return f"{value:.2f}" if round(value, 2) == value else f"{value:g}"
+
+
 @dataclass(frozen=True)
 class Overlap(Condition):
     """Some pair of labels in scope overlaps at an IoU in the range, both ends inclusive
@@ -337,7 +342,7 @@ class Overlap(Condition):
         return self._overlapping(labels)
 
     def describe(self, dataset):
-        return f"labels overlapping, {SCOPE_WORDS[self.scope]}, IoU {self.lo:.2f}–{self.hi:.2f}"
+        return f"labels overlapping, {SCOPE_WORDS[self.scope]}, IoU {_iou(self.lo)}–{_iou(self.hi)}"
 
     def to_json(self):
         return {"kind": self.kind, "scope": self.scope, "lo": self.lo, "hi": self.hi}
@@ -410,8 +415,8 @@ class ModelDisagrees(Condition):
 
     def describe(self, dataset):
         lo, hi = self.conf
-        conf = f"conf ≥ {lo:.2f}" if self.direction == "unseen" else f"conf {lo:.2f}–{hi:.2f}"
-        return f"{DIRECTION_WORDS[self.direction]} (IoU {self.match_iou:.2f}, {conf})"
+        conf = f"conf ≥ {_iou(lo)}" if self.direction == "unseen" else f"conf {_iou(lo)}–{_iou(hi)}"
+        return f"{DIRECTION_WORDS[self.direction]} (IoU {_iou(self.match_iou)}, {conf})"
 
     def to_json(self):
         return {"kind": self.kind, "direction": self.direction, "match_iou": self.match_iou,

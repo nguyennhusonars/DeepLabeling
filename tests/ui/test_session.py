@@ -28,7 +28,7 @@ def test_ids_the_yaml_does_not_name_raise_a_standing_notice(qtbot, ds):
     with qtbot.waitSignal(s.standing, timeout=5000,
                           check_params_cb=lambda key, text: key == OUT_OF_RANGE and bool(text)) as caught:
         s.open(ds.yaml)
-    assert "2 boxes in 1 images" in caught.args[1] and "data.yaml" in caught.args[1]
+    assert "2 boxes in 1 image have class ids (-1, 99)" in caught.args[1] and "data.yaml" in caught.args[1]
     s.close()
 
 

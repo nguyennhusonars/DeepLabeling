@@ -139,7 +139,7 @@ def test_cheap_conditions_run_before_labels_are_read(dataset):
 def test_descriptions(dataset):
     assert ImageFilter().describe(dataset) == "all images"
     f = ImageFilter(splits=("val",), conditions=(HasClass(("bus_l", "bus_m")), Reviewed(False)))
-    assert f.describe(dataset) == "has bus_l or bus_m and not reviewed in val"
+    assert f.describe(dataset) == "has a bus_l or bus_m and not reviewed in val"
 
 
 def test_a_filter_survives_json():

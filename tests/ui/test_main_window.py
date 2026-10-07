@@ -137,7 +137,7 @@ def test_the_queue_chip_edits_the_queue(qtbot, ds):
     with qtbot.waitSignal(w.session.queueDone, timeout=5000):
         qtbot.mouseClick(w.state_bar.queue, Qt.LeftButton)
     assert len(w.session.queue) == 3
-    assert w.state_bar.queue.full_text.startswith("Queue: has bus_m · 3 · 3 left")
+    assert w.state_bar.queue.full_text.startswith("Queue: has a bus_m · 3 · 3 left")
     w.close()
 
 
@@ -206,3 +206,49 @@ def test_a_closed_panel_can_be_shown_again(qtbot, window):
     action.trigger()
     qtbot.waitUntil(window.queue_dock.isVisible)
     assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions"
+
+
+
+def test_a_second_help_press_brings_the_one_help_window_forward(qtbot, ds):
+    from deeplabeling.ui.keymap import HelpDialog
+    from drive import start
+
+    w = start(qtbot, [str(ds.yaml)])
+    w.show_help()
+    w.show_help()
+    assert len([d for d in w.findChildren(HelpDialog) if d.isVisible()]) == 1
+    w.close()
+
+
+def test_written_is_stamped_only_when_files_are_written(qtbot, ds):
+    from deeplabeling.core.edits import AddBox, Intent
+    from drive import start
+
+    w = start(qtbot, [str(ds.yaml)])
+    s = w.session
+    s.workspace.editor.apply(Intent(ds.img("camA/0001.jpg"), (AddBox(1, (0.9, 0.9, 0.05, 0.05)),), "add"))
+    assert w._written is not None
+    w._written = None
+    ds.lbl("camA/0001").write_text("1 0.1 0.1 0.1 0.1\n")     # changed outside: the undo is refused
+    s.undo()
+    assert w._written is None and "written" not in w.status_text.text()
+    w.close()
+
+
+def test_arriving_at_an_image_the_model_failed_on_says_so_once(qtbot, ds, tmp_path):
+    from drive import start
+    from fixtures import FakePredictor
+
+    w = start(qtbot, [str(ds.yaml)])
+    s = w.session
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"weights")
+    s.model.factory = lambda path: FakePredictor(path, fail={"0002.jpg"})
+    s.model.load(weights)                                    # on 0001: 0002, a neighbour, fails out of sight
+    qtbot.waitUntil(lambda: ds.img("camA/0002.jpg") in s.model._failures, timeout=5000)
+    s.go_to("camA/images/0002.jpg")
+    s.go_to("camA/images/0001.jpg")
+    s.go_to("camA/images/0002.jpg")
+    said = [t for t in w.notices.texts() if "could not predict" in t]
+    assert said == ["camA/images/0002.jpg: the model could not predict (0002.jpg: CUDA out of memory)"]
+    w.close()

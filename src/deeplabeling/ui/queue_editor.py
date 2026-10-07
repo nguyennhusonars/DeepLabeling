@@ -120,7 +120,7 @@ class QueueEditor(QDialog):
         self.overlap_lo, self.overlap_hi = _edit("0.5"), _edit("1")
         self.model_mode = QComboBox()
         self.model_mode.addItems(MODEL_MODES)
-        self.model_iou, self.model_lo, self.model_hi = _edit("0.5"), _edit(f"{conf:g}"), _edit("1")
+        self.model_iou, self.model_lo, self.model_hi = _edit("0.5"), _edit(_text(conf)), _edit("1")
         self.error = QLabel()
         self.error.setStyleSheet("color: #e05252;")
         self.error.setWordWrap(True)

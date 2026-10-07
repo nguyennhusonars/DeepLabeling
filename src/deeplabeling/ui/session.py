@@ -71,6 +71,7 @@ class Session(QObject):
     closed = Signal()
     labelsChanged = Signal(object)      # tuple[Path, ...]: images whose label file changed
     historyChanged = Signal()
+    written = Signal()                  # an edit, undo or redo wrote label files (an outside change is not)
     reviewChanged = Signal()
     queueReset = Signal()               # a new queue replaced the old one
     queueGrew = Signal()                # items were appended to the queue
@@ -138,7 +139,7 @@ class Session(QObject):
     def _open(self, source, labels, *, quiet: bool) -> bool:
         try:
             ws = Workspace.open(source, labels, confirm_taxonomy=self.prompter.confirm_taxonomy,
-                                on_labels_changed=self.labelsChanged.emit,
+                                on_labels_changed=self._wrote,
                                 on_history_changed=self.historyChanged.emit,
                                 on_reload=self._reloaded.emit)
         except OpenCancelled:
@@ -165,6 +166,11 @@ class Session(QObject):
         self._count_out_of_range()
         self._restore_queue()
         return True
+
+    def _wrote(self, images) -> None:
+        """The editor wrote these images' label files."""
+        self.labelsChanged.emit(images)
+        self.written.emit()
 
     def close(self) -> None:
         ws = self.workspace

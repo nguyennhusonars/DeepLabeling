@@ -203,3 +203,9 @@ def test_the_find_bad_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot
         assert not any(rect.intersects(r) for r in rects)
         rects.append(rect)
     assert dialog.height() <= 800
+
+
+
+def test_the_model_confidence_is_seeded_as_the_value_itself(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter(), conf=0.123456789)
+    assert dialog.model_lo.text() == "0.123456789"

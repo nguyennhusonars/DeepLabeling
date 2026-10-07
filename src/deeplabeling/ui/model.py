@@ -419,6 +419,9 @@ class ModelSession(QObject):
                 continue
             entry = items[j].entry
             if entry.path in self._failures:
+                if j == i:                          # failed out of sight: said now it is on screen
+                    session.notice.emit("error", f"{entry.rel}: the model could not predict "
+                                        f"({self._failures[entry.path]})", entry.path)
                 continue
             try:
                 stamp = image_stamp(entry.path)

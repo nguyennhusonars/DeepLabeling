@@ -61,8 +61,8 @@ class NoticeStrip(QWidget):
         a keyed notice with no text just removes it."""
         if key is not None:
             self.clear_key(key)
-        if not text:
-            return
+        if not text or any(r.text == text and r.image == image and r.key is None for r in self.rows):
+            return                                  # said already, and not dismissed: once is enough
         row = NoticeRow(level, text, image, key, self)
         row.dismissed.connect(self._remove)
         self.rows.insert(0, row)

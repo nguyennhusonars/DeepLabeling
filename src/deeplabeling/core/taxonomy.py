@@ -22,7 +22,10 @@ class OutOfRange:
         if not self.boxes:
             return ""
         shown = ", ".join(map(str, self.ids[:5])) + (", …" if len(self.ids) > 5 else "")
-        return (f"{self.boxes} boxes in {self.images} images have class ids ({shown}) that "
+        ids = f"class id {shown}" if len(self.ids) == 1 else f"class ids ({shown})"
+        boxes = f"{self.boxes} box" if self.boxes == 1 else f"{self.boxes} boxes"
+        images = f"{self.images} image" if self.images == 1 else f"{self.images} images"
+        return (f"{boxes} in {images} {'has' if self.boxes == 1 else 'have'} {ids} that "
                 f"{dataset.source.name} does not name. Is it the right yaml for these labels?")
 
 
