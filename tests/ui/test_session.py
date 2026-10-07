@@ -133,7 +133,7 @@ def test_badges(session):
     assert session.badge(by_key["camA/images/0001.jpg"]) == "2 boxes"
     assert session.badge(by_key["camA/images/0002.jpg"]) == "negative"
     assert session.badge(by_key["camA/images/0003.jpg"]) == "missing"
-    assert session.badge(by_key["camB/images/twin.jpg"]) == "shared"
+    assert session.badge(by_key["camB/images/twin.jpg"]) == "read-only (shared)"
     assert session.describe_item(by_key["camA/images/0002.jpg"]).startswith("· camA/images/0002.jpg")
 
 
@@ -346,3 +346,18 @@ def test_marking_many_marks_each_once_and_says_how_many(session):
     assert session.workspace.review.keys() == frozenset(keys)
     assert said[-1] == ("marked 2 images reviewed",)
     assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)
+
+
+
+def test_a_label_file_made_read_only_says_so_in_its_row_and_the_inspector(qtbot, ds):
+    from deeplabeling.ui.inspector import Inspector
+
+    ds.lbl("camA/0001").chmod(0o444)
+    try:
+        session = open_session(qtbot, ds.yaml)
+        item = session.current()
+        assert item.entry.rel == "camA/images/0001.jpg" and session.badge(item) == "read-only · 2 boxes"
+        assert Inspector._state_text(session.labels(item.entry)) == "read-only: 0001.txt is read-only, so it is not edited here"
+        session.close()
+    finally:
+        ds.lbl("camA/0001").chmod(0o644)

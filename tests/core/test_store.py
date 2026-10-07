@@ -286,3 +286,41 @@ def test_the_pinned_image_is_never_evicted(ds):
     for entry in store.dataset.images:
         store.get(entry.path)
     assert store.is_cached(pinned)
+
+
+def test_a_label_file_made_read_only_is_not_edited(store, ds):
+    path = ds.lbl("camA/0001")
+    path.chmod(0o444)
+    try:
+        labels = store.get(ds.img("camA/0001.jpg"))
+        assert not labels.editable and labels.error == "0001.txt is read-only, so it is not edited here"
+        with pytest.raises(Refused, match="read-only"):
+            store.apply(intent(ds.img("camA/0001.jpg"), AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    finally:
+        path.chmod(0o644)
+    assert read_exact(path) == CAMA_0001
+    assert store.get(ds.img("camA/0001.jpg")).editable           # the chmod back is seen, though mtime is not
+
+
+def test_an_undo_failing_part_way_puts_back_what_it_wrote(store, ds, monkeypatch):
+    a, b = ds.img("camA/0001.jpg"), ds.img("weird/имя пробел.jpg")
+    first = store.apply(intent(a, AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    second = store.apply(intent(b, AddBox(1, (0.5, 0.5, 0.1, 0.1))))
+    edit = Edit(first.changes + second.changes, (a, b), "two")
+    after_a, after_b = read_exact(ds.lbl("camA/0001")), read_exact(ds.lbl("weird/имя пробел"))
+    real, calls = store_module.write_atomic, []
+
+    def failing(path, data):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        real(path, data)
+
+    monkeypatch.setattr(store_module, "write_atomic", failing)
+    with pytest.raises(Refused, match="could not write"):
+        store.restore(edit, undo=True)
+    assert read_exact(ds.lbl("camA/0001")) == after_a                    # put back: nothing half undone
+    assert read_exact(ds.lbl("weird/имя пробел")) == after_b
+    monkeypatch.setattr(store_module, "write_atomic", real)
+    store.restore(edit, undo=True)                                       # so the undo can be tried again
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001

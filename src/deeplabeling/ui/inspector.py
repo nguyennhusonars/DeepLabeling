@@ -188,7 +188,7 @@ class Inspector(QWidget):
     def _state_text(labels) -> str:
         if labels.state is LabelState.ERROR:
             return labels.error
-        if labels.state is LabelState.SHARED:
+        if labels.state is LabelState.SHARED or not labels.writable:
             return f"read-only: {labels.error}"
         if labels.raw is None:
             return "no label file"

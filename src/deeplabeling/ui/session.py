@@ -443,7 +443,7 @@ class Session(QObject):
         if labels.state is LabelState.ERROR:
             text = "unreadable"
         elif labels.state is LabelState.SHARED:
-            text = "shared"
+            text = "read-only (shared)"             # an edit here would be refused: say so
         elif labels.raw is None:
             text = "missing"
         elif labels.negative:
@@ -451,6 +451,8 @@ class Session(QObject):
         else:
             n = len(labels.boxes)
             text = f"{n} box" if n == 1 else f"{n} boxes"
+        if not labels.writable:
+            text = f"read-only · {text}"
         if self.queue is not None and item.key in self.queue.stale:
             text += " · no longer matches"
         return text

@@ -22,7 +22,7 @@ from .labelio import LabelLine, parse_label_bytes
 
 #: (inode, mtime_ns, size). An atomic replace changes the inode, and a class
 #: change keeps the size, so all three are compared.
-Stamp = tuple[int, int, int]
+Stamp = tuple[int, int, int, bool]       #: (inode, mtime_ns, size, writable)
 
 _SHARED = "another image uses the same label file, so it is not edited here"
 
@@ -43,10 +43,11 @@ class ImageLabels:
     lines: tuple[LabelLine, ...] = ()
     stamp: Stamp | None = None
     error: str = ""
+    writable: bool = True       #: False: the user made the file read-only, and it is respected
 
     @property
     def editable(self) -> bool:
-        return self.state in (LabelState.MISSING, LabelState.OK)
+        return self.state in (LabelState.MISSING, LabelState.OK) and self.writable
 
     @property
     def boxes(self) -> tuple[tuple[int, LabelLine], ...]:
@@ -141,7 +142,10 @@ class LabelStore:
         # The stamp is taken BEFORE the bytes are read: a change in between leaves
         # a stamp older than the bytes, so the next call reloads again -- safe --
         # instead of trusting stale bytes under a new stamp.
-        stamp = (st.st_ino, st.st_mtime_ns, st.st_size)
+        # Writability is in the stamp: a chmod changes no mtime. The atomic replace needs
+        # only the folder's write permission, so without this a 0444 file was rewritten.
+        writable = os.access(entry.label_path, os.W_OK)
+        stamp = (st.st_ino, st.st_mtime_ns, st.st_size, writable)
         with self._lock:
             cached = self._cache.get(entry.path)
             if cached is not None and cached.stamp == stamp:
@@ -151,9 +155,10 @@ class LabelStore:
             raw = entry.label_path.read_bytes()
         except OSError as e:
             return _error(entry, e)
+        why = _SHARED if shared else "" if writable else f"{entry.label_path.name} is read-only, so it is not edited here"
         snap = ImageLabels(entry.path, entry.label_path,
                            LabelState.SHARED if shared else LabelState.OK,
-                           raw, parse_label_bytes(raw), stamp, _SHARED if shared else "")
+                           raw, parse_label_bytes(raw), stamp, why, writable)
         self._remember(snap)
         if notify and cached is not None and cached.raw != raw:
             self._on_reload(entry.path)
@@ -211,19 +216,35 @@ class LabelStore:
         """
         self._check_thread()
         self.check(edit.changes, undo=undo)
-        for change in edit.changes:
-            target = change.before if undo else change.after
-            if target is None:
+        done = []
+        try:
+            for change in edit.changes:
+                self._put(change.path, change.before if undo else change.after)
+                done.append(change)
+        except Refused:
+            # Put back the files already restored, so the edit is whole again and the
+            # undo can be tried again -- never left half undone.
+            for change in reversed(done):
                 try:
-                    change.path.unlink()
-                except FileNotFoundError:
-                    pass
-                except OSError as e:
-                    raise Refused(f"could not remove {change.path.name}: {e.strerror or e}") from e
-            else:
-                self._write(change.path, target)
-        for image in edit.images:
-            self._load(self.dataset.entry(image), notify=False)
+                    self._put(change.path, change.after if undo else change.before)
+                except Refused as e:
+                    raise Refused(f"{e}; and {change.path.name} could not be put back as it was") from e
+            raise
+        finally:
+            for image in edit.images:
+                self._load(self.dataset.entry(image), notify=False)
+
+    def _put(self, path: Path, data: bytes | None) -> None:
+        """Write `data`, or remove the file for None."""
+        if data is not None:
+            self._write(path, data)
+            return
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            raise Refused(f"could not remove {path.name}: {e.strerror or e}") from e
 
     def check(self, changes, *, undo: bool) -> None:
         """Conflict if any file no longer holds what its change left (undo) or found
