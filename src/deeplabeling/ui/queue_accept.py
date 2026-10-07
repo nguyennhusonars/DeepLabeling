@@ -48,8 +48,7 @@ def accept_queue(session) -> None:
     if queue is None or not queue.complete:
         session.status.emit("the queue is still being built")
         return
-    # Each image once: a findings queue has an item per finding, several to an image.
-    entries = list({item.entry.rel: item.entry for item in queue.items}.values())
+    entries = session.queue_images()
     key, preds, cmap, conf = model.key, ws.predictions, model.class_map, model.conf
     plan, looked = QueueAccept((), 0, 0, 0, 0, 0), 0
 
@@ -86,28 +85,12 @@ def accept_queue(session) -> None:
 
 
 def _write(session, plan: QueueAccept) -> None:
-    history = session.workspace.history
-    batch, last = session.workspace.editor.batch(DESCRIPTION), history.peek_undo()
-    intents, written = plan.intents, 0
+    def said(written, cancelled) -> str:
+        boxes = sum(len(intent.ops) for intent in written)
+        what = f"{_count(boxes, 'box', 'boxes')} on {_count(len(written), 'image', 'images')}"
+        return f"accept stopped: {what} kept, as one edit" if cancelled else f"accepted {what}"
 
-    def step(progress) -> bool:
-        nonlocal written
-        chunk = intents[written:written + chunked.CHUNK]
-        batch.apply(chunk)                          # Refused: every file already put back
-        written += len(chunk)
-        progress.set(written)
-        return written < len(intents)
-
-    def end(progress, cancelled, error) -> None:
-        if error is not None:
-            kept = history.peek_undo() is not last     # files the rollback could not put back
-            session.notice.emit("error", f"the accept failed part-way: {error}" if kept
-                                else f"nothing was accepted: {error}", None)
-            return
-        batch.finish()
-        boxes = sum(len(intent.ops) for intent in intents[:written])
-        what = f"{_count(boxes, 'box', 'boxes')} on {_count(written, 'image', 'images')}"
-        session.status.emit(f"accept stopped: {what} kept, as one edit" if cancelled else f"accepted {what}")
-
-    session.run_chunked(f"Accepting {_count(plan.boxes, 'box', 'boxes')} on {_count(len(intents), 'image', 'images')}",
-                        len(intents), step, end)
+    chunked.write_as_one_edit(
+        session, plan.intents, DESCRIPTION,
+        f"Accepting {_count(plan.boxes, 'box', 'boxes')} on {_count(len(plan.intents), 'image', 'images')}", said,
+        failed="the accept failed part-way", undone="nothing was accepted")

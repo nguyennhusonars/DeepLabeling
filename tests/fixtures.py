@@ -239,7 +239,8 @@ class FakePrompter:
     """Answers the UI's dialogs from preset values and records what was asked."""
 
     def __init__(self, *, taxonomy=True, yaml=None, folders=(), queue=None, text=None, class_name=None,
-                 weights=None, threshold=None, class_map=None, cancel_at=None, accept_queue=True):
+                 weights=None, threshold=None, class_map=None, cancel_at=None, accept_queue=True,
+                 reassign=None, accept_reassign=True):
         self.taxonomy, self.yaml, self.queue, self.text = taxonomy, yaml, queue, text
         self.class_name = class_name
         self.weights, self.threshold = weights, threshold
@@ -247,6 +248,8 @@ class FakePrompter:
         self.cancel_at = cancel_at          #: a progress is cancelled once it reaches this ({title: n}, or n)
         self.progresses: list[FakeProgress] = []
         self.accept_queue = accept_queue    #: the answer to the queue accept's confirmation
+        self.reassign = reassign            #: (from, to) the reassign dialog answers, or None
+        self.accept_reassign = accept_reassign
         self.folders = list(folders)
         self.errors: list[tuple[str, str]] = []
         self.asked: list[tuple] = []
@@ -289,6 +292,14 @@ class FakePrompter:
     def confirm_queue_accept(self, text):
         self.asked.append(("queue accept", text))
         return self.accept_queue
+
+    def ask_reassign(self, names, unnamed_ids):
+        self.asked.append(("reassign", tuple(names), tuple(unnamed_ids)))
+        return self.reassign
+
+    def confirm_reassign(self, text):
+        self.asked.append(("reassign question", text))
+        return self.accept_reassign
 
     def progress(self, title, total):
         at = self.cancel_at.get(title) if isinstance(self.cancel_at, dict) else self.cancel_at
