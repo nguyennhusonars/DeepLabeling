@@ -1,6 +1,6 @@
 # DeepLabeling — slice 5: bulk reassign and statistics
 
-**Status:** approved 2026-10-07 · plans 5a (bulk reassign) and 5b (statistics) next
+**Status:** approved 2026-10-07 · plan 5a (bulk reassign) implemented; 5b (statistics) next
 **Scope:** slice 5 of [the app foundation](2026-10-04-app-foundation.md#slices), the last:
 one class rewritten to another across a queue, as one edit; and the statistics of a queue,
 as tables and charts. Everything slices 1–4 built stays as it is, except where this spec
