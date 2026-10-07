@@ -115,3 +115,12 @@ def test_m_on_a_label_that_already_has_the_model_s_class_says_so(qtbot, window):
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_M)
     assert said.args == ["the label already has the model's class: D dismisses the finding"]
+
+
+def test_b_on_a_label_that_has_the_model_s_box_already_says_so(qtbot, window, ds):
+    findings(qtbot, window)
+    on(qtbot, window, FOUND[1])                              # camA/0001's car: the model's person is on it exactly
+    with qtbot.waitSignal(window.session.status) as said:
+        qtbot.keyClick(window, Qt.Key_B)
+    assert said.args == ["the label has the model's box already: D dismisses the finding"]
+    assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and window.session.current().key == FOUND[1]

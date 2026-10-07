@@ -175,3 +175,12 @@ def test_b_on_a_label_that_has_the_model_s_box_already_is_skipped_and_said(qtbot
     select(qtbot, window, FOUND_TWO[1:3])                                # the model's boxes are the labels'
     assert said(qtbot, window, Qt.Key_B) == "nothing changed; skipped 2 (it has the model's box already)"
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
+
+
+def test_the_class_picker_on_several_tiles_sets_each_label_s_class(qtbot, window, ds):
+    select(qtbot, window, FOUND_TWO[1:3])
+    window.prompter.class_name = "bus_m"
+    with qtbot.waitSignal(window.session.status) as signal:
+        window.actions["pick_class"].trigger()
+    assert signal.args == ["set 2 findings to bus_m, as one edit"]
+    assert read_exact(ds.lbl("camA/0001")) == "2 0.500000 0.500000 0.200000 0.300000\n2 0.250000 0.250000 0.100000 0.100000\n"

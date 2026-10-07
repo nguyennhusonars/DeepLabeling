@@ -303,6 +303,11 @@ class Editing(QObject):
         if box is None:
             self.session.status.emit("this finding has no model box")
             return
+        labels, f = self._current()[1], item.focus
+        index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
+        if index is not None and all(abs(a - b) < 5e-7 for a, b in zip(box, labels.lines[index].bbox)):
+            self.session.status.emit("the label has the model's box already: D dismisses the finding")
+            return
         if self._apply(Intent(item.entry.path, (SetBox(item.focus, box),), "take the model's box"), select=[]):
             self.session.move(1)
 
