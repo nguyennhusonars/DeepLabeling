@@ -9,7 +9,7 @@ grid. Slice 2 is built: model assist, from a model's predictions on screen to ac
 them across a queue. Slice 3 is built: filters by box size, overlap and where the model
 disagrees. Slice 4 is built: Find Bad, the labels the model disagrees with as a queue,
 fixed a key at a time in the full frame or many at once in a grid of crops. Slice 5 (bulk
-reassign, statistics, crop export) is next. The design and the plans are in
+reassign and statistics) is designed; plan 5a is next. The design and the plans are in
 [docs/design/](docs/design/).
 
 ```sh
