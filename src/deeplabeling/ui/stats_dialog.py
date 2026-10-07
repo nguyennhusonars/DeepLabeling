@@ -1,4 +1,4 @@
-"""Statistics of this queue… (docs/design/2026-10-07-bulk-and-stats.md#statistics): computed
+"""Statistics… (docs/design/2026-10-07-bulk-and-stats.md#statistics): computed
 on a worker over the queue's images, shown as tables that copy as TSV and as four charts.
 
 matplotlib (and numpy) are imported when the charts are first drawn, never at the app's start;

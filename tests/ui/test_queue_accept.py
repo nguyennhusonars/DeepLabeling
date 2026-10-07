@@ -55,7 +55,7 @@ def test_the_question_says_what_it_adds_and_what_it_skips():
     plan = QueueAccept(intents=(None,) * 567, boxes=1234, uninferred=89, unmapped=40, read_only=3, negative=12)
     assert queue_accept_question(plan) == (
         "Accept 1,234 boxes on 567 images?\n\n"
-        "Skipped: 89 not inferred; 12 negative samples (kept empty); 3 read-only; "
+        "Skipped: 89 not inferred; 12 negative samples (kept empty); 3 not editable; "
         "40 unmapped predictions.\n\n"
         "One edit: one undo takes it back. Nothing is marked reviewed.")
     one = QueueAccept(intents=(None,), boxes=1, uninferred=0, unmapped=0, read_only=0, negative=0)
@@ -90,7 +90,7 @@ def test_declined_nothing_is_written(qtbot, session, prompter, ds):
 def test_nothing_missing_says_so_without_asking(qtbot, session, prompter):
     session.model.set_conf(0.95)                            # above every prediction
     assert accepted(qtbot, session) == (
-        "nothing missing to accept; 8 not inferred; 1 negative sample (kept empty); 1 read-only")
+        "nothing missing to accept; 8 not inferred; 1 negative sample (kept empty); 1 not editable")
     assert not any(a[0] == "queue accept" for a in prompter.asked)
 
 

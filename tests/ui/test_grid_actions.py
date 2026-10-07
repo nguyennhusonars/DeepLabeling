@@ -86,7 +86,7 @@ def test_a_shared_label_file_is_skipped_and_the_rest_is_one_edit(qtbot, window, 
     twin = "camB/images/twin.jpg#0#wrong class"
     select(qtbot, window, [FOUND_TWO[0], twin])
     assert said(qtbot, window, Qt.Key_Delete) == ("deleted 1 finding's label; "
-                                                  "skipped 1 (read-only)")
+                                                  "skipped 1 (not editable)")
     assert read_exact(ds.lbl("camA/sub/0005")) == "" and read_exact(ds.lbl("camB/twin")).startswith("0 ")
 
 

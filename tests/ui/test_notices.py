@@ -108,3 +108,10 @@ def test_each_level_shows_its_icon_before_the_text(strip):
         strip.add(level, f"a {level}")
     assert [row.label.text() for row in strip.rows] == ["✖ a error", "⚠ a warning", "ℹ a info"]
     assert strip.texts() == ["a error", "a warning", "a info"]     # what was said, without the icon
+
+
+def test_a_notice_a_standing_one_already_says_is_not_shown_twice(strip):
+    image = Path("/d/a.jpg")
+    strip.add("error", "a.jpg: cannot decode (truncated) — not edited", image=image, key="decode:a.jpg")
+    strip.add("error", "a.jpg: cannot decode (truncated) — not edited", image=image)
+    assert len(strip.rows) == 1 and strip.rows[0].key == "decode:a.jpg"

@@ -1,4 +1,4 @@
-"""Accept missing boxes in this queue… (docs/design/2026-10-05-model-assist.md#accepting).
+"""Accept missing boxes… (docs/design/2026-10-05-model-assist.md#accepting).
 
 It looks at every image a chunk at a time, behind a progress dialog, and asks first. Then it
 writes a chunk at a time on the GUI thread's write path, as one edit that marks nothing. A cancel
@@ -23,7 +23,7 @@ def _skipped(plan: QueueAccept) -> list[str]:
     return [text for n, text in (
         (plan.uninferred, f"{plan.uninferred:,} not inferred"),
         (plan.negative, _count(plan.negative, "negative sample", "negative samples") + " (kept empty)"),
-        (plan.read_only, f"{plan.read_only:,} read-only"),
+        (plan.read_only, f"{plan.read_only:,} not editable"),
         (plan.unmapped, _count(plan.unmapped, "unmapped prediction", "unmapped predictions")),
     ) if n]
 

@@ -46,7 +46,7 @@ def test_a_build_is_given_the_model_once_it_is_ready(qtbot, session, weights):
 def test_the_queue_says_what_its_build_could_not_settle(qtbot, session):
     built(qtbot, session, ImageFilter(conditions=(Boxes((), w=(0, None), unit="px"),)))
     assert session.queue.left_out == {"could not be sized": {"bad/images/corrupt.jpg"}}
-    assert session.progress_text() == " · 1 unsized"
+    assert session.progress_text() == " · 1 without a size"
 
 
 def test_the_queue_counts_the_images_never_inferred(qtbot, session, weights):

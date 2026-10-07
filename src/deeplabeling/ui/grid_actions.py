@@ -25,7 +25,7 @@ def _act(session, items, describe, op_for) -> None:
     for item in items:
         labels, f = session.labels(item.entry), item.focus
         if not labels.editable:
-            skipped["read-only"] += 1
+            skipped["not editable"] += 1
             continue
         index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
         if index is None:

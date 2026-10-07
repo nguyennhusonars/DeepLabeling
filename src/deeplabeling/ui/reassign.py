@@ -1,4 +1,4 @@
-"""Reassign a class in this queue… (docs/design/2026-10-07-bulk-and-stats.md#bulk-reassign).
+"""Reassign a class… (docs/design/2026-10-07-bulk-and-stats.md#bulk-reassign).
 
 It asks From and To, looks at every image of the queue a chunk at a time behind a progress
 dialog, and asks first with the counts. Then it writes a chunk at a time on the GUI thread's
@@ -20,7 +20,7 @@ def _count(n: int, one: str, many: str) -> str:
 
 
 def _skipped(plan: Reassign) -> str:
-    return f"{plan.read_only:,} read-only" if plan.read_only else ""
+    return f"{plan.read_only:,} not editable" if plan.read_only else ""
 
 
 def reassign_question(plan: Reassign, source: str, target: str) -> str:

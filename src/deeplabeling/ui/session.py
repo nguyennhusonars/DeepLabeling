@@ -43,9 +43,9 @@ _UNREAD = object()      #: crop_of's size, when the caller has not read it
 
 #: What a build could not settle, as the queue chip says it.
 UNSETTLED = {
-    "could not be sized": lambda n: f"{n:,} unsized" ,
+    "could not be sized": lambda n: f"{n:,} without a size",
     "not inferred": lambda n: f"{n:,} not inferred",
-    "labels unreadable": lambda n: f"{n:,} unreadable",
+    "labels unreadable": lambda n: f"{n:,} with unreadable labels",
 }
 
 
@@ -694,7 +694,8 @@ class Session(QObject):
             elif error is not None and restoring.dropped:
                 self.notice.emit("error", str(error), None)     # a file changed since: it says what was dropped
             elif error is not None and restoring.checked < n:   # a file could not be read: nothing written
-                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error} — {verb} again", None)
+                self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error} — nothing {past}; "
+                                 f"{verb} again once fixed", None)
             elif error is not None:
                 restoring.stop()
                 self.notice.emit("error", f"cannot {verb} “{edit.description}”: {error} — {w:,} of {n:,} files {past}; "

@@ -12,7 +12,7 @@ from fixtures import FakePrompter, assert_only_changed, open_session, read_exact
 WRITTEN = {"camA/labels/0001.txt", "weird/labels/имя пробел.txt", "bad/labels/corrupt.txt",
            "bad/labels/ok.txt", "crlf/labels/c.txt", "seg/labels/poly1.txt", "seg/labels/mixed.txt"}
 QUESTION = ("Reassign 10 person boxes on 7 images to bus_l?\n\n"
-            "Skipped: 2 read-only.\n\n"
+            "Skipped: 2 not editable.\n\n"
             "One edit: one undo takes it back. Nothing is marked reviewed.")
 
 
@@ -39,7 +39,7 @@ def reassigned(qtbot, session):
 def test_it_asks_with_counts_writes_one_edit_and_marks_nothing(qtbot, session, prompter, ds):
     before = ds.snapshot()
     assert reassigned(qtbot, session) == ("reassigned 10 person boxes on 7 images to bus_l; "
-                                          "skipped 2 read-only")
+                                          "skipped 2 not editable")
     assert ("reassign question", QUESTION) in prompter.asked
     assert_only_changed(before, ds.snapshot(), WRITTEN)
     assert len(session.workspace.review.keys()) == 0
@@ -171,7 +171,7 @@ def test_an_undo_that_cannot_read_a_file_keeps_the_edit_and_says_so(qtbot, sessi
             qtbot.waitUntil(lambda: session.running is None, timeout=5000)
     finally:
         ds.lbl("camA/0001").chmod(0o644)
-    assert said.args[1].endswith("— undo again")
+    assert said.args[1].endswith("— nothing undone; undo again once fixed")
     assert session.workspace.history.depth == 1
 
 

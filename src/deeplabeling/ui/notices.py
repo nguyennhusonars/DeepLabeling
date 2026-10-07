@@ -65,6 +65,8 @@ class NoticeStrip(QWidget):
             self.clear_key(key)
         if not text:
             return
+        if key is None and any(r.text == text and r.image == image for r in self.rows if r.key is not None):
+            return                                  # a standing notice says it already
         for again in [r for r in self.rows if r.text == text and r.image == image and r.key is None]:
             self._remove(again)                     # said again: one row, back at the top
         row = NoticeRow(level, text, image, key, self)
