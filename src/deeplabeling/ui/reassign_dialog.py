@@ -15,7 +15,7 @@ def class_label(cls_id: int, names) -> str:
 class ReassignDialog(QDialog):
     def __init__(self, names, unnamed_ids=(), parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Reassign a class in this queue")
+        self.setWindowTitle("Reassign a class")
         self.source, self.target = QComboBox(), QComboBox()
         for cls_id in [*range(len(names)), *unnamed_ids]:
             self.source.addItem(class_label(cls_id, names), cls_id)

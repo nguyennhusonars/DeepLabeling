@@ -118,4 +118,4 @@ def test_set_aside_that_cannot_move_forbids_writing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(state.os, "replace", cannot)
     warning, writable = set_aside(bad, ValueError("bad"))
-    assert not writable and bad.read_bytes() == b"{not json" and "nothing will be saved" in warning
+    assert not writable and bad.read_bytes() == b"{not json" and "nothing saved" in warning

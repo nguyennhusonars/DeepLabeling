@@ -257,7 +257,7 @@ def test_the_mark_page_button_marks_the_tiles_in_view(qtbot, window):
     in_view = [k for k in in_view if session.thumbs.get(paths[k]) is not None]   # pictures shown
     qtbot.mouseClick(window.queue_panel.mark_button, Qt.LeftButton)
     assert window.session.workspace.review.keys() == frozenset(in_view)
-    assert window.state_bar.reviewed.full_text == f"Reviewed {len(in_view)} / 15"
+    assert window.state_bar.reviewed.full_text == f"✓ {len(in_view)}/15"
 
 
 def test_the_grid_button_in_the_panel_is_the_g_toggle(qtbot, window):
@@ -302,14 +302,14 @@ def test_mark_page_leaves_the_tiles_not_showing_their_picture(qtbot, grid, sessi
     session.thumbs.clear()                                  # as just after a jump: none decoded yet
     with qtbot.waitSignal(session.status) as said:
         grid.mark_page()
-    assert said.args == ["no tile in view shows its picture yet; nothing was marked"]
+    assert said.args == ["no tile in view has loaded yet: nothing marked"]
     assert not session.workspace.review.keys()
     session.thumbs.want([path[whole[0]]])                   # one of the two arrives
     qtbot.waitUntil(lambda: session.thumbs.get(path[whole[0]]) is not None)
     with qtbot.waitSignal(session.status) as said:
         grid.mark_page()
     assert session.workspace.review.keys() == frozenset([whole[0]])
-    assert said.args == ["marked 1 image reviewed; 1 tile showing no picture was left unmarked"]
+    assert said.args == ["✓ 1 image reviewed; 1 not shown yet, left unmarked"]
 
 
 def test_a_tile_reads_its_labels_once_and_a_thumbnail_repaints_only_its_tile(qtbot, grid, session, monkeypatch):

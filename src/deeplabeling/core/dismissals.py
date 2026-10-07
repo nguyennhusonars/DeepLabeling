@@ -48,7 +48,7 @@ class Dismissals:
             else:
                 bad += 1
         if bad:
-            self.warning = f"{bad} dismissal(s) in {self.path.name} could not be read and were skipped"
+            self.warning = f"{bad} unreadable dismissal(s) in {self.path.name} skipped"
 
     def has(self, rel: str, line: str, kind: str) -> bool:
         return (rel, line, kind) in self._items

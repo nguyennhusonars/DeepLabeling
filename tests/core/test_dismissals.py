@@ -55,7 +55,7 @@ def test_an_unreadable_file_is_kept_and_dismissals_start_empty(tmp_path):
 def test_a_bad_entry_is_skipped_and_said(tmp_path):
     (tmp_path / "dismissals.json").write_text('{"version": 1, "dismissed": [["a", "0 1 1 1 1", "wrong class"], ["b"]]}')
     d = dismissals(tmp_path)
-    assert d.snapshot() == {("a", "0 1 1 1 1", "wrong class")} and "1 dismissal" in d.warning
+    assert d.snapshot() == {("a", "0 1 1 1 1", "wrong class")} and "1 unreadable dismissal" in d.warning
 
 
 def test_a_workspace_keeps_and_saves_its_dataset_s_dismissals(ds):

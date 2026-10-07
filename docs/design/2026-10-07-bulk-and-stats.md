@@ -108,9 +108,9 @@ On a worker, from the label store and the header-only, EXIF-aware image sizes
 
 A click still opens the queue editor. The chip gains a menu (its arrow):
 
-- *Edit queue…*
-- *Reassign a class in this queue…*
-- *Statistics of this queue…*
+- *Edit…*
+- *Reassign a class…*
+- *Statistics…*
 
 ## Errors
 

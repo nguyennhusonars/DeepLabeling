@@ -55,20 +55,19 @@ def test_the_question_says_what_it_adds_and_what_it_skips():
     plan = QueueAccept(intents=(None,) * 567, boxes=1234, uninferred=89, unmapped=40, read_only=3, negative=12)
     assert queue_accept_question(plan) == (
         "Accept 1,234 boxes on 567 images?\n\n"
-        "Skipped: 89 images not inferred yet; 12 negative samples (an empty label file is "
-        "someone's decision); 3 images whose label file cannot be edited; "
-        "40 predictions of a class the map leaves out.\n\n"
-        "It is one edit: one undo takes it all back. Nothing is marked reviewed.")
+        "Skipped: 89 not inferred; 12 negative samples (kept empty); 3 not editable; "
+        "40 unmapped predictions.\n\n"
+        "One edit: one undo takes it back. Nothing is marked reviewed.")
     one = QueueAccept(intents=(None,), boxes=1, uninferred=0, unmapped=0, read_only=0, negative=0)
     assert queue_accept_question(one) == ("Accept 1 box on 1 image?\n\n"
-                                          "It is one edit: one undo takes it all back. Nothing is marked reviewed.")
+                                          "One edit: one undo takes it back. Nothing is marked reviewed.")
 
 
 def test_the_queue_accept_writes_one_edit_that_marks_nothing_and_undoes_whole(qtbot, session, prompter, ds):
     before = ds.snapshot()
-    assert accepted(qtbot, session) == "accepted 5 boxes on 5 images"
+    assert accepted(qtbot, session) == "✚ accepted 5 boxes on 5 images"
     [(_, text)] = [a for a in prompter.asked if a[0] == "queue accept"]
-    assert text.startswith("Accept 5 boxes on 5 images?\n\nSkipped: 8 images not inferred yet; 1 negative sample")
+    assert text.startswith("Accept 5 boxes on 5 images?\n\nSkipped: 8 not inferred; 1 negative sample")
     assert [p.title for p in prompter.progresses] == ["Looking at 15 images", "Accepting 5 boxes on 5 images"]
     assert_only_changed(before, ds.snapshot(), WRITTEN)
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + CAR_LINE
@@ -91,15 +90,14 @@ def test_declined_nothing_is_written(qtbot, session, prompter, ds):
 def test_nothing_missing_says_so_without_asking(qtbot, session, prompter):
     session.model.set_conf(0.95)                            # above every prediction
     assert accepted(qtbot, session) == (
-        "no missing boxes to accept in this queue; 8 images are not inferred yet; 1 negative sample "
-        "(an empty label file is someone's decision); 1 image whose label file cannot be edited")
+        "nothing missing to accept; 8 not inferred; 1 negative sample (kept empty); 1 not editable")
     assert not any(a[0] == "queue accept" for a in prompter.asked)
 
 
 def test_a_cancel_while_writing_keeps_the_chunks_written_as_one_edit(qtbot, session, prompter, ds):
     before = ds.snapshot()
     prompter.cancel_at = {"Accepting 5 boxes on 5 images": 2}
-    assert accepted(qtbot, session) == "accept stopped: 2 boxes on 2 images kept, as one edit"
+    assert accepted(qtbot, session) == "accept stopped: 2 boxes on 2 images kept (one edit)"
     assert_only_changed(before, ds.snapshot(), {"camA/labels/0001.txt", "camA/labels/0003.txt"})
     assert session.workspace.history.depth == 1
     session.undo()
@@ -110,7 +108,7 @@ def test_a_cancel_while_looking_writes_nothing(qtbot, session, prompter, ds, mon
     monkeypatch.setattr(queue_accept, "PLAN_BATCH", 1)
     prompter.cancel_at = 3
     before = ds.snapshot()
-    assert accepted(qtbot, session) == "accept cancelled: nothing was written"
+    assert accepted(qtbot, session) == "accept cancelled: nothing written"
     assert not any(a[0] == "queue accept" for a in prompter.asked)
     assert_only_changed(before, ds.snapshot(), set())
 
@@ -139,7 +137,7 @@ def test_without_a_model_or_a_whole_queue_it_says_why(qtbot, session):
     session.model.unload()
     with qtbot.waitSignal(session.status) as said:
         accept_queue(session)
-    assert said.args == ["no model is loaded"]
+    assert said.args == ["no model loaded"]
 
 
 def test_an_unexpected_error_while_looking_ends_the_run_and_says_so(qtbot, session, prompter, monkeypatch):
@@ -151,7 +149,7 @@ def test_an_unexpected_error_while_looking_ends_the_run_and_says_so(qtbot, sessi
     monkeypatch.setattr(session.workspace.predictions, "get", broken)
     with qtbot.waitSignal(session.notice, timeout=5000) as said:
         accept_queue(session)
-    assert said.args[1] == "the queue could not be looked at: DatabaseError: database disk image is malformed"
+    assert said.args[1] == "the queue could not be read: DatabaseError: database disk image is malformed"
     assert session.running is None and prompter.progresses[-1].closed
 
 
@@ -169,7 +167,7 @@ def test_files_that_cannot_be_put_back_are_said_to_stay_written(qtbot, session, 
         accept_queue(session)
     qtbot.waitUntil(lambda: session.running is None)
     assert said.args[1].startswith("the accept failed part-way: camA/images/0004.JPG: could not write")
-    assert "could not be put back and stay as written" in said.args[1]
+    assert "stay as written" in said.args[1]
     assert session.workspace.history.depth == 1               # undo puts them back once there is room
 
 
@@ -179,4 +177,4 @@ def test_a_queue_whose_build_failed_is_not_accepted_across(qtbot, session, ds):
     before = ds.snapshot()
     with qtbot.waitSignal(session.status) as said:
         accept_queue(session)
-    assert said.args == ["the queue's build failed: rebuild it first"] and ds.snapshot() == before
+    assert said.args == ["the queue's build failed — rebuild it first"] and ds.snapshot() == before

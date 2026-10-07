@@ -72,7 +72,7 @@ def test_a_digit_no_class_has_changes_nothing(qtbot, window, ds):
     click(window.canvas, PERSON)
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_9)
-    assert said.args == ["no class has the key 9"]
+    assert said.args == ["no class on key 9"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
 
 
@@ -166,7 +166,7 @@ def test_hiding_the_labels_clears_the_selection(qtbot, window, ds):
 def test_the_crosshair_is_a_layer_that_persists(qtbot, window, ds):
     window.actions["toggle_crosshair"].trigger()
     assert window.canvas.show_crosshair and window.session.settings.get(SHOW_CROSSHAIR) is True
-    assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions, crosshair"
+    assert window.state_bar.layers.full_text == "👁 labels · captions · predictions · crosshair"
     window.close()
     again = start(qtbot, [str(ds.yaml)])
     assert again.canvas.show_crosshair
@@ -308,7 +308,7 @@ def test_copying_polygons_says_they_were_left_out(qtbot, window):
     qtbot.keyClick(window, Qt.Key_A, Qt.ControlModifier)
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_C, Qt.ControlModifier)
-    assert said.args == ["copied 1 box; 1 polygon is not copied: a paste would make it a box"]
+    assert said.args == ["copied 1 box; 1 polygon not copied (a paste makes boxes)"]
 
 
 def test_a_paste_says_what_it_skipped(qtbot, window, ds):
@@ -316,7 +316,7 @@ def test_a_paste_says_what_it_skipped(qtbot, window, ds):
     go(qtbot, window, "camA/images/0003.jpg")
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_V, Qt.ControlModifier)
-    assert said.args == ["pasted 1 box; 2 lines were not boxes of this dataset's classes"]
+    assert said.args == ["pasted 1 box; 2 lines skipped: not this dataset's boxes"]
     assert len(lines(ds.lbl("camA/0003"))) == 1
 
 

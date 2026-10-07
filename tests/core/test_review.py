@@ -67,7 +67,7 @@ def test_an_unreadable_file_is_kept_and_marks_start_empty(tmp_path):
 def test_a_bad_entry_is_skipped_and_said(tmp_path):
     (tmp_path / "review.json").write_text('{"version": 1, "marks": {"a": 5, "b": "soon"}}')
     r = marks(tmp_path)
-    assert r.marks == {"a": 5} and "1 review mark" in r.warning
+    assert r.marks == {"a": 5} and "1 unreadable review mark" in r.warning
 
 
 def test_a_file_that_cannot_be_set_aside_is_never_overwritten(tmp_path, monkeypatch):

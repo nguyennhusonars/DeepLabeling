@@ -30,8 +30,8 @@ def files_table(stats: Stats) -> Table:
 def sizes_table(stats: Stats, names) -> Table:
     rows = [[class_label(cls, names)] + [str(stats.sizes[(cls, b)]) for b in range(len(SIZE_LABELS))]
             for cls in table_classes(stats, names)]
-    return ["class", *SIZE_LABELS], rows + [[f"images whose header cannot be read: {stats.unsized}"],
-                                           [f"boxes with no size or place that can be read: {stats.malformed}"]]
+    return ["class", *SIZE_LABELS], rows + [[f"unsized images: {stats.unsized}"],
+                                           [f"unreadable boxes: {stats.malformed}"]]
 
 
 def per_image_table(stats: Stats) -> Table:

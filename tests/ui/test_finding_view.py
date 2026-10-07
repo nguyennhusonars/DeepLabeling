@@ -103,7 +103,7 @@ def test_a_spotlight_is_drawn_dimmed_outside_and_plain_inside(qtbot):
 
 
 def test_the_status_bar_names_the_image_not_the_finding_key(qtbot, window):
-    assert window.status_text.text().startswith("camA/images/0001.jpg · 64 × 48 · item 2 / 3")
+    assert window.status_text.text().startswith("camA/images/0001.jpg · 64×48 · 2/3")
 
 
 def test_an_edit_beside_the_finding_redraws_once_and_keeps_the_spotlight(qtbot, window, monkeypatch):

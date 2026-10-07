@@ -28,7 +28,7 @@ def test_ids_the_yaml_does_not_name_raise_a_standing_notice(qtbot, ds):
     with qtbot.waitSignal(s.standing, timeout=5000,
                           check_params_cb=lambda key, text: key == OUT_OF_RANGE and bool(text)) as caught:
         s.open(ds.yaml)
-    assert "2 boxes in 1 image have class ids (-1, 99)" in caught.args[1] and "data.yaml" in caught.args[1]
+    assert "2 boxes in 1 image: class ids (-1, 99)" in caught.args[1] and "data.yaml" in caught.args[1]
     s.close()
 
 
@@ -49,7 +49,7 @@ def test_the_end_of_the_queue_is_said_not_passed(session):
     status = record(session.status)
     session.go_to(session.queue.items[-1].key)
     assert not session.move(1)
-    assert status[-1] == ("the end of the queue",)
+    assert status[-1] == ("end of the queue",)
 
 
 def test_toggle_reviewed(session):
@@ -100,7 +100,7 @@ def test_an_undecodable_image_is_never_edited(qtbot, session, ds):
     notices, before = record(session.notice), ds.snapshot()
     session.apply(Intent(ds.img("bad/corrupt.jpg"), (AddBox(0, BOX),), "draw"))
     assert_only_changed(before, ds.snapshot(), set())
-    assert "cannot be decoded" in notices[-1][1]
+    assert "cannot decode" in notices[-1][1]
 
 
 def test_a_queue_and_its_cursor_survive_a_reopen(qtbot, ds):
@@ -335,7 +335,7 @@ def test_a_build_that_fails_says_so_and_stops_building(qtbot, session):
         session.set_queue(ImageFilter(conditions=(Broken(),)))
     assert session.queue.complete and session.queue.failed == "OSError: the disk went away"
     assert session.progress_text() == " · build failed"
-    assert ("error", "building the queue failed: OSError: the disk went away", None) in notices
+    assert ("error", "the queue could not be built: OSError: the disk went away", None) in notices
 
 
 def test_marking_many_marks_each_once_and_says_how_many(session):
@@ -344,8 +344,8 @@ def test_marking_many_marks_each_once_and_says_how_many(session):
     session.toggle_reviewed()                               # the first is reviewed already
     assert session.mark_reviewed(keys) == 2
     assert session.workspace.review.keys() == frozenset(keys)
-    assert said[-1] == ("marked 2 images reviewed",)
-    assert session.mark_reviewed(keys) == 0 and said[-1] == ("these were all reviewed already",)
+    assert said[-1] == ("✓ 2 images reviewed",)
+    assert session.mark_reviewed(keys) == 0 and said[-1] == ("all reviewed already",)
 
 
 
@@ -357,7 +357,7 @@ def test_a_label_file_made_read_only_says_so_in_its_row_and_the_inspector(qtbot,
         session = open_session(qtbot, ds.yaml)
         item = session.current()
         assert item.entry.rel == "camA/images/0001.jpg" and session.badge(item) == "read-only · 2 boxes"
-        assert Inspector._state_text(session.labels(item.entry)) == "read-only: 0001.txt is read-only, so it is not edited here"
+        assert Inspector._state_text(session.labels(item.entry)) == "🔒 0001.txt is read-only: not edited"
         session.close()
     finally:
         ds.lbl("camA/0001").chmod(0o644)

@@ -46,7 +46,7 @@ def test_a_build_is_given_the_model_once_it_is_ready(qtbot, session, weights):
 def test_the_queue_says_what_its_build_could_not_settle(qtbot, session):
     built(qtbot, session, ImageFilter(conditions=(Boxes((), w=(0, None), unit="px"),)))
     assert session.queue.left_out == {"could not be sized": {"bad/images/corrupt.jpg"}}
-    assert session.progress_text() == " · 1 image could not be sized"
+    assert session.progress_text() == " · 1 without a size"
 
 
 def test_the_queue_counts_the_images_never_inferred(qtbot, session, weights):
@@ -64,7 +64,7 @@ UNLABELLED = ImageFilter(conditions=(ModelDisagrees("unlabelled"),))
 def test_without_a_model_a_model_queue_is_empty_and_says_it_needs_one(qtbot, session, weights):
     with qtbot.waitSignal(session.notice) as said:
         session.set_queue(UNLABELLED)
-    assert said.args[1] == "this queue needs a model: load one"
+    assert said.args[1] == "this queue needs a model — load one"
     assert len(session.queue) == 0 and session.progress_text() == " · needs a model"
     load(qtbot, session, weights, found={"0001.jpg": [CAR]})
     qtbot.waitUntil(lambda: session.queue.complete, timeout=5000)
@@ -159,7 +159,7 @@ def test_a_model_queue_says_it_waits_on_the_chip_the_panel_and_the_canvas(qtbot,
     window.session.set_queue(UNLABELLED)                       # no model at all
     assert window.state_bar.queue.full_text.endswith(" · needs a model")
     assert window.queue_panel.title.text() == "Queue · 0 · needs a model"
-    assert window.canvas.message == "This queue needs a model: load one."
+    assert window.canvas.message == "◎ This queue needs a model — load one"
     gate = threading.Event()
     window.session.model.factory = lambda path: (gate.wait(5), FakePredictor(path))[1]
     window.session.model.load(weights)                         # loading: now it waits
@@ -168,7 +168,7 @@ def test_a_model_queue_says_it_waits_on_the_chip_the_panel_and_the_canvas(qtbot,
     assert window.canvas.message == "Waiting for the model…"
     gate.set()
     qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)
-    qtbot.waitUntil(lambda: window.canvas.message == "No images in this queue.", timeout=5000)
+    qtbot.waitUntil(lambda: window.canvas.message == "No images in this queue", timeout=5000)
     window.close()
 
 
@@ -195,7 +195,7 @@ def test_on_a_model_queue_the_model_chip_counts_what_the_queue_left_out(qtbot, s
     qtbot.waitUntil(lambda: all(session.model.predictions(session.queue.items[i].entry) is not None
                                 for i in range(3)), timeout=5000)
     built(qtbot, session, UNLABELLED)
-    assert model_text(session.model).endswith(" · 1 / 13 inferred")      # 1 in the queue, 12 left out
+    assert model_text(session.model).endswith(" · 1/13 inferred")      # 1 in the queue, 12 left out
 
 
 def test_closing_the_dataset_leaves_its_model_queue_alone(qtbot, ds, weights):

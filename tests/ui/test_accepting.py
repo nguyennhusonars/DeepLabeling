@@ -54,7 +54,7 @@ def test_a_accepts_the_missing_mapped_predictions_and_says_what_it_skipped(qtbot
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_A)
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 + CAR_LINE
-    assert said.args == ["accepted 1 prediction; 1 of a class the map leaves out was skipped"]
+    assert said.args == ["✚ 1 accepted; 1 unmapped skipped"]
     assert window.session.workspace.review.is_marked("camA/images/0001.jpg")
     qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
@@ -68,7 +68,7 @@ def test_double_clicking_a_prediction_accepts_that_one_even_when_covered(qtbot, 
 def test_double_clicking_an_unmapped_prediction_says_so_and_adds_nothing(qtbot, window, ds):
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.mouseDClick(window.canvas.viewport(), Qt.LeftButton, pos=vp(window.canvas, 6.4, 43.2))
-    assert said.args == ["“human” is not mapped to a class of this dataset: map it in the class map"]
+    assert said.args == ["“human” is unmapped — map it in the class map"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
 
 
@@ -76,7 +76,7 @@ def test_p_hides_the_predictions_and_the_choice_persists(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_P)
     assert not any(map(is_car_green, colours_at(window, 48, 38.4)))
     assert window.session.settings.get(SHOW_PREDICTIONS) is False
-    assert window.state_bar.layers.full_text == "Layers: labels, captions"
+    assert window.state_bar.layers.full_text == "👁 labels · captions"
 
 
 def test_with_the_labels_hidden_predictions_show_but_none_is_accepted(qtbot, window, ds):
@@ -107,7 +107,7 @@ def test_without_a_model_a_says_so(qtbot, window):
     assert window.canvas._predictions == []
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_A)
-    assert said.args == ["no model is loaded"]
+    assert said.args == ["no model loaded"]
 
 
 def test_before_the_model_has_looked_a_says_so(qtbot, window, tmp_path):
@@ -120,12 +120,12 @@ def test_before_the_model_has_looked_a_says_so(qtbot, window, tmp_path):
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_A)
     gate.set()
-    assert said.args == ["the model has not looked at this image yet"]
+    assert said.args == ["not inferred yet"]
 
 
 def test_with_the_predictions_hidden_a_accepts_nothing_and_says_why(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_P)
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_A)
-    assert said.args == ["the predictions are hidden: press P to show them"]
+    assert said.args == ["predictions hidden — P shows them"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001

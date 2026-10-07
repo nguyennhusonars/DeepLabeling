@@ -1,4 +1,4 @@
-"""Reassign a class in this queue… (docs/design/2026-10-07-bulk-and-stats.md#bulk-reassign).
+"""Reassign a class… (docs/design/2026-10-07-bulk-and-stats.md#bulk-reassign).
 
 It asks From and To, looks at every image of the queue a chunk at a time behind a progress
 dialog, and asks first with the counts. Then it writes a chunk at a time on the GUI thread's
@@ -20,7 +20,7 @@ def _count(n: int, one: str, many: str) -> str:
 
 
 def _skipped(plan: Reassign) -> str:
-    return _count(plan.read_only, "image", "images") + " whose label file cannot be edited" if plan.read_only else ""
+    return f"{plan.read_only:,} not editable" if plan.read_only else ""
 
 
 def reassign_question(plan: Reassign, source: str, target: str) -> str:
@@ -28,7 +28,7 @@ def reassign_question(plan: Reassign, source: str, target: str) -> str:
             f"{_count(len(plan.intents), 'image', 'images')} to {target}?\n\n")
     if plan.read_only:
         text += f"Skipped: {_skipped(plan)}.\n\n"
-    return text + "It is one edit: one undo takes it all back. Nothing is marked reviewed."
+    return text + "One edit: one undo takes it back. Nothing is marked reviewed."
 
 
 def reassign_queue(session) -> None:
@@ -63,13 +63,13 @@ def reassign_queue(session) -> None:
     def end(progress, cancelled, error) -> None:
         skipped = f"; skipped {_skipped(plan)}" if plan.read_only else ""
         if error is not None and session.workspace is ws:
-            session.notice.emit("error", f"the queue could not be looked at: {error}", None)
+            session.notice.emit("error", f"the queue could not be read: {error}", None)
         elif cancelled or session.workspace is not ws:
-            session.status.emit("reassign cancelled: nothing was written")
+            session.status.emit("reassign cancelled: nothing written")
         elif not plan.intents:
             session.status.emit(f"no {source_name} boxes in this queue{skipped}")
         elif not session.prompter.confirm_reassign(reassign_question(plan, source_name, target_name)):
-            session.status.emit("reassign cancelled: nothing was written")
+            session.status.emit("reassign cancelled: nothing written")
         else:
             # A stray id repaired: once written, the warning about it is counted again.
             after = session.recount_unnamed if not 0 <= source < len(names) else None
@@ -82,10 +82,10 @@ def _write(session, plan: Reassign, description: str, source: str, target: str, 
     def said(written, cancelled) -> str:
         boxes = sum(len(intent.ops) for intent in written)
         if cancelled and not written:
-            return "reassign cancelled: nothing was written"
+            return "reassign cancelled: nothing written"
         if cancelled:
             return (f"reassign stopped: {_count(boxes, 'box', 'boxes')} on "
-                    f"{_count(len(written), 'image', 'images')} kept, as one edit")
+                    f"{_count(len(written), 'image', 'images')} kept (one edit)")
         return (f"reassigned {_count(boxes, source + ' box', source + ' boxes')} on "
                 f"{_count(len(written), 'image', 'images')} to {target}{skipped}")
 

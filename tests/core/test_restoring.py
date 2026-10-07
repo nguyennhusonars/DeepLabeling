@@ -79,7 +79,7 @@ def test_a_file_changed_since_refuses_the_whole_undo_before_anything_is_written(
     ds.lbl("camB/0001").write_bytes(b"0 0.1 0.1 0.1 0.1\n")   # changed by hand since
     undoing = editor.restoring(undo=True)
     undoing.check(2)
-    with pytest.raises(Refused, match="0001.txt has changed since.*dropped from the history"):
+    with pytest.raises(Refused, match="0001.txt changed since.*dropped from the history"):
         undoing.check(2)
     assert_only_changed(after, ds.snapshot(), {"camB/labels/0001.txt"})
     assert not editor.history.can_undo
@@ -156,7 +156,7 @@ def test_a_file_changed_between_its_check_and_its_write_drops_the_rest_and_says_
     undoing.check(4)                                        # every file as the accept left it
     undoing.write(1)
     ds.lbl("camA/0004").write_text("2 0.1 0.1 0.1 0.1\n")   # someone else, between check and write
-    with pytest.raises(Refused, match="2 of 4 files were undone; the rest has been dropped from the history"):
+    with pytest.raises(Refused, match="2 of 4 files undone; the rest dropped from the history"):
         undoing.write(4)
     assert undoing.dropped
     assert editor.history.peek_undo() is None              # nothing left that undo would refuse

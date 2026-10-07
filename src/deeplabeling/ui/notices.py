@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 COLORS = {"error": "#5c1f1f", "warning": "#5c4a1f", "info": "#1f3a5c"}
+ICONS = {"error": "✖", "warning": "⚠", "info": "ℹ"}
 #: The most notices shown at once; older ones go first.
 MAX_ROWS = 6
 #: A notice longer than this shows shortened, the whole of it in its tooltip: a 6,000-character
@@ -30,7 +31,8 @@ class NoticeRow(QFrame):
                            " QLabel { color: #f0f0f0; }")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 3, 4, 3)
-        self.label = QLabel(text if len(text) <= MAX_CHARS else text[:MAX_CHARS].rstrip() + " …")
+        shown = text if len(text) <= MAX_CHARS else text[:MAX_CHARS].rstrip() + " …"
+        self.label = QLabel(f"{ICONS.get(level, ICONS['info'])} {shown}")
         self.setToolTip(text)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -63,6 +65,8 @@ class NoticeStrip(QWidget):
             self.clear_key(key)
         if not text:
             return
+        if key is None and any(r.text == text and r.image == image for r in self.rows if r.key is not None):
+            return                                  # a standing notice says it already
         for again in [r for r in self.rows if r.text == text and r.image == image and r.key is None]:
             self._remove(again)                     # said again: one row, back at the top
         row = NoticeRow(level, text, image, key, self)

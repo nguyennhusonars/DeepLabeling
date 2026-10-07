@@ -1,4 +1,4 @@
-"""Accept missing boxes in this queue… (docs/design/2026-10-05-model-assist.md#accepting).
+"""Accept missing boxes… (docs/design/2026-10-05-model-assist.md#accepting).
 
 It looks at every image a chunk at a time, behind a progress dialog, and asks first. Then it
 writes a chunk at a time on the GUI thread's write path, as one edit that marks nothing. A cancel
@@ -11,7 +11,7 @@ from ..core.assist import QueueAccept, plan_queue_accept
 from ..core.predstore import image_stamp
 from . import chunked
 
-DESCRIPTION = "accept missing boxes in this queue"
+DESCRIPTION = "accept missing boxes"
 PLAN_BATCH = 500        #: images looked at per event-loop turn: label files and store rows, read
 
 
@@ -21,11 +21,10 @@ def _count(n: int, one: str, many: str) -> str:
 
 def _skipped(plan: QueueAccept) -> list[str]:
     return [text for n, text in (
-        (plan.uninferred, _count(plan.uninferred, "image", "images") + " not inferred yet"),
-        (plan.negative, _count(plan.negative, "negative sample", "negative samples")
-         + " (an empty label file is someone's decision)"),
-        (plan.read_only, _count(plan.read_only, "image", "images") + " whose label file cannot be edited"),
-        (plan.unmapped, _count(plan.unmapped, "prediction", "predictions") + " of a class the map leaves out"),
+        (plan.uninferred, f"{plan.uninferred:,} not inferred"),
+        (plan.negative, _count(plan.negative, "negative sample", "negative samples") + " (kept empty)"),
+        (plan.read_only, f"{plan.read_only:,} not editable"),
+        (plan.unmapped, _count(plan.unmapped, "unmapped prediction", "unmapped predictions")),
     ) if n]
 
 
@@ -34,7 +33,7 @@ def queue_accept_question(plan: QueueAccept) -> str:
     skipped = _skipped(plan)
     if skipped:
         text += "Skipped: " + "; ".join(skipped) + ".\n\n"
-    return text + "It is one edit: one undo takes it all back. Nothing is marked reviewed."
+    return text + "One edit: one undo takes it back. Nothing is marked reviewed."
 
 
 def accept_queue(session) -> None:
@@ -43,7 +42,7 @@ def accept_queue(session) -> None:
     if ws is None or session._busy():
         return
     if model.state != "ready":
-        session.status.emit("the model is still loading" if model.state == "loading" else "no model is loaded")
+        session.status.emit("the model is loading" if model.state == "loading" else "no model loaded")
         return
     why = session.queue_not_whole()
     if why:
@@ -72,13 +71,11 @@ def accept_queue(session) -> None:
 
     def end(progress, cancelled, error) -> None:
         if error is not None and session.workspace is ws:
-            session.notice.emit("error", f"the queue could not be looked at: {error}", None)
+            session.notice.emit("error", f"the queue could not be read: {error}", None)
         elif cancelled or session.workspace is not ws:
-            session.status.emit("accept cancelled: nothing was written")
+            session.status.emit("accept cancelled: nothing written")
         elif not plan.intents:
-            session.status.emit("; ".join(["no missing boxes to accept in this queue"]
-                                          + [s.replace(" not inferred yet", " are not inferred yet")
-                                             for s in _skipped(plan)]))
+            session.status.emit("; ".join(["nothing missing to accept", *_skipped(plan)]))
         elif session.prompter.confirm_queue_accept(queue_accept_question(plan)):
             _write(session, plan)
 
@@ -90,8 +87,8 @@ def _write(session, plan: QueueAccept) -> None:
         boxes = sum(len(intent.ops) for intent in written)
         what = f"{_count(boxes, 'box', 'boxes')} on {_count(len(written), 'image', 'images')}"
         if cancelled and not written:
-            return "accept cancelled: nothing was written"
-        return f"accept stopped: {what} kept, as one edit" if cancelled else f"accepted {what}"
+            return "accept cancelled: nothing written"
+        return f"accept stopped: {what} kept (one edit)" if cancelled else f"✚ accepted {what}"
 
     chunked.write_as_one_edit(
         session, plan.intents, DESCRIPTION,

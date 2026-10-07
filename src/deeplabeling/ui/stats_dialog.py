@@ -1,4 +1,4 @@
-"""Statistics of this queue… (docs/design/2026-10-07-bulk-and-stats.md#statistics): computed
+"""Statistics… (docs/design/2026-10-07-bulk-and-stats.md#statistics): computed
 on a worker over the queue's images, shown as tables that copy as TSV and as four charts.
 
 matplotlib (and numpy) are imported when the charts are first drawn, never at the app's start;
@@ -124,7 +124,7 @@ class StatsDialog(QDialog):
     def _failed(self, token, why: str) -> None:
         if token and token[0] is self._job:
             self._job = None
-            self.status.setText(f"the statistics could not be computed: {why}")
+            self.status.setText(f"statistics failed: {why}")
 
     def closeEvent(self, event) -> None:
         if self._job is not None:

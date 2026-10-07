@@ -79,7 +79,7 @@ def test_a_file_that_is_no_model_is_refused_with_its_name(tmp_path, monkeypatch)
     monkeypatch.setitem(sys.modules, "ultralytics", type("M", (), {"YOLO": Loader}))
     weights = tmp_path / "broken.pt"
     weights.write_bytes(b"x")
-    with pytest.raises(ModelError, match="broken.pt could not be loaded: invalid load key"):
+    with pytest.raises(ModelError, match="broken.pt failed to load: invalid load key"):
         UltralyticsPredictor(weights)
 
 

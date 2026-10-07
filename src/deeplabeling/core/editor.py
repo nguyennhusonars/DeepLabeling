@@ -138,8 +138,7 @@ class EditBatch:
             raise cause
         self._editor.history.push(Edit(tuple(kept), images, self._description))
         self._editor._history_changed()
-        raise Refused(f"{cause}; {len(kept)} file(s) could not be put back and stay as written: "
-                      "undo puts them back once that is fixed") from cause
+        raise Refused(f"{cause}; {len(kept)} file(s) stay as written — undo them once that is fixed") from cause
 
     def _edit(self) -> Edit | None:
         if not self._changes:
@@ -195,8 +194,7 @@ class Restoring:
             self._editor.history.drop(self.edit, undo=self.undo)
             self._editor._history_changed()
             self.dropped = True
-            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e}. "
-                          "It has been dropped from the history.") from e
+            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e} — dropped from the history") from e
         self.checked += len(chunk)
 
     def write(self, n: int) -> tuple[Path, ...]:
@@ -223,8 +221,8 @@ class Restoring:
             self._editor._history_changed()
             self.dropped = True
             past = "undone" if self.undo else "redone"
-            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e}. {done:,} of {self.total:,} files "
-                          f"were {past}; the rest has been dropped from the history") from e
+            raise Refused(f"cannot {self._verb()} “{self.edit.description}”: {e} — {done:,} of {self.total:,} files "
+                          f"{past}; the rest dropped from the history") from e
         finally:
             if images:
                 self._editor._labels_changed(tuple(images))

@@ -68,9 +68,9 @@ def test_arrow_keys_page_without_marking(qtbot, window):
 def test_space_marks_and_moves_and_k_toggles(qtbot, window):
     qtbot.keyClick(window, Qt.Key_Space)
     assert window.session.current().key == "camA/images/0002.jpg"
-    assert window.state_bar.reviewed.full_text == "Reviewed 1 / 15"
+    assert window.state_bar.reviewed.full_text == "✓ 1/15"
     qtbot.keyClick(window, Qt.Key_K)
-    assert window.state_bar.reviewed.full_text == "Reviewed 2 / 15"
+    assert window.state_bar.reviewed.full_text == "✓ 2/15"
 
 
 def test_n_marks_a_missing_image_negative_and_ctrl_z_takes_it_back(qtbot, window, ds):
@@ -78,7 +78,7 @@ def test_n_marks_a_missing_image_negative_and_ctrl_z_takes_it_back(qtbot, window
     qtbot.waitUntil(lambda: window._shown == ds.img("camA/0003.jpg"))     # edits wait for the image
     qtbot.keyClick(window, Qt.Key_N)
     assert ds.lbl("camA/0003").read_bytes() == b""
-    assert "↶ 1" in window.status_text.text()
+    assert "↶1" in window.status_text.text()
     qtbot.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
     assert not ds.lbl("camA/0003").exists()
 
@@ -91,23 +91,23 @@ def test_a_refusal_appears_in_the_visible_notice_strip(qtbot, window):
 
 
 def test_ids_the_yaml_does_not_name_stay_on_screen(qtbot, window):
-    qtbot.waitUntil(lambda: any("does not name" in t for t in window.notices.texts()))
+    qtbot.waitUntil(lambda: any("not named in" in t for t in window.notices.texts()))
     assert window.notices.isVisible()
 
 
 def test_an_undecodable_image_says_so_on_the_canvas_and_the_strip(qtbot, window):
     window.session.go_to("bad/images/corrupt.jpg")
     qtbot.waitUntil(lambda: window.canvas.message.startswith("Cannot decode bad/images/corrupt.jpg"))
-    assert any("cannot be decoded" in t for t in window.notices.texts())
+    assert any("cannot decode" in t for t in window.notices.texts())
 
 
 def test_layers_toggle_from_their_keys_and_persist(qtbot, window, ds):
     qtbot.keyClick(window, Qt.Key_L)
     assert not window.canvas.show_labels and window.canvas.caption_items() == []
     assert window.session.settings.get(SHOW_LABELS) is False
-    assert window.state_bar.layers.full_text == "Layers: captions, predictions"
+    assert window.state_bar.layers.full_text == "👁 captions · predictions"
     qtbot.keyClick(window, Qt.Key_T)
-    assert window.state_bar.layers.full_text == "Layers: predictions"
+    assert window.state_bar.layers.full_text == "👁 predictions"
     window.close()
     again = start(qtbot, [str(ds.yaml)])
     assert not again.actions["toggle_labels"].isChecked() and not again.canvas.show_labels
@@ -137,7 +137,7 @@ def test_the_queue_chip_edits_the_queue(qtbot, ds):
     with qtbot.waitSignal(w.session.queueDone, timeout=5000):
         qtbot.mouseClick(w.state_bar.queue, Qt.LeftButton)
     assert len(w.session.queue) == 3
-    assert w.state_bar.queue.full_text.startswith("Queue: has a bus_m · 3 · 3 left")
+    assert w.state_bar.queue.full_text.startswith("☰ has a bus_m · 3 left of 3")
     w.close()
 
 
@@ -218,7 +218,7 @@ def test_a_closed_panel_can_be_shown_again(qtbot, window):
     action = next(a for a in window.panels_menu.actions() if a.text() == "Queue")
     action.trigger()
     qtbot.waitUntil(window.queue_dock.isVisible)
-    assert window.state_bar.layers.full_text == "Layers: labels, captions, predictions"
+    assert window.state_bar.layers.full_text == "👁 labels · captions · predictions"
 
 
 
@@ -244,7 +244,7 @@ def test_written_is_stamped_only_when_files_are_written(qtbot, ds):
     w._written = None
     ds.lbl("camA/0001").write_text("1 0.1 0.1 0.1 0.1\n")     # changed outside: the undo is refused
     s.undo()
-    assert w._written is None and "written" not in w.status_text.text()
+    assert w._written is None and "🖫" not in w.status_text.text()
     w.close()
 
 
@@ -262,9 +262,9 @@ def test_arriving_at_an_image_the_model_failed_on_says_so_once(qtbot, ds, tmp_pa
     s.go_to("camA/images/0002.jpg")
     s.go_to("camA/images/0001.jpg")
     s.go_to("camA/images/0002.jpg")
-    said = [t for t in w.notices.texts() if "could not predict" in t]
-    assert said == ["camA/images/0002.jpg: the model could not predict (0002.jpg: CUDA out of memory)"]
+    said = [t for t in w.notices.texts() if "prediction failed" in t]
+    assert said == ["camA/images/0002.jpg: prediction failed — 0002.jpg: CUDA out of memory"]
     w.notices.clear()                                        # dismissed
     s.cursorChanged.emit()                                   # the same image, re-shown (a rebuild)
-    assert not [t for t in w.notices.texts() if "could not predict" in t]
+    assert not [t for t in w.notices.texts() if "prediction failed" in t]
     w.close()

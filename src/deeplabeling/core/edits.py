@@ -118,7 +118,7 @@ def materialize(before: bytes | None, ops: Sequence[Op], *,
                 class_ok: Callable[[int], bool]) -> bytes:
     """The file's new bytes once `ops` are applied to `before`. Refuses rather than guesses."""
     if not ops:
-        raise Refused("there is nothing to change")
+        raise Refused("nothing to change")
     if any(isinstance(op, CreateEmpty) for op in ops):
         if len(ops) > 1:
             raise Refused("marking an image negative cannot be combined with other edits")
@@ -136,13 +136,12 @@ def materialize(before: bytes | None, ops: Sequence[Op], *,
             continue
         index = locate_line(lines, op.ref.cls_id, op.ref.bbox, op.ref.index)
         if index is None:
-            raise Refused(f"a class-{op.ref.cls_id} box changed in the file since it was shown, "
-                          "or more than one line matches it; nothing was written")
+            raise Refused(f"the class-{op.ref.cls_id} box changed since shown, or matches twice: not written")
         if index in targets:
             raise Refused("two changes were aimed at the same box")
         if isinstance(op, SetBox):
             if lines[index].is_polygon:
-                raise Refused("a polygon cannot be moved or resized here; reclassify or delete it")
+                raise Refused("a polygon cannot be moved or resized — reclassify or delete it")
             _check_box(op.bbox)
         elif isinstance(op, SetClass):
             _check_class(op.cls_id, class_ok)

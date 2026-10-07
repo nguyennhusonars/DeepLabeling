@@ -26,12 +26,10 @@ def _names(names) -> str:
 
 
 def taxonomy_question(last_source: str, last_names, source: str, names) -> str:
-    return (f"These label files were last opened with {Path(last_source).name} "
-            f"({len(last_names)} classes: {_names(last_names)}).\n\n"
-            f"You are opening them with {Path(source).name} "
-            f"({len(names)} classes: {_names(names)}).\n\n"
-            "A label file's ids mean one class list. Under the wrong one every name shown is "
-            "wrong, and every edit writes wrong ids. Open with the new class list?")
+    return (f"Last opened with {Path(last_source).name}: {len(last_names)} classes ({_names(last_names)}).\n"
+            f"Now opening with {Path(source).name}: {len(names)} classes ({_names(names)}).\n\n"
+            "Under the wrong class list every name shown is wrong, and every edit writes wrong ids.\n\n"
+            "Open with the new class list?")
 
 
 class Progress:
@@ -109,7 +107,7 @@ class QtPrompter:
 
     def ask_threshold(self, current: float) -> float | None:
         value, ok = QInputDialog.getDouble(self.parent, "Confidence threshold",
-                                           "Show and accept predictions at or above:",
+                                           "Show and accept at or above:",
                                            current, FLOOR, 1.0, 2)
         return value if ok else None
 
@@ -131,11 +129,11 @@ class QtPrompter:
             dialog.deleteLater()
 
     def confirm_reassign(self, text: str) -> bool:
-        answer = QMessageBox.question(self.parent, "Reassign a class in this queue", text,
+        answer = QMessageBox.question(self.parent, "Reassign a class", text,
                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         return answer == QMessageBox.Yes
 
     def confirm_queue_accept(self, text: str) -> bool:
-        answer = QMessageBox.question(self.parent, "Accept missing boxes in this queue", text,
+        answer = QMessageBox.question(self.parent, "Accept missing boxes", text,
                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         return answer == QMessageBox.Yes

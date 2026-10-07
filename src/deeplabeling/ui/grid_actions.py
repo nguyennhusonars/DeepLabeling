@@ -25,11 +25,11 @@ def _act(session, items, describe, op_for) -> None:
     for item in items:
         labels, f = session.labels(item.entry), item.focus
         if not labels.editable:
-            skipped["its label file cannot be edited"] += 1
+            skipped["not editable"] += 1
             continue
         index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
         if index is None:
-            skipped["its label changed since"] += 1
+            skipped["changed since"] += 1
             continue
         op, why = op_for(item, labels.lines[index])
         if op is None:
@@ -42,7 +42,7 @@ def _act(session, items, describe, op_for) -> None:
         if session.apply_many([Intent(image, tuple(o), description) for image, o in ops.items()],
                               description) is None:
             return                                  # refused: a notice says why
-        text = f"{description}, as one edit"
+        text = description
     else:
         text = "nothing changed"
     if skipped:
@@ -54,9 +54,9 @@ def take_model_class(session, items) -> None:
     def op(item, line):
         f = item.finding
         if f.model_cls is None or f.kind == "not an object":
-            return None, "the model has no class for it"
+            return None, "no model class"
         if f.model_cls == item.focus.cls_id:
-            return None, "it already has the model's class"
+            return None, "already the model's class"
         return SetClass(item.focus, f.model_cls), ""
     _act(session, items, lambda n: f"took the model's class on {_count(n, 'finding', 'findings')}", op)
 
@@ -65,11 +65,11 @@ def take_model_box(session, items) -> None:
     def op(item, line):
         box = item.finding.model_box and clamp_box(item.finding.model_box)
         if box is None:
-            return None, "it has no model box"
+            return None, "no model box"
         if line.is_polygon:
-            return None, "it is a polygon"              # a box would replace its outline
+            return None, "a polygon"              # a box would replace its outline
         if all(abs(a - b) < 5e-7 for a, b in zip(box, line.bbox)):
-            return None, "it has the model's box already"
+            return None, "already the model's box"
         return SetBox(item.focus, box), ""
     _act(session, items, lambda n: f"took the model's box on {_count(n, 'finding', 'findings')}", op)
 
@@ -82,7 +82,7 @@ def delete(session, items) -> None:
 def set_class(session, items, cls_id: int, name: str) -> None:
     def op(item, line):
         if item.focus.cls_id == cls_id:
-            return None, f"it is a {name} already"
+            return None, f"already {name}"
         return SetClass(item.focus, cls_id), ""
     _act(session, items, lambda n: f"set {_count(n, 'finding', 'findings')} to {name}", op)
 

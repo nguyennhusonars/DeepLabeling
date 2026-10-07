@@ -65,7 +65,7 @@ def test_ctrl_click_selects_several_tiles_and_a_plain_click_one(qtbot, window):
 
 def test_m_on_several_tiles_is_one_edit_that_marks_nothing(qtbot, window, ds):
     select(qtbot, window, FOUND_TWO[:3])
-    assert said(qtbot, window, Qt.Key_M) == "took the model's class on 3 findings, as one edit"
+    assert said(qtbot, window, Qt.Key_M) == "took the model's class on 3 findings"
     assert read_exact(ds.lbl("camA/sub/0005")) == "1 0.750000 0.750000 0.150000 0.150000\n"
     assert read_exact(ds.lbl("camA/0001")) == "1 0.500000 0.500000 0.200000 0.300000\n0 0.250000 0.250000 0.100000 0.100000\n"
     session = window.session
@@ -77,22 +77,22 @@ def test_m_on_several_tiles_is_one_edit_that_marks_nothing(qtbot, window, ds):
 
 def test_a_tile_the_key_cannot_apply_to_is_skipped_and_counted(qtbot, window, ds):
     select(qtbot, window, [FOUND_TWO[0], FOUND_TWO[3]])                 # camB/0001: not an object
-    assert said(qtbot, window, Qt.Key_M) == ("took the model's class on 1 finding, as one edit; "
-                                             "skipped 1 (the model has no class for it)")
+    assert said(qtbot, window, Qt.Key_M) == ("took the model's class on 1 finding; "
+                                             "skipped 1 (no model class)")
     assert read_exact(ds.lbl("camB/0001")) == CAMB_0001
 
 
 def test_a_shared_label_file_is_skipped_and_the_rest_is_one_edit(qtbot, window, ds):
     twin = "camB/images/twin.jpg#0#wrong class"
     select(qtbot, window, [FOUND_TWO[0], twin])
-    assert said(qtbot, window, Qt.Key_Delete) == ("deleted 1 finding's label, as one edit; "
-                                                  "skipped 1 (its label file cannot be edited)")
+    assert said(qtbot, window, Qt.Key_Delete) == ("deleted 1 finding's label; "
+                                                  "skipped 1 (not editable)")
     assert read_exact(ds.lbl("camA/sub/0005")) == "" and read_exact(ds.lbl("camB/twin")).startswith("0 ")
 
 
 def test_a_class_key_on_several_tiles_sets_each_label_s_class(qtbot, window, ds):
     select(qtbot, window, FOUND_TWO[1:3])
-    assert said(qtbot, window, Qt.Key_3) == "set 2 findings to bus_m, as one edit"
+    assert said(qtbot, window, Qt.Key_3) == "set 2 findings to bus_m"
     assert read_exact(ds.lbl("camA/0001")) == "2 0.500000 0.500000 0.200000 0.300000\n2 0.250000 0.250000 0.100000 0.100000\n"
 
 
@@ -101,7 +101,7 @@ def test_b_on_several_tiles_takes_each_model_box(qtbot, window, ds):
     window.session.set_queue(Findings())
     qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)
     select(qtbot, window, FOUND_TWO[1:3])
-    assert said(qtbot, window, Qt.Key_B) == "took the model's box on 2 findings, as one edit"
+    assert said(qtbot, window, Qt.Key_B) == "took the model's box on 2 findings"
     assert read_exact(ds.lbl("camA/0001")) == "0 0.510000 0.500000 0.200000 0.300000\n1 0.260000 0.250000 0.100000 0.100000\n"
 
 
@@ -126,8 +126,8 @@ def test_a_finding_whose_line_changed_since_is_skipped(qtbot, window, ds):
     item = session.queue.items[session.queue.index_of(FOUND_TWO[1])]           # camA/0001's person
     session.workspace.editor.apply(Intent(item.entry.path, (SetClass(item.focus, 1),), "fixed elsewhere"))
     select(qtbot, window, FOUND_TWO[:2])
-    assert said(qtbot, window, Qt.Key_Delete) == ("deleted 1 finding's label, as one edit; "
-                                                  "skipped 1 (its label changed since)")
+    assert said(qtbot, window, Qt.Key_Delete) == ("deleted 1 finding's label; "
+                                                  "skipped 1 (changed since)")
     assert read_exact(ds.lbl("camA/sub/0005")) == ""
     assert read_exact(ds.lbl("camA/0001")).startswith("1 0.500000 0.500000")
 
@@ -166,14 +166,14 @@ def test_b_skips_a_polygon_and_the_rest_is_one_edit(qtbot, window, ds):
     window.session.set_queue(Findings())
     qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)
     select(qtbot, window, [FOUND_TWO[0], "seg/images/poly1.jpg#0#wrong class"])
-    assert said(qtbot, window, Qt.Key_B) == ("took the model's box on 1 finding, as one edit; "
-                                             "skipped 1 (it is a polygon)")
+    assert said(qtbot, window, Qt.Key_B) == ("took the model's box on 1 finding; "
+                                             "skipped 1 (a polygon)")
     assert read_exact(ds.lbl("camA/sub/0005")) == "2 0.760000 0.750000 0.150000 0.150000\n"
 
 
 def test_b_on_a_label_that_has_the_model_s_box_already_is_skipped_and_said(qtbot, window, ds):
     select(qtbot, window, FOUND_TWO[1:3])                                # the model's boxes are the labels'
-    assert said(qtbot, window, Qt.Key_B) == "nothing changed; skipped 2 (it has the model's box already)"
+    assert said(qtbot, window, Qt.Key_B) == "nothing changed; skipped 2 (already the model's box)"
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001
 
 
@@ -182,5 +182,5 @@ def test_the_class_picker_on_several_tiles_sets_each_label_s_class(qtbot, window
     window.prompter.class_name = "bus_m"
     with qtbot.waitSignal(window.session.status) as signal:
         window.actions["pick_class"].trigger()
-    assert signal.args == ["set 2 findings to bus_m, as one edit"]
+    assert signal.args == ["set 2 findings to bus_m"]
     assert read_exact(ds.lbl("camA/0001")) == "2 0.500000 0.500000 0.200000 0.300000\n2 0.250000 0.250000 0.100000 0.100000\n"

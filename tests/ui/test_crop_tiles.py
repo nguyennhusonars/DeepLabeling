@@ -90,7 +90,7 @@ def test_mark_page_is_not_offered_on_crops(qtbot, window):
     assert not panel.mark_button.isVisible()
     with qtbot.waitSignal(window.session.status) as said:
         panel.mark_page()
-    assert said.args == ["the tiles are crops, not whole images: nothing was marked"]
+    assert said.args == ["crop tiles are not whole images: nothing marked"]
     assert len(window.session.workspace.review.keys()) == 0
     window.session.set_queue(window.session.queue.source.scope)
     qtbot.waitUntil(lambda: window.session.queue.complete, timeout=5000)

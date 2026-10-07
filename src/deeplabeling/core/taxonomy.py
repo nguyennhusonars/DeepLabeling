@@ -25,8 +25,7 @@ class OutOfRange:
         ids = f"class id {shown}" if len(self.ids) == 1 else f"class ids ({shown})"
         boxes = f"{self.boxes} box" if self.boxes == 1 else f"{self.boxes} boxes"
         images = f"{self.images} image" if self.images == 1 else f"{self.images} images"
-        return (f"{boxes} in {images} {'has' if self.boxes == 1 else 'have'} {ids} that "
-                f"{dataset.source.name} does not name. Is it the right yaml for these labels?")
+        return f"{boxes} in {images}: {ids} not named in {dataset.source.name} — the wrong yaml?"
 
 
 def count_out_of_range(dataset: Dataset, store: LabelStore,

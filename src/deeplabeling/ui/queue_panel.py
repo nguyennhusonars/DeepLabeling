@@ -367,7 +367,7 @@ class QueuePanel(QWidget):
         if not self.grid or session.workspace is None or session.queue is None:
             return
         if self._on_crops():
-            session.status.emit("the tiles are crops, not whole images: nothing was marked")
+            session.status.emit("crop tiles are not whole images: nothing marked")
             return
         whole = self.visible_keys()
         if not whole:
@@ -377,7 +377,7 @@ class QueuePanel(QWidget):
         items = session.queue.items
         shown = [key for key in whole if session.thumbs.get(items[session.queue.index_of(key)].entry.path)]
         if not shown:
-            session.status.emit("no tile in view shows its picture yet; nothing was marked")
+            session.status.emit("no tile in view has loaded yet: nothing marked")
             return
         session.mark_reviewed(shown, left=len(whole) - len(shown))
 

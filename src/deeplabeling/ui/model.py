@@ -169,7 +169,7 @@ class _Worker(QThread):
             self.loadFailed.emit(path, str(e))
             return
         except Exception as e:                        # whatever a factory raises: say it
-            self.loadFailed.emit(path, f"{Path(path).name} could not be loaded: {e}")
+            self.loadFailed.emit(path, f"{Path(path).name} failed to load: {e}")
             return
         self._predictor = predictor
         self.loaded.emit(path, predictor.key, predictor.names)
@@ -185,7 +185,7 @@ class _Worker(QThread):
         try:
             store.put(key, rel, stamp, found)
         except Exception as e:                        # the disk full, the store broken
-            self.failed.emit(path, f"its predictions could not be stored: {e}")
+            self.failed.emit(path, f"predictions not stored: {e}")
             return
         if self._known is not None:
             self._known[rel] = stamp                  # a pass under way skips it
@@ -209,7 +209,7 @@ class _Worker(QThread):
                 stamp = image_stamp(path)
             except OSError as e:
                 self._failed += 1
-                self.failed.emit(path, f"it cannot be read: {e.strerror or e}")
+                self.failed.emit(path, f"unreadable: {e.strerror or e}")
                 continue
             if self._known.get(rel) != stamp:
                 todo.append((rel, path, stamp))
@@ -223,7 +223,7 @@ class _Worker(QThread):
             try:
                 store.put_many(key, rows)
             except Exception as e:                    # the disk full, the store broken
-                answers = [Failure(f"its predictions could not be stored: {e}")] * len(todo)
+                answers = [Failure(f"predictions not stored: {e}")] * len(todo)
             for (rel, path, stamp), found in zip(todo, answers):
                 if isinstance(found, Failure):
                     self._failed += 1
@@ -274,7 +274,7 @@ class ModelSession(QObject):
     def load(self, path) -> None:
         """Load a weights file on the thread; `changed` says when it is ready or failed."""
         if self.passing:
-            self.session.notice.emit("info", "inferring stopped: another model was loaded", None)
+            self.session.notice.emit("info", "inferring stopped: another model loaded", None)
         self.state, self.path, self.key, self.names, self.error = "loading", Path(path), None, (), ""
         self.class_map, self._failures, self.passing = None, {}, False
         if self._worker is None:
@@ -424,8 +424,7 @@ class ModelSession(QObject):
             entry = items[j].entry
             if entry.path in self._failures:
                 if j == i and entry.path != before:  # failed out of sight: said on arrival
-                    session.notice.emit("error", f"{entry.rel}: the model could not predict "
-                                        f"({self._failures[entry.path]})", entry.path)
+                    session.notice.emit("error", f"{entry.rel}: prediction failed — {self._failures[entry.path]}", entry.path)
                 continue
             try:
                 stamp = image_stamp(entry.path)
@@ -474,9 +473,9 @@ class ModelSession(QObject):
         if not self.passing:
             return                                    # queued before a switch: a pass of a dataset gone
         self.passing = False
-        images = f"{inferred:,} image" + ("" if inferred == 1 else "s")
-        self.session.notice.emit("info", f"inferring stopped: {images} inferred, {failed:,} failed"
-                                 if cancelled else f"inferred {images}; {failed:,} failed", None)
+        said = f"{inferred:,} inferred, {failed:,} failed"
+        self.session.notice.emit("warning" if failed else "info",
+                                 f"inferring stopped: {said}" if cancelled else said, None)
         self.changed.emit()
 
     def _current(self, path):
@@ -505,5 +504,5 @@ class ModelSession(QObject):
         self._failures[path] = why
         item = self.session.current()
         if item is not None and item.entry.path == path:
-            self.session.notice.emit("error", f"{item.entry.rel}: the model could not predict ({why})", path)
+            self.session.notice.emit("error", f"{item.entry.rel}: prediction failed — {why}", path)
         self.failed.emit(path, why)

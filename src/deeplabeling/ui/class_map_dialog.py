@@ -37,7 +37,7 @@ class ClassMapDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Each model class is accepted as the dataset class chosen here."))
+        layout.addWidget(QLabel("Model class → the dataset class it is accepted as"))
         layout.addWidget(scroll)
         layout.addWidget(self.seed_button)
         layout.addWidget(buttons)

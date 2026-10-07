@@ -65,7 +65,7 @@ def test_b_takes_the_model_s_box_keeping_the_class(qtbot, window, ds):
 def test_a_key_that_cannot_apply_says_why_and_changes_nothing(qtbot, window, ds):
     findings(qtbot, window)
     on(qtbot, window, FOUND[2])                              # camB/0001: not an object, no model box
-    for key, why in ((Qt.Key_M, "the model has no class for it"), (Qt.Key_B, "this finding has no model box")):
+    for key, why in ((Qt.Key_M, "the model gives no class"), (Qt.Key_B, "no model box")):
         with qtbot.waitSignal(window.session.status) as said:
             qtbot.keyClick(window, key)
         assert said.args == [why]
@@ -81,7 +81,7 @@ def test_d_dismisses_moves_on_and_d_again_takes_it_back(qtbot, window, ds):
     on(qtbot, window, FOUND[0])
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_D)
-    assert said.args == ["the dismissal is taken back"] and window.session.finding_state(first) == ""
+    assert said.args == ["undismissed"] and window.session.finding_state(first) == ""
     assert window.session.current().key == FOUND[0]
     qtbot.keyClick(window, Qt.Key_D)
     path = window.session.workspace.dismissals.path
@@ -114,7 +114,7 @@ def test_m_on_a_label_that_already_has_the_model_s_class_says_so(qtbot, window):
     on(qtbot, window, "weird/images/имя пробел.jpg#0#weakly seen")         # the person, seen at 0.5
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_M)
-    assert said.args == ["the label already has the model's class: D dismisses the finding"]
+    assert said.args == ["already the model's class — D dismisses"]
 
 
 def test_b_on_a_label_that_has_the_model_s_box_already_says_so(qtbot, window, ds):
@@ -122,5 +122,5 @@ def test_b_on_a_label_that_has_the_model_s_box_already_says_so(qtbot, window, ds
     on(qtbot, window, FOUND[1])                              # camA/0001's car: the model's person is on it exactly
     with qtbot.waitSignal(window.session.status) as said:
         qtbot.keyClick(window, Qt.Key_B)
-    assert said.args == ["the label has the model's box already: D dismisses the finding"]
+    assert said.args == ["already the model's box — D dismisses"]
     assert read_exact(ds.lbl("camA/0001")) == CAMA_0001 and window.session.current().key == FOUND[1]

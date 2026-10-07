@@ -131,7 +131,7 @@ keeps raw model ids and translates on read
 - **Double-click a prediction** to accept it as a label of its mapped class, even one an
   existing label overlaps: the user chose that box.
 - **`A`** accepts every missing prediction on the image on screen, as one edit.
-- **Accept missing boxes in this queue…** (the model chip's menu) first shows what it will
+- **Accept missing boxes…** (the model chip's menu) first shows what it will
   do: *N boxes on M images; K images are not inferred yet and are skipped*. It skips
   negative samples too, an empty label file being someone's decision that the image has
   no objects, and read-only label files, and counts both. It is then
@@ -159,7 +159,7 @@ keeps raw model ids and translates on read
 
 ### A dataset pass
 
-- **Infer this queue** (the model chip's menu) infers the queue's images, in queue order,
+- **Infer the queue** (the model chip's menu) infers the queue's images, in queue order,
   that the store has no row for. Running it again resumes where it stopped.
 - **It is cancelled** from the same menu, and the image on screen always goes first.
 - **Progress shows in the model chip** (`inferring 1,234 / 45,252`). The end says how
@@ -189,7 +189,7 @@ keeps raw model ids and translates on read
   inferred`, the count being the queue's images that have a row. Without a model:
   `Model: none · load one`.
 - **Its menu:** load a model…, recent models, the threshold, the class map…, infer this
-  queue or cancel the pass, and accept missing boxes in this queue….
+  queue or cancel the pass, and accept missing boxes….
 - **The last model used** is remembered for each opening and loaded again when the
   dataset opens.
 

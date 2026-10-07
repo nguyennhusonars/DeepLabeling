@@ -112,7 +112,7 @@ def test_what_cannot_be_put_back_stays_recorded_so_undo_can_retry(editor, ds, mo
         real(path, data)
 
     monkeypatch.setattr(store_module, "write_atomic", full_from_the_third_write)
-    with pytest.raises(Refused, match="could not be put back"):
+    with pytest.raises(Refused, match="stay as written"):
         editor.apply_many(adds(ds), "accept")               # 0001 and 0003 written, then full
     monkeypatch.setattr(store_module, "write_atomic", real)  # space freed
     assert editor.history.depth == 1

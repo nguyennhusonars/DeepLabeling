@@ -34,7 +34,7 @@ def session(qtbot, ds, prompter, small_chunks):
 def accepted(session, ds):
     before = ds.snapshot()
     session.workspace.editor.apply_many([Intent(ds.img(n), (AddBox(1, BOX),), "accept") for n in IMAGES],
-                                        "accept missing boxes in this queue")
+                                        "accept missing boxes")
     return before, ds.snapshot()
 
 
@@ -55,13 +55,13 @@ def test_a_big_edit_is_undone_and_redone_in_chunks_while_the_window_keeps_turnin
     timer.stop()
     assert_only_changed(before, ds.snapshot(), set())
     progress = prompter.progresses[-1]
-    assert progress.title == "Undoing accept missing boxes in this queue" and progress.total == 10
+    assert progress.title == "Undoing accept missing boxes" and progress.total == 10
     assert progress.values == sorted(progress.values) and progress.values[-1] == 10 and progress.closed
     assert len(ticks) >= 3                                   # the event loop ran between chunks
     with qtbot.waitSignal(session.status) as said:
         session.redo()
         qtbot.waitUntil(lambda: finished(session))
-    assert said.args == ["redid accept missing boxes in this queue: 5 files"]
+    assert said.args == ["↷ accept missing boxes: 5 files"]
     assert_only_changed(after, ds.snapshot(), set())
 
 
@@ -71,7 +71,7 @@ def test_a_cancelled_undo_keeps_what_it_wrote_as_an_edit_of_its_own(qtbot, sessi
     with qtbot.waitSignal(session.status, timeout=5000) as said:
         session.undo()
         qtbot.waitUntil(lambda: finished(session))
-    assert said.args == ["undo stopped: 2 of 5 files undone; the rest is still in the history"]
+    assert said.args == ["undo stopped at 2 of 5 files; undo again for the rest"]
     assert_only_changed(after, ds.snapshot(), {"camA/labels/0001.txt", "camA/labels/0003.txt"})
     history = session.workspace.history
     assert len(history.peek_undo().changes) == 3 and len(history.peek_redo().changes) == 2
@@ -97,7 +97,7 @@ def test_a_write_failing_part_way_says_so_and_keeps_the_rest_for_a_retry(qtbot, 
         session.undo()
         qtbot.waitUntil(lambda: finished(session))
     assert "No space left on device" in said.args[1]
-    assert said.args[1].endswith("3 of 5 files were undone; the rest is still in the history: undo again")
+    assert said.args[1].endswith("3 of 5 files undone; undo again for the rest")
     monkeypatch.setattr(store_module, "write_atomic", real)
     session.undo()
     qtbot.waitUntil(lambda: finished(session))
@@ -109,10 +109,10 @@ def test_nothing_else_edits_while_it_runs(qtbot, session, ds, accepted):
     session.undo()
     with qtbot.waitSignal(session.status) as said:
         assert session.apply(Intent(ds.img("camA/0002.jpg"), (AddBox(0, BOX),), "draw")) is None
-    assert said.args == ["wait: undoing accept missing boxes in this queue is under way"]
+    assert said.args == ["wait — undoing accept missing boxes"]
     with qtbot.waitSignal(session.status) as said:
         session.undo()                                      # a second undo, pressed meanwhile
-    assert said.args == ["wait: undoing accept missing boxes in this queue is under way"]
+    assert said.args == ["wait — undoing accept missing boxes"]
     qtbot.waitUntil(lambda: finished(session))
     assert session.workspace.history.can_redo and not session.workspace.history.can_undo
 

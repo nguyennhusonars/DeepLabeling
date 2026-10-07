@@ -177,7 +177,7 @@ class Editing(QObject):
         info = class_with_hotkey(self.classes(), key)
         if info is None:
             if self.session.workspace is not None:
-                self.session.status.emit(f"no class has the key {key}")
+                self.session.status.emit(f"no class on key {key}")
             return
         self.choose_class(info)
 
@@ -227,14 +227,14 @@ class Editing(QObject):
         if not current:
             return None
         if not self.canvas.show_predictions:
-            self.session.status.emit("the predictions are hidden: press P to show them")
+            self.session.status.emit("predictions hidden — P shows them")
             return None
         if model.state != "ready":
-            self.session.status.emit("the model is still loading" if model.state == "loading"
-                                     else "no model is loaded")
+            self.session.status.emit("the model is loading" if model.state == "loading"
+                                     else "no model loaded")
             return None
         if self._predicted is None or self._predicted[0] != current[0] or self._predicted[1] is None:
-            self.session.status.emit("the model has not looked at this image yet")
+            self.session.status.emit("not inferred yet")
             return None
         return self._predicted
 
@@ -247,11 +247,9 @@ class Editing(QObject):
         n = len(intent.ops) if intent is not None else 0
         if intent is not None and not self._apply(intent, select=_last(n)):
             return
-        said = (f"accepted {n} prediction" if n == 1 else f"accepted {n} predictions") if n else \
-            "no missing predictions to accept"
+        said = f"✚ {n} accepted" if n else "nothing missing to accept"
         if unmapped:
-            said += (f"; 1 of a class the map leaves out was skipped" if unmapped == 1 else
-                     f"; {unmapped} of classes the map leaves out were skipped")
+            said += f"; {unmapped:,} unmapped skipped"
         self.session.status.emit(said)
 
     def accept_prediction(self, index: int) -> None:
@@ -265,8 +263,7 @@ class Editing(QObject):
         if intent is None:
             names = self.session.model.names
             name = names[chosen.pred.cls] if 0 <= chosen.pred.cls < len(names) else str(chosen.pred.cls)
-            self.session.status.emit(f"“{name}” is not mapped to a class of this dataset: "
-                                     "map it in the class map")
+            self.session.status.emit(f"“{name}” is unmapped — map it in the class map")
             return
         self._apply(intent, select=_last(1))
 
@@ -285,10 +282,10 @@ class Editing(QObject):
         if item is None:
             return
         if item.finding.model_cls is None or item.finding.kind == "not an object":
-            self.session.status.emit("the model has no class for it")
+            self.session.status.emit("the model gives no class")
             return
         if item.finding.model_cls == item.focus.cls_id:         # weakly seen, as what it is
-            self.session.status.emit("the label already has the model's class: D dismisses the finding")
+            self.session.status.emit("already the model's class — D dismisses")
             return
         intent = Intent(item.entry.path, (SetClass(item.focus, item.finding.model_cls),), "take the model's class")
         if self._apply(intent, select=[]):
@@ -301,12 +298,12 @@ class Editing(QObject):
             return
         box = item.finding.model_box and actions.clamp_box(item.finding.model_box)
         if box is None:
-            self.session.status.emit("this finding has no model box")
+            self.session.status.emit("no model box")
             return
         labels, f = self._current()[1], item.focus
         index = locate_line(labels.lines, f.cls_id, f.bbox, f.index)
         if index is not None and all(abs(a - b) < 5e-7 for a, b in zip(box, labels.lines[index].bbox)):
-            self.session.status.emit("the label has the model's box already: D dismisses the finding")
+            self.session.status.emit("already the model's box — D dismisses")
             return
         if self._apply(Intent(item.entry.path, (SetBox(item.focus, box),), "take the model's box"), select=[]):
             self.session.move(1)
@@ -362,8 +359,7 @@ class Editing(QObject):
             n = len(text.splitlines())
             said.append(f"copied {n} box" if n == 1 else f"copied {n} boxes")
         if polygons:
-            said.append("1 polygon is not copied: a paste would make it a box" if polygons == 1 else
-                        f"{polygons} polygons are not copied: a paste would make them boxes")
+            said.append(f"{polygons} polygon{'s' if polygons > 1 else ''} not copied (a paste makes boxes)")
         if said:
             self.session.status.emit("; ".join(said))
 
@@ -379,13 +375,12 @@ class Editing(QObject):
             text, _ = actions.remap_classes(text, copied[1], dataset.names)
         intent = actions.paste(current[0], text, dataset.known)
         if intent is None:
-            self.session.status.emit("the clipboard holds no boxes to paste")
+            self.session.status.emit("no boxes on the clipboard")
             return
         n = len(intent.ops)
         if self._apply(intent, select=_last(n)):
             said = f"pasted {n} box" if n == 1 else f"pasted {n} boxes"
             skipped = lines - n
             if skipped:
-                said += (f"; 1 line was not a box of this dataset's classes" if skipped == 1 else
-                         f"; {skipped} lines were not boxes of this dataset's classes")
+                said += f"; {skipped} line{'s' if skipped > 1 else ''} skipped: not this dataset's boxes"
             self.session.status.emit(said)

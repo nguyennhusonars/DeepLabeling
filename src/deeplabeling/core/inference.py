@@ -113,7 +113,7 @@ class UltralyticsPredictor:
 
             model = YOLO(str(path))
         except Exception as e:                      # whatever the file or the library raises
-            raise ModelError(f"{path.name} could not be loaded: {e}") from e
+            raise ModelError(f"{path.name} failed to load: {e}") from e
         if model.task != "detect":
             raise ModelError(f"{path.name} is a {model.task} model, not a detection model")
         self.key = model_key(path)
