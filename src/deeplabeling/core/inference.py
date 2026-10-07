@@ -99,6 +99,8 @@ class UltralyticsPredictor:
 
     def __init__(self, weights, device: str | None = None):
         path = Path(weights)
+        if not path.is_file():                      # ultralytics would download an official asset of the name
+            raise ModelError(f"{path.name} is not there: {path.parent}")
         try:
             from ultralytics import YOLO
 

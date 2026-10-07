@@ -152,3 +152,10 @@ def test_a_closed_predictor_lets_go_of_its_model_and_its_decoders(predictor, tmp
     with pytest.raises(ModelError, match="closed"):
         predictor.predict([tmp_path / "a.jpg"])
     predictor.close()                                       # twice is harmless
+
+
+def test_a_weights_file_that_is_not_there_is_refused_before_ultralytics_sees_it(tmp_path):
+    from deeplabeling.core.inference import ModelError, UltralyticsPredictor
+
+    with pytest.raises(ModelError, match=r"^yolov8n\.pt is not there"):
+        UltralyticsPredictor(tmp_path / "yolov8n.pt")       # an official asset name: never downloaded

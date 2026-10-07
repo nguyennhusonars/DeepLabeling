@@ -345,9 +345,12 @@ class ModelSession(QObject):
         stored = self.session.workspace.opening_settings.get(MODEL_PATH)
         if stored and Path(stored).is_file():
             self.load(stored)
-        elif self.key is not None:
-            self.class_map = load_class_map(self.session.workspace.root_settings, self.names,
-                                            self.session.workspace.dataset.names)
+        elif self.key is not None:                  # loaded before this dataset opened: it is this one's now
+            ws = self.session.workspace
+            self.class_map = load_class_map(ws.root_settings, self.names, ws.dataset.names)
+            ws.opening_settings.set(MODEL_PATH, str(self.path))
+            self._known = set(ws.predictions.inferred(self.key))
+            self.session.saver.schedule()
             self.changed.emit()
 
     def release(self) -> None:

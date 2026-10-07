@@ -338,7 +338,9 @@ class MainWindow(QMainWindow):
         if recent:
             menu.addSeparator()
         for path in map(Path, recent):
-            menu.addAction(f"{path.name} — {path.parent}", lambda p=path: model.load(p))
+            there = path.is_file()                  # a file gone is shown, never handed to the loader
+            menu.addAction(f"{path.name} — {path.parent}" + ("" if there else " (missing)"),
+                           lambda p=path: model.load(p)).setEnabled(there)
         menu.addSeparator()
         menu.addAction("Threshold…", self.ask_threshold).setEnabled(ws is not None)
         menu.addAction("Class map…", self.edit_class_map).setEnabled(ws is not None and model.state == "ready")
