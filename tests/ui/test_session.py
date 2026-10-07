@@ -361,3 +361,17 @@ def test_a_label_file_made_read_only_says_so_in_its_row_and_the_inspector(qtbot,
         session.close()
     finally:
         ds.lbl("camA/0001").chmod(0o644)
+
+
+def test_holding_an_arrow_leaves_no_backlog_of_skipped_decodes(qtbot, ds):
+    import time
+
+    s = open_session(qtbot, ds.yaml)
+    s.images.clear()
+    slow = s.images._decode
+    s.images._decode = lambda p: (time.sleep(0.3), slow(p))[1]
+    for _ in range(len(s.queue) - 1):
+        s.move(1)                                           # an arrow held down
+    waiting = {p for p, job in s.images._pending.items() if not job.cancelled}
+    assert waiting <= {item.entry.path for item in s.queue.items[-4:]}      # the screen and its neighbours
+    s.close()

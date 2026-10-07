@@ -385,7 +385,9 @@ class Session(QObject):
             labels = self.workspace.store.get(item.entry.path)
             self._seen = (item.entry.path, labels.raw, labels.state)
             i, items = self.queue.position(), self.queue.items
-            self.images.keep([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
+            # want, not keep: an arrow held down passes images whose decodes, still waiting,
+            # are cancelled -- otherwise the image on screen waits behind every one skipped.
+            self.images.want([items[j].entry.path for j in (i, i + 1, i + 2, i - 1)
                               if 0 <= j < len(items)])
         self.cursorChanged.emit()
 
