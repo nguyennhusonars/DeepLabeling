@@ -74,7 +74,7 @@ def test_the_new_rows_build_their_conditions(qtbot, dataset):
     dialog.size_unit.setCurrentText("%")
     dialog.overlap_mode.setCurrentText("same class")
     dialog.overlap_lo.setText("0.99")
-    dialog.model_mode.setCurrentText("predictions nobody labelled")
+    dialog.model_mode.setCurrentText("unlabelled predictions")
     assert dialog.filter() == ImageFilter(conditions=(
         Boxes(("car",), w=(None, 10), unit="%"), Overlap("same", 0.99, 1.0),
         ModelDisagrees("unlabelled", 0.5, (0.4, 1.0))))
@@ -92,15 +92,15 @@ def test_a_size_with_any_class_is_a_size_of_any_box(qtbot, dataset):
     (lambda d: d.size_w_lo.setText("abc"), "Box size — width: “abc” is not a number"),
     (lambda d: (d.class_mode.setCurrentText("lacks"), d.classes.item(0).setCheckState(Qt.Checked),
                 d.size_w_hi.setText("10")),
-     "Box size — a size is of boxes an image has: choose has, or any class"),
+     "Box size — needs Classes: has, or any class"),
     (lambda d: (d.overlap_mode.setCurrentText("any class"), d.overlap_hi.setText("1.5")),
-     "Overlapping labels — IoU: the upper end cannot be above 1"),
+     "Overlap — IoU: the upper end cannot be above 1"),
     (lambda d: (d.model_mode.setCurrentText("either"), d.model_lo.setText("0.05")),
      "Model — confidence: the lower end cannot be below 0.1"),
     (lambda d: (d.model_mode.setCurrentText("either"), d.model_iou.setText("")),
      "Model — matching IoU: “” is not a number"),
     (lambda d: (d.overlap_mode.setCurrentText("same class"), d.overlap_lo.setText("abc")),
-     "Overlapping labels — IoU: “abc” is not a number"),
+     "Overlap — IoU: “abc” is not a number"),
 ])
 def test_ok_refuses_by_name_and_the_dialog_stays_open(qtbot, dataset, setup, why):
     dialog = editor(qtbot, dataset, ImageFilter())

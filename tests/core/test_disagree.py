@@ -107,9 +107,9 @@ def test_the_highlights_are_the_unseen_labels_and_the_unlabelled_predictions(ctx
 
 
 @pytest.mark.parametrize("condition, text", [
-    (ModelDisagrees("unseen"), "labels the model does not see (IoU 0.50, conf ≥ 0.25)"),
-    (ModelDisagrees("unlabelled", 0.6, (0.5, 0.9)), "predictions nobody labelled (IoU 0.60, conf 0.50–0.90)"),
-    (ModelDisagrees("either"), "labels and predictions that disagree (IoU 0.50, conf 0.25–1.00)"),
+    (ModelDisagrees("unseen"), "unseen labels (IoU 0.50, conf ≥ 0.25)"),
+    (ModelDisagrees("unlabelled", 0.6, (0.5, 0.9)), "unlabelled predictions (IoU 0.60, conf 0.50–0.90)"),
+    (ModelDisagrees("either"), "model disagrees (IoU 0.50, conf 0.25–1.00)"),
 ])
 def test_a_model_condition_reads_as_words_and_survives_its_json(condition, text, dataset):
     assert condition.describe(dataset) == text

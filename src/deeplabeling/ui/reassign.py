@@ -28,7 +28,7 @@ def reassign_question(plan: Reassign, source: str, target: str) -> str:
             f"{_count(len(plan.intents), 'image', 'images')} to {target}?\n\n")
     if plan.read_only:
         text += f"Skipped: {_skipped(plan)}.\n\n"
-    return text + "One edit: one undo takes it back. Nothing is marked reviewed."
+    return text + "One edit, one undo. Nothing is marked reviewed."
 
 
 def reassign_queue(session) -> None:
