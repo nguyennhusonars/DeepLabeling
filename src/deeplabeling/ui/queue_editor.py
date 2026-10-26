@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -46,7 +47,7 @@ LABEL_MODES = ("any", "missing", "negative", "boxes")
 REVIEW_MODES = ("any", "reviewed", "not reviewed")
 OVERLAP_MODES = {"off": None, "different classes": "different", "same class": "same", "any class": "any"}
 MODEL_MODES = {"off": None, "unseen labels": "unseen", "unlabelled predictions": "unlabelled", "either": "either"}
-SOURCES = ("Images", "Findings")
+SOURCES = ("Images", "Find Bad")
 
 
 def _row(*widgets) -> QWidget:
@@ -126,8 +127,10 @@ class QueueEditor(QDialog):
         self.error.hide()
         self.chosen: ImageFilter | Findings | None = None      #: what OK took
         self.find_rows = self._find_rows()
-        form = QFormLayout()
-        form.addRow("Source", self.source_kind)
+        source = QFormLayout()
+        source.addRow("Source", self.source_kind)
+        images = QGroupBox("Images — all must hold")
+        form = QFormLayout(images)
         form.addRow("Splits", split_row)
         form.addRow("Classes", self.class_mode)
         form.addRow("", self.classes)
@@ -136,46 +139,54 @@ class QueueEditor(QDialog):
         form.addRow("Label file", self.label_mode)
         form.addRow("Reviewed", self.review_mode)
         form.addRow("Name contains", self.name)
-        form.addRow("Overlap", _row(self.overlap_mode, QLabel("IoU"), self.overlap_lo,
-                                               QLabel("–"), self.overlap_hi))
-        form.addRow("Model", self.model_mode)
-        form.addRow("", _row(QLabel("IoU"), self.model_iou, QLabel("conf"), self.model_lo,
-                             QLabel("–"), self.model_hi))
+        overlap = _row(QLabel("IoU"), self.overlap_lo, QLabel("–"), self.overlap_hi)
+        model = _row(QLabel("IoU"), self.model_iou, QLabel("conf"), self.model_lo, QLabel("–"), self.model_hi)
+        form.addRow("Overlap", _row(self.overlap_mode, overlap))
+        form.addRow("Model", _row(self.model_mode, model))
+        # A condition that is off shows no fields; what they hold is kept for when it is on.
+        for combo, fields in ((self.overlap_mode, overlap), (self.model_mode, model)):
+            combo.currentTextChanged.connect(lambda mode, f=fields: f.setVisible(mode != "off"))
+        self.class_mode.currentTextChanged.connect(lambda mode: self.classes.setVisible(mode != "any class"))
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.addLayout(source)
+        layout.addWidget(images)
         layout.addWidget(self.find_rows)
         layout.addWidget(self.error)
         layout.addWidget(buttons)
-        self.source_kind.currentTextChanged.connect(lambda kind: self.find_rows.setVisible(kind == "Findings"))
+        self.source_kind.currentTextChanged.connect(lambda kind: self.find_rows.setVisible(kind == "Find Bad"))
         if isinstance(current, Findings):
-            self.source_kind.setCurrentText("Findings")
+            self.source_kind.setCurrentText("Find Bad")
             self._seed(current.scope)
             self._seed_settings(current.settings)
         else:
             self._seed(current)
             self._seed_settings(FindSettings())
-        self.find_rows.setVisible(self.source_kind.currentText() == "Findings")
+        self.find_rows.setVisible(self.source_kind.currentText() == "Find Bad")
+        overlap.setVisible(self.overlap_mode.currentText() != "off")
+        model.setVisible(self.model_mode.currentText() != "off")
+        self.classes.setVisible(self.class_mode.currentText() != "any class")
+        rows = min(max(self.classes.count(), 1), 8)       # as tall as its rows, then it scrolls
+        self.classes.setFixedHeight(rows * max(self.classes.sizeHintForRow(0), 1) + 2 * self.classes.frameWidth())
 
-    def _find_rows(self) -> QWidget:
+    def _find_rows(self) -> QGroupBox:
         """Find Bad's settings: shown for a Findings queue, whose scope is the rows above."""
         self.find_floor, self.find_iou, self.find_ceiling = _edit(), _edit(), _edit()
         self.find_band_lo, self.find_band_hi, self.find_cutoff = _edit(), _edit(), _edit()
         self.find_band_hi.setPlaceholderText("= IoU")
         self.find_wrong, self.find_not_object, self.find_weak = (
             QCheckBox("wrong class"), QCheckBox("not an object"), QCheckBox("weakly seen"))
-        rows = QWidget()
+        rows = QGroupBox("Find Bad — any checked kind")
         form = QFormLayout(rows)
-        form.setContentsMargins(0, 0, 0, 0)
         # Short labels; each field's tooltip is the name a refusal uses.
         for edit, tip in ((self.find_floor, "confidence floor"), (self.find_iou, "matching IoU"),
                           (self.find_ceiling, "wrong-class ceiling"), (self.find_band_lo, "not-an-object band"),
                           (self.find_band_hi, "not-an-object band; blank: the matching IoU"),
                           (self.find_cutoff, "weak cutoff")):
             edit.setToolTip(tip)
-        form.addRow("Find Bad", _row(QLabel("conf ≥"), self.find_floor, QLabel("IoU"), self.find_iou))
+        form.addRow("Model", _row(QLabel("conf ≥"), self.find_floor, QLabel("IoU"), self.find_iou))
         form.addRow("", _row(self.find_wrong, QLabel("conf ≤"), self.find_ceiling))
         form.addRow("", _row(self.find_not_object, QLabel("IoU"), self.find_band_lo,
                              QLabel("–"), self.find_band_hi))

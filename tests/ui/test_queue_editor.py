@@ -126,7 +126,7 @@ def test_ok_takes_what_the_rows_say_once_they_are_right(qtbot, dataset):
 def test_every_row_is_visible_inside_the_dialog_and_none_overlaps(qtbot, dataset):
     from PySide6.QtCore import QPoint, QRect
 
-    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog = editor(qtbot, dataset, ImageFilter(conditions=(Overlap("same", 0.5, 1.0), ModelDisagrees("either"))))
     dialog.show()
     qtbot.waitUntil(dialog.isVisible)
     widgets = [dialog.size_w_lo, dialog.size_w_hi, dialog.size_h_lo, dialog.size_h_hi, dialog.size_unit,
@@ -162,7 +162,7 @@ def test_findings_start_from_the_default_settings_and_their_rows_show_only_for_f
     dialog.show()
     qtbot.waitUntil(dialog.isVisible)
     assert dialog.source() == ImageFilter(conditions=(Reviewed(False),)) and not dialog.find_rows.isVisible()
-    dialog.source_kind.setCurrentText("Findings")
+    dialog.source_kind.setCurrentText("Find Bad")
     assert dialog.find_rows.isVisible() and dialog.find_floor.text() == "0.4"      # never the model's 0.25
     assert dialog.source() == Findings(ImageFilter(conditions=(Reviewed(False),)), FindSettings())
     dialog.accept()
@@ -190,7 +190,7 @@ def test_find_bad_settings_are_refused_by_name(qtbot, dataset, setup, why):
 def test_the_find_bad_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot, dataset):
     from PySide6.QtCore import QPoint, QRect
 
-    dialog = editor(qtbot, dataset, Findings())
+    dialog = editor(qtbot, dataset, Findings(ImageFilter(conditions=(ModelDisagrees("either"),))))
     dialog.show()
     qtbot.waitUntil(dialog.isVisible)
     widgets = [dialog.source_kind, dialog.find_floor, dialog.find_iou, dialog.find_wrong, dialog.find_ceiling,
@@ -209,3 +209,27 @@ def test_the_find_bad_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot
 def test_the_model_confidence_is_seeded_as_the_value_itself(qtbot, dataset):
     dialog = editor(qtbot, dataset, ImageFilter(), conf=0.123456789)
     assert dialog.model_lo.text() == "0.123456789"
+
+
+def test_the_dialog_says_how_its_rows_combine(qtbot, dataset):
+    from PySide6.QtWidgets import QGroupBox
+
+    dialog = editor(qtbot, dataset, Findings())
+    titles = [g.title() for g in dialog.findChildren(QGroupBox)]
+    assert titles == ["Images — all must hold", "Find Bad — any checked kind"]
+    assert dialog.find_rows.title() == "Find Bad — any checked kind"
+
+
+def test_a_condition_that_is_off_shows_no_fields_and_keeps_its_values(qtbot, dataset):
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+    params = [dialog.overlap_lo, dialog.overlap_hi, dialog.model_iou, dialog.model_lo, dialog.model_hi]
+    assert not any(w.isVisible() for w in params) and not dialog.classes.isVisible()
+    dialog.overlap_mode.setCurrentText("same class")
+    dialog.model_mode.setCurrentText("either")
+    dialog.class_mode.setCurrentText("has")
+    assert all(w.isVisible() for w in params) and dialog.classes.isVisible()
+    assert dialog.overlap_lo.text() == "0.5" and dialog.model_lo.text() == "0.25"
+    rows = dialog.classes.count()
+    assert dialog.classes.height() <= rows * dialog.classes.sizeHintForRow(0) + 12   # as tall as its rows
