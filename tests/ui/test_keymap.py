@@ -36,5 +36,8 @@ def test_every_handler_is_required():
 def test_the_help_lists_every_action(qtbot):
     dialog = HelpDialog()
     qtbot.addWidget(dialog)
-    assert dialog.table.rowCount() == len(ACTIONS) == len(help_rows())
+    rows = help_rows()
+    assert dialog.table.rowCount() == len(rows) == len(ACTIONS) - 9     # the ten class keys: one row
     assert dialog.table.item(4, 1).text() == "✓ Reviewed, then next"
+    assert ("1 – 0", "Class 1–10 — the selection, or the class drawn") in rows
+    assert not any(text.startswith("Class 2 ") for _, text in rows)

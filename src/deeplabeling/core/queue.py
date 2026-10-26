@@ -344,15 +344,14 @@ class Overlap(Condition):
         return self._overlapping(labels)
 
     def describe(self, dataset):
-        return f"labels overlapping, {SCOPE_WORDS[self.scope]}, IoU {_iou(self.lo)}–{_iou(self.hi)}"
+        return f"overlap, {SCOPE_WORDS[self.scope]}, IoU {_iou(self.lo)}–{_iou(self.hi)}"
 
     def to_json(self):
         return {"kind": self.kind, "scope": self.scope, "lo": self.lo, "hi": self.hi}
 
 
 DIRECTIONS = ("unseen", "unlabelled", "either")
-DIRECTION_WORDS = {"unseen": "labels the model does not see", "unlabelled": "predictions nobody labelled",
-                   "either": "labels and predictions that disagree"}
+DIRECTION_WORDS = {"unseen": "unseen labels", "unlabelled": "unlabelled predictions", "either": "model disagrees"}
 
 
 @dataclass(frozen=True)

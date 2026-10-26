@@ -28,8 +28,8 @@ def _names(names) -> str:
 def taxonomy_question(last_source: str, last_names, source: str, names) -> str:
     return (f"Last opened with {Path(last_source).name}: {len(last_names)} classes ({_names(last_names)}).\n"
             f"Now opening with {Path(source).name}: {len(names)} classes ({_names(names)}).\n\n"
-            "Under the wrong class list every name shown is wrong, and every edit writes wrong ids.\n\n"
-            "Open with the new class list?")
+            "With the wrong list, names show wrong and edits write wrong ids.\n\n"
+            "Open with the new list?")
 
 
 class Progress:

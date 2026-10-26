@@ -13,7 +13,7 @@ WRITTEN = {"camA/labels/0001.txt", "weird/labels/имя пробел.txt", "bad/
            "bad/labels/ok.txt", "crlf/labels/c.txt", "seg/labels/poly1.txt", "seg/labels/mixed.txt"}
 QUESTION = ("Reassign 10 person boxes on 7 images to bus_l?\n\n"
             "Skipped: 2 not editable.\n\n"
-            "One edit: one undo takes it back. Nothing is marked reviewed.")
+            "One edit, one undo. Nothing is marked reviewed.")
 
 
 @pytest.fixture

@@ -57,10 +57,10 @@ def test_the_question_says_what_it_adds_and_what_it_skips():
         "Accept 1,234 boxes on 567 images?\n\n"
         "Skipped: 89 not inferred; 12 negative samples (kept empty); 3 not editable; "
         "40 unmapped predictions.\n\n"
-        "One edit: one undo takes it back. Nothing is marked reviewed.")
+        "One edit, one undo. Nothing is marked reviewed.")
     one = QueueAccept(intents=(None,), boxes=1, uninferred=0, unmapped=0, read_only=0, negative=0)
     assert queue_accept_question(one) == ("Accept 1 box on 1 image?\n\n"
-                                          "One edit: one undo takes it back. Nothing is marked reviewed.")
+                                          "One edit, one undo. Nothing is marked reviewed.")
 
 
 def test_the_queue_accept_writes_one_edit_that_marks_nothing_and_undoes_whole(qtbot, session, prompter, ds):

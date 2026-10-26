@@ -33,7 +33,7 @@ def queue_accept_question(plan: QueueAccept) -> str:
     skipped = _skipped(plan)
     if skipped:
         text += "Skipped: " + "; ".join(skipped) + ".\n\n"
-    return text + "One edit: one undo takes it back. Nothing is marked reviewed."
+    return text + "One edit, one undo. Nothing is marked reviewed."
 
 
 def accept_queue(session) -> None:

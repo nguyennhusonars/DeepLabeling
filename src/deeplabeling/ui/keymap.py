@@ -78,9 +78,17 @@ def build_actions(window: QWidget, handlers: Mapping[str, Callable[[], None]]) -
 
 
 def help_rows() -> list[tuple[str, str]]:
-    """(keys, what they do) for every action, in registry order."""
-    return [(", ".join(QKeySequence(k).toString(QKeySequence.NativeText) for k in spec.keys),
-             spec.text + (" (on / off)" if spec.checkable else "")) for spec in ACTIONS]
+    """(keys, what they do) for every action, in registry order; the class keys as one row."""
+    rows = []
+    for spec in ACTIONS:
+        if spec.id.startswith("class_"):
+            if spec.id == f"class_{DEFAULT_HOTKEYS[0]}":
+                rows.append((f"{DEFAULT_HOTKEYS[0]} – {DEFAULT_HOTKEYS[-1]}",
+                             f"Class 1–{len(DEFAULT_HOTKEYS)} — the selection, or the class drawn"))
+            continue
+        rows.append((", ".join(QKeySequence(k).toString(QKeySequence.NativeText) for k in spec.keys),
+                     spec.text + (" (on / off)" if spec.checkable else "")))
+    return rows
 
 
 class HelpDialog(QDialog):

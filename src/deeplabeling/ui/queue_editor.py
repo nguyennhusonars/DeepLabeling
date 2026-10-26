@@ -45,8 +45,7 @@ CLASS_MODES = ("any class", "has", "lacks")
 LABEL_MODES = ("any", "missing", "negative", "boxes")
 REVIEW_MODES = ("any", "reviewed", "not reviewed")
 OVERLAP_MODES = {"off": None, "different classes": "different", "same class": "same", "any class": "any"}
-MODEL_MODES = {"off": None, "labels the model does not see": "unseen",
-               "predictions nobody labelled": "unlabelled", "either": "either"}
+MODEL_MODES = {"off": None, "unseen labels": "unseen", "unlabelled predictions": "unlabelled", "either": "either"}
 SOURCES = ("Images", "Findings")
 
 
@@ -137,10 +136,10 @@ class QueueEditor(QDialog):
         form.addRow("Label file", self.label_mode)
         form.addRow("Reviewed", self.review_mode)
         form.addRow("Name contains", self.name)
-        form.addRow("Overlapping labels", _row(self.overlap_mode, QLabel("IoU"), self.overlap_lo,
+        form.addRow("Overlap", _row(self.overlap_mode, QLabel("IoU"), self.overlap_lo,
                                                QLabel("–"), self.overlap_hi))
         form.addRow("Model", self.model_mode)
-        form.addRow("", _row(QLabel("matching IoU"), self.model_iou, QLabel("conf"), self.model_lo,
+        form.addRow("", _row(QLabel("IoU"), self.model_iou, QLabel("conf"), self.model_lo,
                              QLabel("–"), self.model_hi))
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -164,18 +163,23 @@ class QueueEditor(QDialog):
         """Find Bad's settings: shown for a Findings queue, whose scope is the rows above."""
         self.find_floor, self.find_iou, self.find_ceiling = _edit(), _edit(), _edit()
         self.find_band_lo, self.find_band_hi, self.find_cutoff = _edit(), _edit(), _edit()
-        self.find_band_hi.setPlaceholderText("matching IoU")
+        self.find_band_hi.setPlaceholderText("= IoU")
         self.find_wrong, self.find_not_object, self.find_weak = (
             QCheckBox("wrong class"), QCheckBox("not an object"), QCheckBox("weakly seen"))
         rows = QWidget()
         form = QFormLayout(rows)
         form.setContentsMargins(0, 0, 0, 0)
-        form.addRow("Find Bad", _row(QLabel("confidence floor"), self.find_floor,
-                                     QLabel("matching IoU"), self.find_iou))
-        form.addRow("", _row(self.find_wrong, QLabel("up to conf"), self.find_ceiling))
-        form.addRow("", _row(self.find_not_object, QLabel("nearest IoU"), self.find_band_lo,
+        # Short labels; each field's tooltip is the name a refusal uses.
+        for edit, tip in ((self.find_floor, "confidence floor"), (self.find_iou, "matching IoU"),
+                          (self.find_ceiling, "wrong-class ceiling"), (self.find_band_lo, "not-an-object band"),
+                          (self.find_band_hi, "not-an-object band; blank: the matching IoU"),
+                          (self.find_cutoff, "weak cutoff")):
+            edit.setToolTip(tip)
+        form.addRow("Find Bad", _row(QLabel("conf ≥"), self.find_floor, QLabel("IoU"), self.find_iou))
+        form.addRow("", _row(self.find_wrong, QLabel("conf ≤"), self.find_ceiling))
+        form.addRow("", _row(self.find_not_object, QLabel("IoU"), self.find_band_lo,
                              QLabel("–"), self.find_band_hi))
-        form.addRow("", _row(self.find_weak, QLabel("below conf"), self.find_cutoff))
+        form.addRow("", _row(self.find_weak, QLabel("conf <"), self.find_cutoff))
         return rows
 
     def _seed_settings(self, settings: FindSettings) -> None:
@@ -267,7 +271,7 @@ class QueueEditor(QDialog):
         size = self._size()
         if size is not None:
             if mode == "lacks":
-                raise ValueError("Box size — a size is of boxes an image has: choose has, or any class")
+                raise ValueError("Box size — needs Classes: has, or any class")
             conditions.append(self._made("Box size", Boxes, names if mode == "has" else (), *size))
         elif mode != "any class" and names:
             conditions.append(HasClass(names, present=mode == "has"))
@@ -279,7 +283,7 @@ class QueueEditor(QDialog):
             conditions.append(NameContains(self.name.text().strip()))
         scope = OVERLAP_MODES[self.overlap_mode.currentText()]
         if scope is not None:
-            conditions.append(self._made("Overlapping labels", lambda: Overlap(
+            conditions.append(self._made("Overlap", lambda: Overlap(
                 scope, _number(self.overlap_lo, "IoU"), _number(self.overlap_hi, "IoU"))))
         direction = MODEL_MODES[self.model_mode.currentText()]
         if direction is not None:

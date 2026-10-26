@@ -118,8 +118,8 @@ def test_a_range_that_excludes_identical_boxes_finds_none_of_them(ctx):
 
 def test_an_overlap_reads_as_words_and_survives_its_json(dataset):
     condition = Overlap("same", 0.99, 1.0)
-    assert condition.describe(dataset) == "labels overlapping, same class, IoU 0.99–1.00"
-    assert Overlap("different", 0.5, 1.0).describe(dataset) == "labels overlapping, different classes, IoU 0.50–1.00"
+    assert condition.describe(dataset) == "overlap, same class, IoU 0.99–1.00"
+    assert Overlap("different", 0.5, 1.0).describe(dataset) == "overlap, different classes, IoU 0.50–1.00"
     assert condition_from_json(condition.to_json()) == condition
 
 
@@ -147,4 +147,4 @@ def test_a_build_names_the_images_it_could_not_settle(ctx):
 
 
 def test_an_iou_typed_finer_than_two_decimals_reads_as_typed(dataset):
-    assert Overlap("same", 0.995, 1.0).describe(dataset) == "labels overlapping, same class, IoU 0.995–1.00"
+    assert Overlap("same", 0.995, 1.0).describe(dataset) == "overlap, same class, IoU 0.995–1.00"
