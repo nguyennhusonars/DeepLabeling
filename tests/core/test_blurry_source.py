@@ -164,3 +164,15 @@ def test_the_workspace_opens_and_closes_the_score_store(ds):
     finally:
         ws.close()
     assert ws.sharpness.get("x", (1, 1)) is None                                  # closed: answers nothing
+
+
+def test_scores_go_out_in_small_batches(tmp_path, sharp):
+    """Each Scored batch is written on the GUI thread: 500 images' took 202 ms (2026-10-27)."""
+    from deeplabeling.core.blurry import SCORE_BATCH
+
+    blur = build_blur_dataset(tmp_path / "many", n=2 * SCORE_BATCH + 3)
+    dataset = Dataset.open(blur.yaml)
+    ctx = BuildContext(dataset, LabelStore(dataset), frozenset(), sizes=ImageSizes(), sharpness=sharp)
+    sizes = []
+    Blurry().build(ctx, lambda b: sizes.append(len(b.rows)) if isinstance(b, Scored) else None)
+    assert sizes == [SCORE_BATCH, SCORE_BATCH, 3]

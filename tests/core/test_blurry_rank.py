@@ -2,12 +2,12 @@
 
 import pytest
 
-from deeplabeling.core.blurry import MIN_PEERS, BlurSettings, Candidate, octave, octave_name, rank
+from deeplabeling.core.blurry import MIN_PEERS, BlurSettings, candidate, octave, octave_name, rank
 
 
 def cands(name, n, side, cls=0, start=0, lap=lambda i: float(i), cr=lambda i: 1 - i / 100):
     """n boxes whose sharpness rises with i: box 0 is the blurriest on both measures."""
-    return [Candidate(f"{name}{i}", start + i, 0, cls, side, lap(i), cr(i)) for i in range(n)]
+    return [candidate(f"{name}{i}", start + i, 0, cls, side, lap(i), cr(i)) for i in range(n)]
 
 
 def test_settings_refuse_by_name():
@@ -62,8 +62,8 @@ def test_a_group_of_equal_values_lists_its_share_with_z_zero():
 def test_the_score_averages_both_z():
     """Box x is the blurriest by one measure only; box y is second blurriest by both."""
     boxes = cands("p", 40, 20, lap=lambda i: float(i + 2), cr=lambda i: 1 - (i + 2) / 100)
-    boxes.append(Candidate("x", 99, 0, 0, 20, 0.0, 1 - 30 / 100))       # Laplacian lowest, CR middling
-    boxes.append(Candidate("y", 98, 0, 0, 20, 1.0, 1 - 1 / 100))        # second on both
+    boxes.append(candidate("x", 99, 0, 0, 20, 0.0, 1 - 30 / 100))       # Laplacian lowest, CR middling
+    boxes.append(candidate("y", 98, 0, 0, 20, 1.0, 1 - 1 / 100))        # second on both
     listed, _ = rank(boxes, 1 / 42)                                      # one listed
     assert list(listed) == ["y"]
 
@@ -71,3 +71,13 @@ def test_the_score_averages_both_z():
 def test_the_share_is_not_pushed_up_by_float_error():
     listed, _ = rank(cands("h", 100, 20), 0.07)                         # 0.07 * 100 is 7.000000000000001
     assert len(listed) == 7
+
+
+def test_a_candidate_is_not_tracked_by_the_garbage_collector():
+    """Hundreds of thousands are kept until the ranking: tracked, they made every full
+    collection walk them, and the window waited 200-280 ms each time (2026-10-27)."""
+    import gc
+
+    c = candidate("k", 0, 0, 0, 20, 1.0, 0.5)
+    gc.collect()
+    assert not gc.is_tracked(c)

@@ -57,17 +57,16 @@ class BlurSettings:
             raise ValueError(f"not Blurry settings: {data!r}") from e
 
 
-@dataclass(frozen=True)
-class Candidate:
-    """A scored box, ready to rank."""
+#: A scored box, ready to rank: (key, entry_order, line, cls, side, lap, cr), where lap is the
+#: tiled Laplacian ratio (higher is sharper) and cr Crété-Roffet (higher is blurrier).
+#: A plain tuple of plain values, which the garbage collector stops tracking (a subclass, even
+#: a NamedTuple, stays tracked): a build keeps hundreds of thousands, and as tracked objects
+#: every full collection walked them all -- 200-280 ms each, the window waiting (2026-10-27).
+KEY, ORDER, LINE, CLS, SIDE, LAP, CR = range(7)
 
-    key: str
-    entry_order: int
-    line: int
-    cls: int
-    side: int
-    lap: float      #: the tiled Laplacian ratio: higher is sharper
-    cr: float       #: Crété-Roffet: higher is blurrier
+
+def candidate(key: str, entry_order: int, line: int, cls: int, side: int, lap: float, cr: float) -> tuple:
+    return (key, entry_order, line, cls, side, lap, cr)
 
 
 def _z(values: np.ndarray) -> np.ndarray:
@@ -75,26 +74,29 @@ def _z(values: np.ndarray) -> np.ndarray:
     return (values - med) / max(MAD_SCALE * float(np.median(np.abs(values - med))), 1e-6)
 
 
-def rank(candidates: list[Candidate], share: float) -> tuple[dict[str, tuple[float, float]], set[str]]:
+def rank(candidates: list[tuple], share: float) -> tuple[dict[str, tuple[float, float]], set[str]]:
     """{key: (z, rank)} of the first `ceil(share · n)` of each group of at least MIN_PEERS,
     blurriest first; and the keys of the groups too small to rank."""
-    groups: dict[tuple[int, int], list[Candidate]] = defaultdict(list)
+    groups: dict[tuple[int, int], list[tuple]] = defaultdict(list)
     for c in candidates:
-        groups[(c.cls, octave(c.side))].append(c)
+        groups[(c[CLS], octave(c[SIDE]))].append(c)
     listed, small = {}, set()
     for members in groups.values():
         n = len(members)
         if n < MIN_PEERS:
-            small.update(c.key for c in members)
+            small.update(c[KEY] for c in members)
             continue
-        z = (_z(np.array([c.lap for c in members])) + _z(-np.array([c.cr for c in members]))) / 2
-        order = sorted(range(n), key=lambda i: (z[i], members[i].entry_order, members[i].line))
+        z = (_z(np.array([c[LAP] for c in members])) + _z(-np.array([c[CR] for c in members]))) / 2
+        # numpy, not sorted(): a Python sort of a 150k group held the GIL 78 ms in one go
+        order = np.lexsort((np.array([c[LINE] for c in members]), np.array([c[ORDER] for c in members]), z))
         for place, i in enumerate(order[:math.ceil(share * n - 1e-9)]):
-            listed[members[i].key] = (float(z[i]), place / n)
+            listed[members[i][KEY]] = (float(z[i]), place / n)
     return listed, small
 
 
 BREATHE = 64            #: images between pauses: the GUI thread's turn at the GIL
+#: Images per Scored batch: the GUI thread writes each, and 500 images' took 202 ms (2026-10-27).
+SCORE_BATCH = 50
 
 
 @dataclass(frozen=True)
@@ -134,14 +136,14 @@ class Blurry:
         `Scored` batches, a cancelled build's included. False when cancelled part-way."""
         images, last = ctx.dataset.images, time.monotonic()
         candidates, where, new = [], {}, []
-        for n, entry in enumerate(images, 1):
+        for n, entry in enumerate(images, 1):          # n - 1: the entry's place, kept in `where`
             if cancelled():
                 if new:
                     emit(Scored(new))
                 return False
             if n % BREATHE == 0:
                 time.sleep(0.0005)
-            if len(new) >= batch:
+            if len(new) >= SCORE_BATCH:
                 emit(Scored(new))
                 new = []
             if progress is not None and time.monotonic() - last >= interval:
@@ -172,29 +174,29 @@ class Blurry:
                     ctx.count_box("flat", entry, i)
                     continue
                 key = f"{entry.rel}#{i}#blurry"
-                candidates.append(Candidate(key, entry.order, i, line.cls_id, side, lap, cr))
-                where[key] = (entry, i, line)
+                candidates.append(candidate(key, entry.order, i, line.cls_id, side, lap, cr))
+                where[key] = (n - 1, line.raw.rstrip("\r\n"), *line.bbox)   # plain values: untracked, as Candidate
         if new:
             emit(Scored(new))
         if progress is not None:
             progress(len(images), len(images))
         listed, small = rank(candidates, self.settings.share)
-        for key in small:
-            entry, i, _ = where[key]
-            ctx.count_box("too few peers", entry, i)
+        for c in candidates:
+            if c[KEY] in small:
+                ctx.count_box("too few peers", images[where[c[KEY]][0]], c[LINE])
         items = []
         for c in candidates:
-            if c.key not in listed:
+            if c[KEY] not in listed:
                 continue
-            entry, i, line = where[c.key]
-            text = line.raw.rstrip("\r\n")
+            pos, text, *box = where[c[KEY]]
+            entry, i, box = images[pos], c[LINE], tuple(box)
             if (entry.rel, text, "blurry") in ctx.dismissed:
                 continue                            # a peer still: it only leaves the list
-            z, place = listed[c.key]
-            finding = BlurFinding(line=i, text=text, kind="blurry", score=place, label_cls=line.cls_id,
-                                  label_box=line.bbox, z=z, group=octave_name(octave(c.side)))
-            items.append(QueueItem(c.key, entry, rank=(place, z, entry.order, i),
-                                   focus=LineRef(i, line.cls_id, line.bbox), finding=finding))
+            z, place = listed[c[KEY]]
+            finding = BlurFinding(line=i, text=text, kind="blurry", score=place, label_cls=c[CLS],
+                                  label_box=box, z=z, group=octave_name(octave(c[SIDE])))
+            items.append(QueueItem(c[KEY], entry, rank=(place, z, entry.order, i),
+                                   focus=LineRef(i, c[CLS], box), finding=finding))
         items.sort(key=lambda item: item.sort_key)
         for start in range(0, len(items), batch):
             if cancelled():
