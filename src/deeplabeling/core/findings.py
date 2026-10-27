@@ -117,6 +117,15 @@ class Finding:
     model_raw: int | None = None    #: the model's own class of that box, mapped or not
 
 
+@dataclass(frozen=True)
+class BlurFinding(Finding):
+    """A blurry box (docs/design/2026-10-27-blurry.md): `score` is its rank in its group,
+    0 the blurriest; no model fields."""
+
+    z: float = 0.0          #: the average robust z-score of its two measures
+    group: str = ""         #: its size octave's name, "16–31 px"
+
+
 def judge(labels: ImageLabels, preds: list[Prediction], cmap: ClassMap, dataset: Dataset,
           settings: FindSettings) -> list[Finding]:
     """The findings of one image, in line order."""

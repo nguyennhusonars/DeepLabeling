@@ -380,3 +380,28 @@ class FakePredictor:
 
     def close(self):
         self.closed = True
+
+
+BLUR_NAMES = ["head", "human"]
+
+
+def build_blur_dataset(root: Path, *, n: int = 30, blurred: tuple[int, ...] = (3, 17)) -> DatasetFixture:
+    """`n` 160 x 120 JPEGs under cam/images, each with a 40 px head (class 0) and a 20 px
+    human (class 1) over seeded texture, so two groups of `n`; the images numbered in
+    `blurred` are Gaussian-blurred, sigma 3, before saving (docs/design/2026-10-27-blurry.md)."""
+    rng = np.random.default_rng(7)
+    for i in range(n):
+        a = np.full((120, 160), 128, np.uint8)
+        a[25:65, 30:70] = cv2.GaussianBlur(rng.integers(0, 256, (40, 40)).astype(np.uint8), (0, 0), 1.0)
+        a[70:90, 110:130] = cv2.GaussianBlur(rng.integers(0, 256, (20, 20)).astype(np.uint8), (0, 0), 1.0)
+        if i in blurred:
+            a = cv2.GaussianBlur(a, (0, 0), 3.0)
+        path = root / "cam" / "images" / f"{i:04d}.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(cv2.imencode(".jpg", a, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes())
+        _txt(root / "cam" / "labels" / f"{i:04d}.txt",
+             "0 0.312500 0.375000 0.250000 0.333333\n1 0.750000 0.666667 0.125000 0.166667\n")
+    (root / "data.yaml").write_text(yaml.safe_dump(
+        {"path": str(root), "train": ["cam/images"], "names": BLUR_NAMES},
+        sort_keys=False), encoding="utf-8")
+    return DatasetFixture(root)
