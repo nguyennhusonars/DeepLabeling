@@ -15,6 +15,7 @@ from .state import set_aside
 class SqliteFile:
     SCHEMA: ClassVar[str]
     VERSION: ClassVar[int]      #: PRAGMA user_version: a file of another version is set aside, as a corrupt one is
+    SYNCHRONOUS: ClassVar[str] = "NORMAL"
 
     def __init__(self, path):
         self.path = Path(path)
@@ -44,7 +45,7 @@ class SqliteFile:
             conn = sqlite3.connect(self.path, timeout=10, check_same_thread=False)
             try:
                 conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute(f"PRAGMA synchronous={self.SYNCHRONOUS}")
                 version = conn.execute("PRAGMA user_version").fetchone()[0]
                 if version not in (0, self.VERSION):    # 0: made before versions, this same schema
                     raise sqlite3.DatabaseError(f"a store of version {version}, this app reads {self.VERSION}")

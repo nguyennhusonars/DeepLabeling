@@ -45,3 +45,15 @@ def test_after_close_it_answers_nothing_and_writes_nothing(tmp_path):
     s.put_many([("b.jpg", (1, 2), [])])
     assert s.get("a.jpg", (1, 2)) is None
     assert SharpnessStore(tmp_path / SHARP_NAME).get("b.jpg", (1, 2)) is None
+
+
+def test_the_score_cache_never_waits_for_the_disk(tmp_path):
+    """It is written on the GUI thread and costs only a rescore to lose: a cold build once
+    held the window 1.8 s, most likely a checkpoint's sync (2026-10-27). The prediction store keeps
+    its syncs."""
+    from deeplabeling.core.predstore import STORE_NAME, PredictionStore
+
+    s = SharpnessStore(tmp_path / SHARP_NAME)
+    assert s._connection().execute("PRAGMA synchronous").fetchone()[0] == 0              # OFF
+    p = PredictionStore(tmp_path / STORE_NAME)
+    assert p._connection().execute("PRAGMA synchronous").fetchone()[0] == 1              # NORMAL

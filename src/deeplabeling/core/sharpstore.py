@@ -20,6 +20,9 @@ BoxScore = tuple[int, int, int, int, "float | None", "float | None"]
 
 class SharpnessStore(SqliteFile):
     VERSION = 1
+    # Written on the GUI thread, and a loss costs only a rescore: never wait for the disk. A
+    # cold build once held the window 1.8 s, most likely a checkpoint's sync (2026-10-27).
+    SYNCHRONOUS = "OFF"
     SCHEMA = """
 CREATE TABLE IF NOT EXISTS scores (
     img TEXT PRIMARY KEY,           -- the image's dataset-relative path
