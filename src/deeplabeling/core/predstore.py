@@ -3,20 +3,17 @@
 One SQLite file per dataset root, keyed by (model, image). It holds what the model found
 at the floor, in the model's own class ids; thresholds and the class map apply on read
 (docs/knowledge/caches.md). A row is served only while the image's stamp still matches.
-Each thread talks to it through its own connection.
+Its connections are `src/deeplabeling/core/sqlitefile.py::SqliteFile`'s.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sqlite3
-import threading
 from collections.abc import Iterable
-from pathlib import Path
 
 from .inference import FLOOR, Prediction
-from .state import set_aside
+from .sqlitefile import SqliteFile
 
 STORE_NAME = "predictions.sqlite"
 Stamp = tuple[int, int]             #: (size, mtime_ns) of an image file
@@ -48,58 +45,8 @@ def _decode(text: str) -> list[Prediction]:
     return [Prediction(int(row[0]), tuple(row[1:5]), row[5]) for row in json.loads(text)]
 
 
-class PredictionStore:
-    def __init__(self, path):
-        self.path = Path(path)
-        self.warning = ""                           # for the notice strip
-        self._local = threading.local()
-        self._all: list[sqlite3.Connection] = []
-        self._lock = threading.Lock()
-        self._closed = False
-        try:
-            try:
-                self._connection()
-            except sqlite3.OperationalError:
-                raise                               # locked, full, unreadable: not corrupt
-            except sqlite3.DatabaseError as e:      # "file is not a database"
-                self._close_all()
-                self.warning, writable = set_aside(self.path, e)
-                if not writable:
-                    raise OSError(self.warning) from e
-                self._connection()
-        except sqlite3.OperationalError as e:       # the open says why, as for any OSError
-            self._close_all()
-            raise OSError(f"{self.path.name}: {e}") from e
-
-    def _connection(self) -> sqlite3.Connection:
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(self.path, timeout=10, check_same_thread=False)
-            try:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
-                version = conn.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, VERSION):     # 0: made before versions, this same schema
-                    raise sqlite3.DatabaseError(f"a store of version {version}, this app reads {VERSION}")
-                if version == 0:                    # new, or made before versions: stamped once
-                    try:
-                        conn.execute(SCHEMA)
-                        conn.execute(f"PRAGMA user_version = {VERSION}")
-                        conn.commit()
-                    except sqlite3.OperationalError as e:
-                        if "readonly" not in str(e):
-                            raise
-                        conn.rollback()             # a store made read-only: read as it is
-            except sqlite3.DatabaseError:
-                conn.close()
-                raise
-            with self._lock:
-                if self._closed:                    # closed while this one opened: not kept
-                    conn.close()
-                    raise sqlite3.ProgrammingError("the store is closed")
-                self._all.append(conn)
-            self._local.conn = conn
-        return conn
+class PredictionStore(SqliteFile):
+    SCHEMA, VERSION = SCHEMA, VERSION
 
     def get(self, model: str, img: str, stamp: Stamp, conf: float = FLOOR) -> list[Prediction] | None:
         """What `model` found on `img`, at or above `conf`: None when it never looked at
@@ -135,16 +82,3 @@ class PredictionStore:
         rows = self._connection().execute(
             "SELECT img, size, mtime_ns FROM preds WHERE model = ?", (model,))
         return {img: (size, mtime_ns) for img, size, mtime_ns in rows}
-
-    def _close_all(self) -> None:
-        with self._lock:
-            for conn in self._all:
-                conn.close()
-            self._all.clear()
-        self._local = threading.local()
-
-    def close(self) -> None:
-        """Close every connection; afterwards the store answers nothing and writes nothing,
-        rather than opening a connection again for a thread that comes late."""
-        self._closed = True
-        self._close_all()
