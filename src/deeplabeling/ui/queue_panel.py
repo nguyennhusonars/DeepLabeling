@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.blurry import Blurry
 from ..core.findings import Findings
 from ..core.labelio import locate_line
 from ..core.queue import QueueItem
@@ -331,7 +332,7 @@ class QueuePanel(QWidget):
 
     def _on_crops(self) -> bool:
         queue = self._session.queue
-        return queue is not None and isinstance(queue.source, Findings)
+        return queue is not None and isinstance(queue.source, (Findings, Blurry))
 
     def _suit_source(self) -> None:
         """A grid of crops selects several tiles (Ctrl- or Shift-click), and offers no mark

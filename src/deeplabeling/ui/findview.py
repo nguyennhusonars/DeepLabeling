@@ -23,9 +23,17 @@ def _model_name(f: Finding, dataset: Dataset, model_names: tuple[str, ...]) -> s
     return f"{model_names[raw] if raw is not None and 0 <= raw < len(model_names) else raw}?"
 
 
+def _share(f) -> str:
+    """A blurry box's rank in its group, as a percentage: 0.4% is blurrier than 99.6%."""
+    return f"{f.score * 100:.1f}%"
+
+
 def finding_text(f: Finding, dataset: Dataset) -> str:
-    """`wrong class: car → truck 0.82`, `not an object: bus_m (nearest 0.03)`, `weakly seen: car 0.41`."""
+    """`wrong class: car → truck 0.82`, `not an object: bus_m (nearest 0.03)`, `weakly seen: car 0.41`,
+    `blurry: head, 0.4% of 16–31 px`."""
     label = _name(f.label_cls, dataset)
+    if f.kind == "blurry":
+        return f"blurry: {label}, {_share(f)} of {f.group}"
     if f.kind == "wrong class":
         return f"wrong class: {label} → {_name(f.model_cls, dataset)} {f.model_conf:.2f}"
     if f.kind == "not an object":
@@ -37,13 +45,19 @@ def finding_caption(f: Finding, dataset: Dataset) -> str:
     """A crop tile's caption, short enough for it: `car → person 0.82`, `bus_m → nothing 0.97`.
     The number is the model's confidence, or for nothing there the finding's score."""
     label = _name(f.label_cls, dataset)
+    if f.kind == "blurry":
+        return f"{label} {_share(f)}"
     if f.kind == "not an object":
         return f"{label} → nothing {f.score:.2f}"
     return f"{label} → {_name(f.model_cls, dataset)} {f.model_conf:.2f}"
 
 
 def finding_detail(f: Finding, dataset: Dataset, model_names: tuple[str, ...]) -> str:
-    """The inspector's line: the kind, the score, the model's class and confidence."""
+    """The inspector's line: the kind, the score, the model's class and confidence; for a
+    blurry box, its rank, its group and its z-score."""
+    if f.kind == "blurry":
+        z = f"{f.z:.1f}".replace("-", "−")
+        return f"blurry · {_share(f)} of {_name(f.label_cls, dataset)} {f.group} · z {z}"
     model = ("nothing near" if f.model_box is None
              else f"{_model_name(f, dataset, model_names)} {f.model_conf:.2f}")
     return f"{f.kind} · {f.score:.2f} · the model: {model}"

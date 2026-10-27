@@ -147,3 +147,16 @@ def test_paging_to_a_finding_on_another_image_draws_the_canvas_once(qtbot, windo
     window.session.go_to(nxt.key)
     assert window._shown == nxt.entry.path and window.canvas.spotlight is not None and len(redraws) == 1
     assert len(window.canvas.handle_items()) == 8                      # its label arrived selected, and drawn so
+
+
+def test_a_blurry_box_reads_as_words(ds):
+    from deeplabeling.core.dataset import Dataset
+    from deeplabeling.core.findings import BlurFinding
+    from deeplabeling.ui.findview import finding_caption, finding_detail
+
+    f = BlurFinding(line=0, text="0 0.5 0.5 0.2 0.2", kind="blurry", score=0.004, label_cls=0,
+                    label_box=(0.5, 0.5, 0.2, 0.2), z=-3.42, group="16–31 px")
+    dataset = Dataset.open(ds.yaml)
+    assert finding_text(f, dataset) == "blurry: person, 0.4% of 16–31 px"
+    assert finding_caption(f, dataset) == "person 0.4%"
+    assert finding_detail(f, dataset, ()) == "blurry · 0.4% of person 16–31 px · z −3.4"
