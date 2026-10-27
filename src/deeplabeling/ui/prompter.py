@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog, QMessageBox, Q
 
 from ..core.classmap import ClassMap
 from ..core.dataset import Dataset
+from ..core.blurry import Blurry
 from ..core.findings import Findings
 from ..core.inference import FLOOR
 from ..core.queue import ImageFilter
@@ -77,8 +78,8 @@ class QtPrompter:
     def choose_folder(self, title: str) -> str | None:
         return QFileDialog.getExistingDirectory(self.parent, title) or None
 
-    def edit_queue(self, dataset: Dataset, current: ImageFilter | Findings,
-                   conf: float = 0.25) -> ImageFilter | Findings | None:
+    def edit_queue(self, dataset: Dataset, current: ImageFilter | Findings | Blurry,
+                   conf: float = 0.25) -> ImageFilter | Findings | Blurry | None:
         dialog = QueueEditor(dataset, current, self.parent, conf=conf)
         try:
             return dialog.chosen if dialog.exec() == QDialog.Accepted else None

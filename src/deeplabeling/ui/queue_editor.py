@@ -1,7 +1,8 @@
 """The queue editor: splits and conditions for slice 1's one source, ImageFilter
 (docs/design/2026-10-04-app-foundation.md#queue), with slice 3's box size, overlap and
 model rows (docs/design/2026-10-06-filters.md#the-queue-editor), and slice 4's second
-source, Findings, whose scope is those rows (docs/design/2026-10-06-find-bad.md#the-queue-editor).
+source, Findings, whose scope is those rows (docs/design/2026-10-06-find-bad.md#the-queue-editor),
+and the third, Blurry, scoped the same way (docs/design/2026-10-27-blurry.md#window).
 It is seeded from the
 queue in force, so it never shows a filter the queue is not using (CLAUDE.md landmine 7).
 A value it cannot use is refused when OK is pressed, by row and field, and the dialog stays
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.blurry import Blurry, BlurSettings
 from ..core.dataset import Dataset
 from ..core.findings import FindSettings, Findings
 from ..core.queue import (
@@ -47,7 +49,7 @@ LABEL_MODES = ("any", "missing", "negative", "boxes")
 REVIEW_MODES = ("any", "reviewed", "not reviewed")
 OVERLAP_MODES = {"off": None, "different classes": "different", "same class": "same", "any class": "any"}
 MODEL_MODES = {"off": None, "unseen labels": "unseen", "unlabelled predictions": "unlabelled", "either": "either"}
-SOURCES = ("Images", "Find Bad")
+SOURCES = ("Images", "Find Bad", "Blurry")
 
 
 def _row(*widgets) -> QWidget:
@@ -88,7 +90,7 @@ def _number(edit: QLineEdit, name: str, *, blank: bool = False) -> float | None:
 
 
 class QueueEditor(QDialog):
-    def __init__(self, dataset: Dataset, current: ImageFilter | Findings, parent=None, *, conf: float = 0.25):
+    def __init__(self, dataset: Dataset, current: ImageFilter | Findings | Blurry, parent=None, *, conf: float = 0.25):
         super().__init__(parent)
         self.setWindowTitle("Queue")
         self.source_kind = QComboBox()
@@ -125,8 +127,9 @@ class QueueEditor(QDialog):
         self.error.setStyleSheet("color: #e05252;")
         self.error.setWordWrap(True)
         self.error.hide()
-        self.chosen: ImageFilter | Findings | None = None      #: what OK took
+        self.chosen: ImageFilter | Findings | Blurry | None = None      #: what OK took
         self.find_rows = self._find_rows()
+        self.blur_rows = self._blur_rows()
         source = QFormLayout()
         source.addRow("Source", self.source_kind)
         images = QGroupBox("Images — all must hold")
@@ -154,22 +157,56 @@ class QueueEditor(QDialog):
         layout.addLayout(source)
         layout.addWidget(images)
         layout.addWidget(self.find_rows)
+        layout.addWidget(self.blur_rows)
         layout.addWidget(self.error)
         layout.addWidget(buttons)
-        self.source_kind.currentTextChanged.connect(lambda kind: self.find_rows.setVisible(kind == "Find Bad"))
+        self.source_kind.currentTextChanged.connect(self._show_source_rows)
         if isinstance(current, Findings):
             self.source_kind.setCurrentText("Find Bad")
             self._seed(current.scope)
             self._seed_settings(current.settings)
+        elif isinstance(current, Blurry):
+            self.source_kind.setCurrentText("Blurry")
+            self._seed(current.scope)
+            self._seed_settings(FindSettings())
         else:
             self._seed(current)
             self._seed_settings(FindSettings())
-        self.find_rows.setVisible(self.source_kind.currentText() == "Find Bad")
+        blur = current.settings if isinstance(current, Blurry) else BlurSettings()
+        self.blur_share.setText(_text(round(blur.share * 100, 9)))     # 0.1 * 100 is 10.000000000000002
+        self.blur_min_side.setText(str(blur.min_side))
+        self._show_source_rows(self.source_kind.currentText())
         overlap.setVisible(self.overlap_mode.currentText() != "off")
         model.setVisible(self.model_mode.currentText() != "off")
         self.classes.setVisible(self.class_mode.currentText() != "any class")
         rows = min(max(self.classes.count(), 1), 8)       # as tall as its rows, then it scrolls
         self.classes.setFixedHeight(rows * max(self.classes.sizeHintForRow(0), 1) + 2 * self.classes.frameWidth())
+
+    def _show_source_rows(self, kind: str) -> None:
+        self.find_rows.setVisible(kind == "Find Bad")
+        self.blur_rows.setVisible(kind == "Blurry")
+
+    def _blur_rows(self) -> QGroupBox:
+        """Blurry's settings: shown for a Blurry queue, whose scope is the rows above."""
+        self.blur_share, self.blur_min_side = _edit(), _edit()
+        rows = QGroupBox("Blurry — the blurriest of each class and size")
+        form = QFormLayout(rows)
+        form.addRow("Share", _row(self.blur_share, QLabel("%"), QLabel("Minimum side"), self.blur_min_side, QLabel("px")))
+        form.addRow("", QLabel("A deleted label leaves its object as background."))
+        return rows
+
+    def blur_settings(self) -> BlurSettings:
+        """Blurry's settings; ValueError naming the field when they cannot be used."""
+        try:
+            share = _number(self.blur_share, "share")
+            text = self.blur_min_side.text().strip()
+            try:
+                side = int(text)
+            except ValueError:
+                raise ValueError(f"minimum side: “{text}” is not a whole number") from None
+            return BlurSettings(share / 100, side)
+        except ValueError as e:
+            raise ValueError(f"Blurry — {e}") from e
 
     def _find_rows(self) -> QGroupBox:
         """Find Bad's settings: shown for a Findings queue, whose scope is the rows above."""
@@ -244,10 +281,14 @@ class QueueEditor(QDialog):
         self.error.hide()
         super().accept()
 
-    def source(self) -> ImageFilter | Findings:
-        """The queue the dialog describes: its image filter, or the findings in it."""
-        if self.source_kind.currentText() == "Images":
+    def source(self) -> ImageFilter | Findings | Blurry:
+        """The queue the dialog describes: its image filter, the findings in it, or its
+        blurry boxes."""
+        kind = self.source_kind.currentText()
+        if kind == "Images":
             return self.filter()
+        if kind == "Blurry":
+            return Blurry(self.filter(), self.blur_settings())
         return Findings(self.filter(), self.settings())
 
     def settings(self) -> FindSettings:
