@@ -57,3 +57,16 @@ def test_the_score_cache_never_waits_for_the_disk(tmp_path):
     assert s._connection().execute("PRAGMA synchronous").fetchone()[0] == 0              # OFF
     p = PredictionStore(tmp_path / STORE_NAME)
     assert p._connection().execute("PRAGMA synchronous").fetchone()[0] == 1              # NORMAL
+
+
+def test_a_store_damaged_after_it_opened_answers_a_miss(tmp_path, monkeypatch):
+    """Never syncing, a power loss can leave it openable but damaged: a read is a miss, so
+    builds rescore instead of failing (final review, 2026-10-27)."""
+    s = SharpnessStore(tmp_path / SHARP_NAME)
+
+    class Broken:
+        def execute(self, *a):
+            raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(s, "_connection", lambda: Broken())
+    assert s.get("a.jpg", (1, 2)) is None

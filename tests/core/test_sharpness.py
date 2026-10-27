@@ -70,3 +70,23 @@ def test_an_exif_rotated_image_is_read_as_shown(tmp_path):
     path = tmp_path / "rot.jpg"
     make_exif_rotated_image(path, 64, 48)                           # stored 64 x 48, shown 48 x 64
     assert cv2.imread(str(path), cv2.IMREAD_GRAYSCALE).shape == (64, 48)
+
+
+@pytest.mark.parametrize("suffix, fmt, shape", [(".jpg", "JPEG", (100, 40)), (".png", "PNG", (40, 100)),
+                                                (".webp", "WEBP", (40, 100))])
+def test_pixels_are_read_as_the_canvas_shows_them(tmp_path, suffix, fmt, shape):
+    """Qt turns only a JPEG by its EXIF orientation; OpenCV turns a PNG and a WebP too, and
+    boxes were measured on other pixels than the canvas shows (final review, 2026-10-27)."""
+    from PIL import Image
+
+    from deeplabeling.core.imagesize import image_size
+    from deeplabeling.core.sharpness import read_grey
+
+    path = tmp_path / f"o{suffix}"
+    im = Image.new("L", (100, 40), 90)
+    exif = im.getexif()
+    exif[274] = 6
+    im.save(path, format=fmt, exif=exif)
+    assert read_grey(path).shape == shape
+    assert read_grey(path).shape[::-1] == image_size(path)
+    assert read_grey(tmp_path / "missing.png") is None

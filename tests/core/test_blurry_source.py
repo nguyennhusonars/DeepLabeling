@@ -176,3 +176,14 @@ def test_scores_go_out_in_small_batches(tmp_path, sharp):
     sizes = []
     Blurry().build(ctx, lambda b: sizes.append(len(b.rows)) if isinstance(b, Scored) else None)
     assert sizes == [SCORE_BATCH, SCORE_BATCH, 3]
+
+
+def test_a_blurry_queue_refuses_a_scope_that_needs_a_model():
+    """It is built without one: such a scope would leave it empty for good (final review)."""
+    from deeplabeling.core.queue import ModelDisagrees
+
+    with pytest.raises(ValueError, match="Model — a Blurry queue is built without a model: turn it off"):
+        Blurry(ImageFilter(conditions=(ModelDisagrees("unseen"),)))
+    with pytest.raises(ValueError):
+        source_from_json({"source": "blurry", "scope": ImageFilter(conditions=(ModelDisagrees("unseen"),)).to_json(),
+                          "settings": BlurSettings().to_json()})

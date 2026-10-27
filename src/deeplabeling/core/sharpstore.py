@@ -8,6 +8,7 @@ still matches. Written on the GUI thread; read by builds on any thread.
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Iterable
 
 from .predstore import Stamp
@@ -36,8 +37,11 @@ CREATE TABLE IF NOT EXISTS scores (
         """The image's scores, or None when it was never scored as it is now."""
         if self._closed:
             return None
-        row = self._connection().execute(
-            "SELECT size, mtime_ns, boxes FROM scores WHERE img = ?", (img,)).fetchone()
+        try:
+            row = self._connection().execute(
+                "SELECT size, mtime_ns, boxes FROM scores WHERE img = ?", (img,)).fetchone()
+        except sqlite3.DatabaseError:
+            return None                             # damaged since it opened (it never syncs): rescored
         if row is None or (row[0], row[1]) != tuple(stamp):
             return None
         return [tuple(box) for box in json.loads(row[2])]

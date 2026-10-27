@@ -9,7 +9,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-import cv2
 import numpy as np
 
 from .dataset import Dataset
@@ -17,7 +16,7 @@ from .edits import LineRef
 from .findings import BlurFinding
 from .predstore import image_stamp
 from .queue import BuildContext, ImageFilter, QueueItem, Scored
-from .sharpness import MIN_SCORED, box_rect, score_image
+from .sharpness import MIN_SCORED, box_rect, read_grey, score_image
 from .store import LabelState
 
 #: Short sides in px: a box is compared only with boxes of its class in its octave.
@@ -70,8 +69,12 @@ def candidate(key: str, entry_order: int, line: int, cls: int, side: int, lap: f
 
 
 def _z(values: np.ndarray) -> np.ndarray:
+    """Robust z-scores. Over half a group equal (a still camera's duplicate frames) leaves
+    the MAD 0: the mean absolute deviation stands in, scaled alike for normal data."""
     med = np.median(values)
-    return (values - med) / max(MAD_SCALE * float(np.median(np.abs(values - med))), 1e-6)
+    dev = np.abs(values - med)
+    scale = MAD_SCALE * float(np.median(dev)) or 1.2533 * float(dev.mean())
+    return (values - med) / max(scale, 1e-6)
 
 
 def rank(candidates: list[tuple], share: float) -> tuple[dict[str, tuple[float, float]], set[str]]:
@@ -108,6 +111,10 @@ class Blurry:
     settings: BlurSettings = field(default_factory=BlurSettings)
     needs_model: ClassVar[bool] = False
 
+    def __post_init__(self):
+        if self.scope.needs_model:              # built without one, it would stay empty for good
+            raise ValueError("Model — a Blurry queue is built without a model: turn it off")
+
     def _scores(self, entry, ctx: BuildContext, boxes, new: list) -> tuple[dict, tuple[int, int]] | None:
         """({rect: (lap, cr)}, the size the rects are of) for the image's boxes, from the cache
         or a decode (its row then appended to `new`); None when it cannot be decoded."""
@@ -122,7 +129,7 @@ class Blurry:
             have = {tuple(row[:4]): row[4:] for row in cached}
             if all(r in have for r in rects if r is not None and min(r[2] - r[0], r[3] - r[1]) >= MIN_SCORED):
                 return have, size
-        grey = cv2.imread(str(entry.path), cv2.IMREAD_GRAYSCALE)
+        grey = read_grey(entry.path)
         if grey is None:
             return None
         scored = score_image(grey, boxes)

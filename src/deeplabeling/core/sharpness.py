@@ -8,9 +8,11 @@ from collections.abc import Iterable
 
 import cv2
 import numpy as np
+from PIL import Image
 
 from .crops import px_corners
 from .geometry import Box
+from .imagesize import TURNED
 from .sharpstore import BoxScore
 
 MIN_SCORED = 8          #: boxes with a shorter side are not scored at all
@@ -26,6 +28,19 @@ def box_rect(box: Box, w: int, h: int) -> tuple[int, int, int, int] | None:
     x0, y0, x1, y1 = px_corners(box, w, h)
     x0, y0, x1, y1 = max(0, x0), max(0, y0), min(w, x1), min(h, y1)
     return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
+
+
+def read_grey(path) -> np.ndarray | None:
+    """The image's grey pixels as the canvas shows them, or None when it cannot be decoded.
+    Qt turns only the TURNED formats by their EXIF orientation; OpenCV turns a PNG and a WebP
+    too, so for those it is told not to."""
+    try:
+        with Image.open(path) as im:
+            turned = im.format in TURNED
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        return None
+    flags = cv2.IMREAD_GRAYSCALE | (0 if turned else cv2.IMREAD_IGNORE_ORIENTATION)
+    return cv2.imread(str(path), flags)
 
 
 def is_flat(grey: np.ndarray) -> bool:

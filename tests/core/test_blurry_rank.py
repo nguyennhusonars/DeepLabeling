@@ -81,3 +81,10 @@ def test_a_candidate_is_not_tracked_by_the_garbage_collector():
     c = candidate("k", 0, 0, 0, 20, 1.0, 0.5)
     gc.collect()
     assert not gc.is_tracked(c)
+
+
+def test_a_group_mostly_of_equal_values_gives_finite_z():
+    """Duplicate frames of a still camera: over half a group equal, MAD 0 (final review)."""
+    boxes = cands("same", 25, 20, lap=lambda i: 1.0, cr=lambda i: 0.5) + cands("odd", 5, 20, start=25)
+    listed, _ = rank(boxes, 0.1)
+    assert all(abs(z) < 100 for z, _ in listed.values())

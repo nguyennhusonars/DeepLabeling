@@ -7,7 +7,6 @@ import time
 import cv2
 import pytest
 
-import deeplabeling.core.blurry as blurry_module
 from deeplabeling.core.blurry import Blurry, BlurSettings
 from deeplabeling.core.predstore import image_stamp
 from deeplabeling.core.queue import ImageFilter
@@ -28,7 +27,7 @@ def built(qtbot, s, source=SHARE):
 
 def slow_decodes(monkeypatch, seconds=0.03):
     real = cv2.imread
-    monkeypatch.setattr(blurry_module.cv2, "imread", lambda *a: (time.sleep(seconds), real(*a))[1])
+    monkeypatch.setattr(cv2, "imread", lambda *a: (time.sleep(seconds), real(*a))[1])
 
 
 def test_a_blurry_queue_builds_and_its_scores_are_kept(qtbot, blur):
@@ -88,8 +87,8 @@ def test_a_failed_write_is_said_once(qtbot, blur, monkeypatch):
 
     monkeypatch.setattr(s.workspace.sharpness, "put_many", full)
     built(qtbot, s, Blurry(settings=BlurSettings(share=0.1)))
-    blurry_module_batch = [t for t in said if t.startswith("scores not saved:")]
-    assert blurry_module_batch == ["scores not saved: database or disk is full"]
+    unsaved = [t for t in said if t.startswith("scores not saved:")]
+    assert unsaved == ["scores not saved: database or disk is full"]
     assert len(s.queue) == 6                                            # the build went on
     s.close()
 

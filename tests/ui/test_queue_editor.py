@@ -288,3 +288,11 @@ def test_the_blurry_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot, 
         assert w.isVisible() and w.width() >= 30 and dialog.rect().contains(rect)
         assert not any(rect.intersects(r) for r in rects)
         rects.append(rect)
+
+
+def test_a_blurry_queue_with_the_model_row_on_is_refused_by_name(qtbot, dataset):
+    dialog = editor(qtbot, dataset, Blurry())
+    dialog.model_mode.setCurrentText("unseen labels")
+    dialog.accept()
+    assert dialog.result() != QDialog.Accepted
+    assert dialog.error.text() == "Model — a Blurry queue is built without a model: turn it off"
