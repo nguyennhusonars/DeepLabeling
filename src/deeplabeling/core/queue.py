@@ -41,6 +41,14 @@ class Scanned:
 
 
 @dataclass(frozen=True)
+class Scored:
+    """New sharpness scores, sent among a build's batches for the GUI thread to write: a
+    job never writes a file (docs/design/2026-10-27-blurry.md#the-score-cache)."""
+
+    rows: list      #: [(img, stamp, [BoxScore, ...]), ...]
+
+
+@dataclass(frozen=True)
 class QueueItem:
     key: str
     entry: ImageEntry
@@ -77,6 +85,7 @@ class BuildContext:
     #: The same, by image: which ones, so an image left out as not inferred can join the
     #: queue when its predictions arrive.
     left_out: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    sharpness: Any = None           #: the open dataset's score cache (sharpstore.SharpnessStore)
 
     def labels(self, entry: ImageEntry) -> ImageLabels:
         return self.store.get(entry.path)
@@ -97,6 +106,11 @@ class BuildContext:
     def count(self, what: str, entry: ImageEntry) -> None:
         self.unsettled[what] += 1
         self.left_out[what].add(entry.rel)
+
+    def count_box(self, what: str, entry: ImageEntry, line: int) -> None:
+        """As `count`, by box: the chip counts boxes, not images."""
+        self.unsettled[what] += 1
+        self.left_out[what].add(f"{entry.rel}#{line}")
 
 
 @dataclass(frozen=True)
@@ -690,8 +704,11 @@ class Queue:
 
 
 def source_from_json(data):
-    """A saved queue's source: an image filter, or Find Bad's findings."""
+    """A saved queue's source: an image filter, Find Bad's findings, or blurry boxes."""
     if isinstance(data, dict) and data.get("source") == "findings":
         from .findings import Findings              # findings.py builds on this module
         return Findings.from_json(data)
+    if isinstance(data, dict) and data.get("source") == "blurry":
+        from .blurry import Blurry                  # as findings.py, blurry.py builds on this module
+        return Blurry.from_json(data)
     return ImageFilter.from_json(data)

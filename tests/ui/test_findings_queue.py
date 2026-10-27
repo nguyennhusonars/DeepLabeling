@@ -39,7 +39,7 @@ def test_while_it_scans_the_chip_says_how_far(qtbot, session):
     found(qtbot, session)
     queue = session.queue
     queue.complete = False
-    session._grew(queue, Scanned(5, 15))
+    session._grew(queue, session.workspace, Scanned(5, 15))
     assert session.progress_text() == " · scanning 5 / 15"
 
 

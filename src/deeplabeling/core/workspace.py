@@ -14,6 +14,7 @@ from .history import History
 from .imagesize import ImageSizes
 from .predstore import STORE_NAME, PredictionStore
 from .review import ReviewMarks
+from .sharpstore import SHARP_NAME, SharpnessStore
 from .settings import JsonFile, Settings, define, is_str_list, is_str_map, is_str_or_none
 from .state import DatasetLock, dataset_state_dir
 from .store import LabelStore
@@ -49,6 +50,7 @@ class Workspace:
     editor: Editor
     predictions: PredictionStore
     dismissals: Dismissals
+    sharpness: SharpnessStore
     sizes: ImageSizes = field(default_factory=ImageSizes)   #: its images' sizes, read from headers
 
     @classmethod
@@ -78,18 +80,19 @@ class Workspace:
                             on_history_changed=on_history_changed)
             predictions = PredictionStore(directory / STORE_NAME)
             dismissals = Dismissals(directory / "dismissals.json", dataset.root)
+            sharpness = SharpnessStore(directory / SHARP_NAME)
         except BaseException:
             lock.release()
             raise
         return cls(dataset, directory, lock, file, root,
                    Settings(file, "opening", ("openings", dataset.opening_key)),
-                   review, store, history, editor, predictions, dismissals)
+                   review, store, history, editor, predictions, dismissals, sharpness)
 
     @property
     def warnings(self) -> tuple[str, ...]:
         """State files that could not be read, for the notice strip."""
         return tuple(w for w in (self.file.warning, self.review.warning, self.predictions.warning,
-                                 self.dismissals.warning) if w)
+                                 self.dismissals.warning, self.sharpness.warning) if w)
 
     def save(self) -> None:
         self.review.save()
@@ -101,4 +104,5 @@ class Workspace:
             self.save()
         finally:
             self.predictions.close()
+            self.sharpness.close()
             self.lock.release()

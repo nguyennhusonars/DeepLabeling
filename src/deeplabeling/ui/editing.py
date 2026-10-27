@@ -23,6 +23,7 @@ from ..core.workspace import ACTIVE_CLASS, CLASS_COLORS, CLASS_HOTKEYS
 from . import actions
 from .canvas import Canvas
 from .classes import ClassInfo, class_infos, class_with_hotkey
+from .findview import NOT_FOR_BLURRY
 from .selection import Selection
 from .session import Session
 
@@ -281,6 +282,9 @@ class Editing(QObject):
         item = self._finding()
         if item is None:
             return
+        if item.finding.kind == "blurry":
+            self.session.status.emit(NOT_FOR_BLURRY)
+            return
         if item.finding.model_cls is None or item.finding.kind == "not an object":
             self.session.status.emit("the model gives no class")
             return
@@ -295,6 +299,9 @@ class Editing(QObject):
         """B: the label takes the model's box, keeping its class; then the next finding."""
         item = self._finding()
         if item is None:
+            return
+        if item.finding.kind == "blurry":
+            self.session.status.emit(NOT_FOR_BLURRY)
             return
         box = item.finding.model_box and actions.clamp_box(item.finding.model_box)
         if box is None:

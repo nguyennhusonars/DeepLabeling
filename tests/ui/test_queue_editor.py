@@ -14,6 +14,7 @@ from deeplabeling.core.queue import (
     Overlap,
     Reviewed,
 )
+from deeplabeling.core.blurry import Blurry, BlurSettings
 from deeplabeling.ui.queue_editor import QueueEditor
 
 
@@ -216,7 +217,8 @@ def test_the_dialog_says_how_its_rows_combine(qtbot, dataset):
 
     dialog = editor(qtbot, dataset, Findings())
     titles = [g.title() for g in dialog.findChildren(QGroupBox)]
-    assert titles == ["Images — all must hold", "Find Bad — any checked kind"]
+    assert titles == ["Images — all must hold", "Find Bad — any checked kind",
+                      "Blurry — the blurriest of each class and size"]
     assert dialog.find_rows.title() == "Find Bad — any checked kind"
 
 
@@ -233,3 +235,64 @@ def test_a_condition_that_is_off_shows_no_fields_and_keeps_its_values(qtbot, dat
     assert dialog.overlap_lo.text() == "0.5" and dialog.model_lo.text() == "0.25"
     rows = dialog.classes.count()
     assert dialog.classes.height() <= rows * dialog.classes.sizeHintForRow(0) + 12   # as tall as its rows
+
+
+@pytest.mark.parametrize("settings", [BlurSettings(0.1, 24), BlurSettings(0.07, 16), BlurSettings()])
+def test_a_blurry_queue_seeds_the_dialog_and_comes_back_unchanged(qtbot, dataset, settings):
+    current = Blurry(ImageFilter(("val",), (NameContains("cam"),)), settings)
+    dialog = editor(qtbot, dataset, current)
+    assert dialog.source_kind.currentText() == "Blurry"
+    assert dialog.blur_share.text() == f"{settings.share * 100:g}" and dialog.blur_min_side.text() == str(settings.min_side)
+    assert dialog.source() == current
+
+
+def test_the_blurry_group_shows_only_for_blurry_and_warns(qtbot, dataset):
+    from PySide6.QtWidgets import QLabel
+
+    dialog = editor(qtbot, dataset, ImageFilter())
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+    assert not dialog.blur_rows.isVisible()
+    dialog.source_kind.setCurrentText("Blurry")
+    assert dialog.blur_rows.isVisible() and not dialog.find_rows.isVisible()
+    assert dialog.blur_rows.title() == "Blurry — the blurriest of each class and size"
+    warning = [w for w in dialog.blur_rows.findChildren(QLabel) if w.text() == "A deleted label leaves its object as background."]
+    assert warning and warning[0].isVisible()
+    assert dialog.source() == Blurry(ImageFilter(), BlurSettings())
+
+
+@pytest.mark.parametrize("share, side, why", [
+    ("0", "16", "Blurry — share: must be above 0% and at most 100%"),
+    ("101", "16", "Blurry — share: must be above 0% and at most 100%"),
+    ("x", "16", "Blurry — share: “x” is not a number"),
+    ("5", "7", "Blurry — minimum side: must be from 8 to 4096 px"),
+    ("5", "16.5", "Blurry — minimum side: “16.5” is not a whole number"),
+])
+def test_blurry_settings_are_refused_by_name_and_the_dialog_stays_open(qtbot, dataset, share, side, why):
+    dialog = editor(qtbot, dataset, Blurry())
+    dialog.blur_share.setText(share)
+    dialog.blur_min_side.setText(side)
+    dialog.accept()
+    assert dialog.result() != QDialog.Accepted and dialog.error.text() == why and dialog.chosen is None
+
+
+def test_the_blurry_rows_are_visible_inside_the_dialog_and_none_overlaps(qtbot, dataset):
+    from PySide6.QtCore import QPoint, QRect
+
+    dialog = editor(qtbot, dataset, Blurry())
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+    rects = []
+    for w in (dialog.source_kind, dialog.blur_share, dialog.blur_min_side):
+        rect = QRect(w.mapTo(dialog, QPoint(0, 0)), w.size())
+        assert w.isVisible() and w.width() >= 30 and dialog.rect().contains(rect)
+        assert not any(rect.intersects(r) for r in rects)
+        rects.append(rect)
+
+
+def test_a_blurry_queue_with_the_model_row_on_is_refused_by_name(qtbot, dataset):
+    dialog = editor(qtbot, dataset, Blurry())
+    dialog.model_mode.setCurrentText("unseen labels")
+    dialog.accept()
+    assert dialog.result() != QDialog.Accepted
+    assert dialog.error.text() == "Model — a Blurry queue is built without a model: turn it off"

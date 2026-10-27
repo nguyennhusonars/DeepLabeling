@@ -1,7 +1,7 @@
 # Caches
 
-Owns: the prediction cache (what is stored, how it is keyed and read), label-cache
-freshness, how image sizes are read, and where app state lives.
+Owns: the prediction cache (what is stored, how it is keyed and read), the score cache,
+label-cache freshness, how image sizes are read, and where app state lives.
 
 The evidence is `legacy/yolo_labeling/core/predcache.py` and the read paths in
 `legacy/yolo_labeling/app.py` and `legacy/yolo_labeling/ui/filters.py`.
@@ -79,6 +79,22 @@ row per `(model, image)`, the model key, the floor, raw model ids — with three
   size.
 
 A file that cannot be read is set aside, as `dataset.json` is, and the store starts empty.
+
+### The score cache
+
+`src/deeplabeling/core/sharpstore.py::SharpnessStore` keeps the Blurry queue's sharpness
+measures ([the Blurry spec](../design/2026-10-27-blurry.md#the-score-cache)):
+
+- one file per dataset root, `sharpness.sqlite` beside `predictions.sqlite`; a row per image,
+  served only while its `(size, mtime_ns)` stamp matches;
+- a box is found by its pixel rectangle, not its label line: a class change needs no rescore,
+  a moved box rescores its image;
+- it holds raw measures, never ranks: ranks depend on the scope, and are made at each build;
+- written on the GUI thread only, from the build's `Scored` batches — a job never writes a
+  file — so a cancelled build's scores are kept.
+
+Its connection handling, setting aside and closing are the prediction store's, shared:
+`src/deeplabeling/core/sqlitefile.py::SqliteFile`. Deleting it costs one cold build.
 
 ## Reading during a dataset pass
 
