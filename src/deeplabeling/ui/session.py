@@ -10,17 +10,19 @@ therefore owns the LabelStore's write path (spec: Notes for plan 1b).
 
 from __future__ import annotations
 
+import sqlite3
 from collections import Counter
 from pathlib import Path
 from typing import Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from ..core.blurry import Blurry
 from ..core.crops import crop_rect
 from ..core.dataset import DatasetError, ImageEntry
 from ..core.edits import CreateEmpty, Edit, Intent, Refused
 from ..core.findings import KINDS, Findings
-from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem, Scanned, source_from_json
+from ..core.queue import BuildContext, ImageFilter, ModelSnapshot, Queue, QueueItem, Scanned, Scored, source_from_json
 from ..core.state import Locked
 from ..core.store import ImageLabels, LabelState
 from ..core.taxonomy import count_out_of_range
@@ -46,6 +48,10 @@ UNSETTLED = {
     "could not be sized": lambda n: f"{n:,} without a size",
     "not inferred": lambda n: f"{n:,} not inferred",
     "labels unreadable": lambda n: f"{n:,} with unreadable labels",
+    "too small": lambda n: f"{n:,} too small",          # by box: a Blurry queue's
+    "flat": lambda n: f"{n:,} flat",
+    "too few peers": lambda n: f"{n:,} too few peers",
+    "cannot decode": lambda n: f"{n:,} cannot decode",
 }
 
 
@@ -96,6 +102,7 @@ class Session(QObject):
         self.crops = ImageCache(Jobs(2), THUMB_BYTES, decode=decode_tile, parent=self, key=Crop.of)
         self.saver = Saver(self._save, parent=self)
         self._build = None
+        self._scores_unsaved: Queue | None = None     #: the build whose failed score write was said
         self._by_rel: dict[str, ImageEntry] = {}
         self.unnamed_ids: tuple[int, ...] = ()      #: class ids the labels hold that the yaml does not name
         self._follow: ImageEntry | QueueItem | None = None  # where a rebuilding queue must land
@@ -253,9 +260,21 @@ class Session(QObject):
         self._build = self.io.start(
             lambda emit, cancelled: source.build(ctx, emit, cancelled,
                                                  progress=lambda done, total: emit(Scanned(done, total))),
-            batch=lambda items: self._grew(queue, items),
+            batch=lambda items: self._grew(queue, ws, items),
             done=lambda finished: self._built(queue, finished, left_out=ctx.left_out),
             failed=lambda why: self._build_failed(queue, why, ctx.left_out))
+
+    def _write_scores(self, queue: Queue, ws: Workspace, scored: Scored) -> None:
+        """A build's new sharpness scores, written here: a job never writes a file
+        (docs/design/2026-10-27-blurry.md#the-score-cache). Said once per build if it fails."""
+        if ws is not self.workspace:
+            return                                  # a closed dataset's: never the next one's
+        try:
+            ws.sharpness.put_many(scored.rows)
+        except (OSError, sqlite3.Error) as e:
+            if self._scores_unsaved is not queue:
+                self._scores_unsaved = queue
+                self.notice.emit("error", f"scores not saved: {e}", None)
 
     def _model_identity(self):
         """What a model queue's build depends on: the model and its class map."""
@@ -310,9 +329,12 @@ class Session(QObject):
         snapshot = (ModelSnapshot(model.key, ws.predictions, model.class_map)
                     if model.state == "ready" and model.class_map is not None else None)
         return BuildContext(ws.dataset, ws.store, self._keys, sizes=ws.sizes, model=snapshot,
-                            dismissed=ws.dismissals.snapshot())
+                            dismissed=ws.dismissals.snapshot(), sharpness=ws.sharpness)
 
-    def _grew(self, queue: Queue, items: list[QueueItem]) -> None:
+    def _grew(self, queue: Queue, ws: Workspace, items: list[QueueItem]) -> None:
+        if isinstance(items, Scored):
+            self._write_scores(queue, ws, items)    # whatever the queue: a cancelled build's are kept
+            return
         if queue is not self.queue:
             return                                  # a cancelled build's last batch
         if isinstance(items, Scanned):
@@ -425,12 +447,13 @@ class Session(QObject):
             return " · build failed"
         if not queue.complete:
             if queue.scanned is not None:
-                return f" · scanning {queue.scanned.done:,} / {queue.scanned.total:,}"
+                verb = "scoring" if isinstance(queue.source, Blurry) else "scanning"
+                return f" · {verb} {queue.scanned.done:,} / {queue.scanned.total:,}"
             return " · building…"
         text = ""
-        if isinstance(queue.source, Findings):
+        if isinstance(queue.source, (Findings, Blurry)):
             counts = Counter(item.finding.kind for item in queue.items)
-            text = "".join(f" · {counts[kind]:,} {kind}" for kind in KINDS if counts[kind])
+            text = "".join(f" · {counts[kind]:,} {kind}" for kind in (*KINDS, "blurry") if counts[kind])
         return text + "".join(f" · {UNSETTLED[what](len(rels))}" for what, rels in sorted(queue.left_out.items())
                               if rels and what in UNSETTLED)
 
