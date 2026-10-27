@@ -12,6 +12,7 @@ from collections import Counter
 from ..core.edits import DeleteLine, Intent, SetBox, SetClass
 from ..core.labelio import locate_line
 from .actions import clamp_box
+from .findview import NOT_FOR_BLURRY
 
 
 def _count(n: int, one: str, many: str) -> str:
@@ -53,6 +54,8 @@ def _act(session, items, describe, op_for) -> None:
 def take_model_class(session, items) -> None:
     def op(item, line):
         f = item.finding
+        if f.kind == "blurry":
+            return None, NOT_FOR_BLURRY
         if f.model_cls is None or f.kind == "not an object":
             return None, "no model class"
         if f.model_cls == item.focus.cls_id:
@@ -63,6 +66,8 @@ def take_model_class(session, items) -> None:
 
 def take_model_box(session, items) -> None:
     def op(item, line):
+        if item.finding.kind == "blurry":
+            return None, NOT_FOR_BLURRY
         box = item.finding.model_box and clamp_box(item.finding.model_box)
         if box is None:
             return None, "no model box"

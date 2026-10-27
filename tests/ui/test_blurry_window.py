@@ -63,3 +63,63 @@ def test_the_spotlight_dims_outside_a_blurry_box(qtbot, window):
 
     outside = (155, 5) if rect[0] < 100 else (5, 115)
     assert light(*outside) < 100                                           # the 128 grey, dimmed
+
+
+def shown(qtbot, window):
+    qtbot.waitUntil(lambda: window._shown == window.session.current().entry.path, timeout=5000)
+    qtbot.waitUntil(lambda: window.session.images.get(window.session.current().entry.path) is not None,
+                    timeout=5000)
+
+
+def said(qtbot, window, key):
+    with qtbot.waitSignal(window.session.status) as signal:
+        qtbot.keyClick(window, key)
+    return signal.args[0]
+
+
+def labels_text(window):
+    return {item.entry.rel: read_exact(item.entry.label_path) for item in window.session.queue.items}
+
+
+@pytest.mark.parametrize("key", [Qt.Key_M, Qt.Key_B])
+def test_m_and_b_say_they_are_not_for_blurry_boxes(qtbot, window, key):
+    shown(qtbot, window)
+    before = labels_text(window)
+    assert said(qtbot, window, key) == "not for blurry boxes"
+    assert labels_text(window) == before
+
+
+def test_d_dismisses_and_moves_on(qtbot, window):
+    shown(qtbot, window)
+    first = window.session.current()
+    qtbot.keyClick(window, Qt.Key_D)
+    assert window.session.finding_state(first) == "dismissed" and window.session.current().key != first.key
+
+
+def test_a_delete_in_the_full_frame_leaves_the_box_fixed(qtbot, window):
+    shown(qtbot, window)
+    first = window.session.current()
+    qtbot.keyClick(window, Qt.Key_Delete)                                  # the box arrives selected
+    qtbot.waitUntil(lambda: window.session.finding_state(first) == "fixed", timeout=5000)
+    assert first.finding.text not in read_exact(first.entry.label_path)
+
+
+def select(qtbot, window, rows):
+    panel = window.queue_panel
+    for n, row in enumerate(rows):
+        rect = panel.view.visualRect(panel.model.index(row))
+        qtbot.mouseClick(panel.view.viewport(), Qt.LeftButton, Qt.ControlModifier if n else Qt.NoModifier,
+                         rect.center())
+    assert len(panel.selected_findings()) == len(rows)
+
+
+def test_several_tiles_m_says_why_and_delete_is_one_edit(qtbot, window):
+    window.queue_panel.set_grid(True)
+    qtbot.wait(50)
+    select(qtbot, window, [0, 2])
+    before = labels_text(window)
+    assert said(qtbot, window, Qt.Key_M) == "nothing changed; skipped 2 (not for blurry boxes)"
+    assert said(qtbot, window, Qt.Key_Delete).startswith("deleted 2 findings' labels")
+    assert labels_text(window) != before
+    window.session.undo()                                                  # one undo takes both back
+    assert labels_text(window) == before

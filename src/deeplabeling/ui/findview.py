@@ -10,6 +10,9 @@ from ..core.geometry import norm_to_px
 from .boxes import PredictionView
 from .classes import UNKNOWN, class_color
 
+#: M and B on a blurry box: they take the model's answer, and a blurry box has none.
+NOT_FOR_BLURRY = "not for blurry boxes"
+
 
 def _name(cls: int, dataset: Dataset) -> str:
     return dataset.names[cls] if 0 <= cls < len(dataset.names) else f"#{cls}?"
